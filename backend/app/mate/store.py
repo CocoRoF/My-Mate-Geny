@@ -1948,9 +1948,20 @@ class MateStore:
         switched off) — her engine's own search, else the server's (app/mate/service.py configure_engine)"""
         return (self._setting("web_search") or "1") != "0"
 
+    def social_on(self) -> bool:
+        """메이트 공통 설정 → 메이트끼리 어울리기: the user's mates know each other, make plans, go out together and remember it
+        (app/mate/social; on unless switched off)."""
+        return (self._setting("social_on") or "1") != "0"
+
+    def social_romance(self) -> bool:
+        """…and between a man and a woman among them, now and then a spark (설렘, 썸: innocent, never further). On unless switched off."""
+        return (self._setting("social_romance") or "1") != "0"
+
     def settings(self) -> dict[str, Any]:
         out: dict[str, Any] = {k: self._setting(k) for k in SETTING_URLS}
         out["web_search"] = self.web_search()
+        out["social_on"] = self.social_on()
+        out["social_romance"] = self.social_romance()
         out["timezone"] = self._setting("timezone")
         out["user_name"] = self.user_name()
         out["user_birthday"] = self.user_birthday()
@@ -1997,9 +2008,10 @@ class MateStore:
         if tzname is not None and tzname != self._setting("timezone"):
             self._put_setting("timezone", tzname)
             changed.add("timezone")
-        if isinstance(patch.get("web_search"), bool) and patch["web_search"] != self.web_search():
-            self._put_setting("web_search", "1" if patch["web_search"] else "0")
-            changed.add("web_search")
+        for k, now_on in (("web_search", self.web_search), ("social_on", self.social_on), ("social_romance", self.social_romance)):
+            if isinstance(patch.get(k), bool) and patch[k] != now_on():
+                self._put_setting(k, "1" if patch[k] else "0")
+                changed.add(k)
         for k, url in urls.items():
             if url != self._setting(k):
                 changed.add(k)

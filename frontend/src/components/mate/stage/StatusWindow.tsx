@@ -15,10 +15,12 @@ import { lifeName } from "../life/needs";
 import StageWindow, { type WindowTab } from "./StageWindow";
 import Journal from "../gss/Journal";
 import { Between, Mind, NowContext, Promises, useGssView } from "../gss/StateView";
+import FriendsSection from "../social/FriendsSection";
 
-type Tab = "now" | "relation" | "plan" | "growth" | "journal" | "gifts" | "keepsakes" | "log";
+type Tab = "now" | "relation" | "friends" | "plan" | "growth" | "journal" | "gifts" | "keepsakes" | "log";
 const NOW: WindowTab<Tab> = { id: "now", icon: "heart", label: "stage.tabNow" };
 const RELATION: WindowTab<Tab> = { id: "relation", icon: "user", label: "stage.tabRelation" };
+const FRIENDS: WindowTab<Tab> = { id: "friends", icon: "users", label: "stage.tabFriends" };
 const LOG: WindowTab<Tab> = { id: "log", icon: "history", label: "stage.tabLog" };
 // (her day — only while it is on)
 const LIFE_TABS: WindowTab<Tab>[] = [
@@ -37,7 +39,7 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
   const { v, setV, err, setErr } = useLifeView(mate);
   const gss = useGssView(mate);
   const life = v?.enabled ? v : null;
-  const tabs = life ? [NOW, RELATION, ...LIFE_TABS, LOG] : [NOW, RELATION, LOG];
+  const tabs = life ? [NOW, RELATION, FRIENDS, ...LIFE_TABS, LOG] : [NOW, RELATION, FRIENDS, LOG];
   const shown: Tab = tabs.some((x) => x.id === tab) ? tab : "now";
   const rel = mate.relation;
   const state = mate.state;
@@ -111,6 +113,7 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
                     <p className="truncate text-[12.5px] text-content-dim" data-testid="life-now-activity">
                       {lifeName(life.activity_name, locale)}
                       {life.with_user && <span className="ml-1.5 text-accent">· {t("life.together")}</span>}
+                      {life.with_mate && <span className="ml-1.5 text-accent" data-testid="life-with-mate">· {t("life.withMate", { name: life.with_mate.name })}</span>}
                     </p>
                     <p className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-content-faint">
                       {t(SLOT_LABEL[life.slot ?? "day"])} <Icon name={sky.icon} size={11} /> {t(sky.label)}
@@ -147,6 +150,8 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
         ) : (
           !gss.err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>
         )
+      ) : shown === "friends" ? (
+        <FriendsSection mate={mate} />
       ) : shown === "log" ? (
         gss.v ? (
           <Journal entries={gss.entries} name={mate.name} more={gss.more} onMore={() => void gss.loadMore()} />

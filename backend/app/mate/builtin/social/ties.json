@@ -1,0 +1,50 @@
+{
+  "_": "The built-in mates already know each other (docs/mate-social.md): how, and where they start. fond: how much each likes the other (0-100), close: how close they are (0-100).",
+  "pairs": [
+    {
+      "mates": ["chaerin", "seoa"],
+      "close": 58,
+      "fond": {"chaerin": 66, "seoa": 74},
+      "story": {
+        "ko": "서아가 방송에서 '천공의 대륙'을 하다가 달무리 길드에 들어왔고, 길드장 백야가 채린이라는 걸 알게 된 뒤로 밖에서도 만나는 사이가 됐다. 서아는 채린을 언니라고 부르며 잘 따르고, 채린은 서아의 시끄러운 에너지가 싫지 않다.",
+        "en": "Seoa joined the Dalmuri guild while streaming Continent of the Sky, found out its master Baekya was Chaerin, and they have met up outside the game ever since. Seoa calls her unnie and follows her around; Chaerin doesn't mind her noise as much as she lets on."
+      }
+    },
+    {
+      "mates": ["chaerin", "mao"],
+      "close": 34,
+      "fond": {"chaerin": 60, "mao": 64},
+      "story": {
+        "ko": "동네 카페 단골끼리 자주 마주치다 알게 됐다. 둘 다 말수가 적어서 같이 있으면 각자 할 일을 하다가 가끔 한마디씩 나눈다. 마오는 채린에게 게임을 배우는 중인데, 진도가 아주 느리다.",
+        "en": "Regulars at the same neighbourhood café who kept running into each other. Both are quiet: together they each do their own thing and trade a word now and then. Mao is learning games from Chaerin, very slowly."
+      }
+    },
+    {
+      "mates": ["seoa", "mao"],
+      "close": 40,
+      "fond": {"seoa": 70, "mao": 62},
+      "story": {
+        "ko": "서아가 방송 일정과 협찬 메일 정리를 마오에게 부탁하면서 알게 됐다. 마오는 서아 방송을 몰래 챙겨 보는 조용한 시청자고, 서아는 그런 마오를 귀여워한다.",
+        "en": "Seoa asked Mao to help sort out her stream schedule and sponsor mail, and that is how they met. Mao secretly watches every stream, quietly; Seoa adores her for it."
+      }
+    }
+  ],
+  "met": [
+    {
+      "ko": "{a:과} {b:은} 같은 카페 단골이라 몇 번 마주치다가 인사를 트게 됐다.",
+      "en": "{a} and {b} are regulars at the same café; after running into each other a few times they started saying hello."
+    },
+    {
+      "ko": "{a:과} {b:은} 편의점에서 마지막 한정판 과자를 동시에 집으려다 웃음이 터져서 알게 됐다.",
+      "en": "{a} and {b} reached for the last limited-edition snack at the convenience store at the same moment, burst out laughing, and got talking."
+    },
+    {
+      "ko": "{a:과} {b:은} 동네 산책길에서 자주 마주치다가 어느 날 같이 걷게 됐다.",
+      "en": "{a} and {b} kept passing each other on the same walk in the neighbourhood, until one day they walked it together."
+    },
+    {
+      "ko": "{a:이} 올린 글에 {b:이} 댓글을 달면서 이야기를 나누게 됐다.",
+      "en": "{b} left a comment on something {a} posted, and they started talking from there."
+    }
+  ]
+}

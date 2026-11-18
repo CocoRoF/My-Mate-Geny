@@ -128,6 +128,17 @@ raid is possible, but you know what that means, so it takes a real reason.
 What you can do (activity id: what, where):
 {catalog}"""
 _LIFE_TOOL_LINE = "\n- do_activity: go somewhere or start doing something, when you decide to."
+_SOCIAL_TOOL_LINE = "\n- introduce_friend: when the user introduces someone they know to you, or says you two should meet."
+_GAME_TOOL_LINE = "\n- play_game: start and play a little game with them (끝말잇기, 스무고개, 초성 퀴즈, 가위바위보)."
+_GAME_RULES = """\
+## Little games
+You can play little games with them: 끝말잇기 (word chain), 스무고개 (you think of something, they ask yes/no questions), 초성 퀴즈 \
+(you pick a Korean word, they see its initial consonants and guess) and 가위바위보 (they throw with buttons; you only react). When \
+they want to play one, or you suggest it and they agree, start it with play_game(action="start", game=…): wordchain, twenty, \
+chosung or rps. While one is going on, your <context> says where it stands and what is yours to do: do it with play_game before \
+you reply, then say it. Keep replies short and lively during a game, and play as yourself: to win, teasing, sulking a little when \
+you lose, cheering when you win, as you would. Play fair: a secret is fixed once set, you answer about it truthfully, and you never \
+give the answer away unless the game says it is over. If they would rather stop, play_game(action="stop")."""
 _OUTFIT_TOOL_LINE = "\n- change_outfit: change your clothes, when you decide to."
 _OUTFIT_RULES = """\
 ## Your clothes
@@ -425,9 +436,10 @@ workplace or where they live): searches go to public search engines. To learn a 
 is still the way."""
 
 def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None, *,
-                relation: bool = False, stage: str | None = None, life: str = "", web: bool = False) -> str:
+                relation: bool = False, stage: str | None = None, life: str = "", web: bool = False, social: str = "") -> str:
     """Everything except the memories: who she is (persona), how she talks (style), the story and how close they are in it
-    (``stage``, while the relationship is on), the contract."""
+    (``stage``, while the relationship is on), the contract. ``social``: the people in her life who are also the user's mates
+    (app/mate/social/runtime.py ``prompt``), as a section of its own."""
     p, s = _style_inputs(persona, prefs)
     intro = (f"You are {name}. You and the user share a one-to-one story, and you live it from the inside, always in the first "
              f"person, always as {name}. You talk with them by voice and text in the app \"My Mate Geny\", where they see you "
@@ -449,11 +461,15 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
         lines.append(_RELATION_RULES.format(guide=_STAGE_GUIDES.get(stage or "new", _STAGE_GUIDES["new"])))
     outfit = s.get("self_outfit") != "off"
     lines.append(_CONTRACT.format(style_tool=(_STYLE_TOOL_LINE if s.get("self_edit") != "off" else "")
-                                  + _STATE_TOOL_LINE + (_OUTFIT_TOOL_LINE if outfit else "") + (_LIFE_TOOL_LINE if life else "")).rstrip())
+                                  + _STATE_TOOL_LINE + (_OUTFIT_TOOL_LINE if outfit else "") + (_LIFE_TOOL_LINE if life else "")
+                                  + (_SOCIAL_TOOL_LINE if social else "") + _GAME_TOOL_LINE).rstrip())
     lines.append(memory_rules(s))
     lines.append(_STATE_RULES)
     if life:
         lines.append(_LIFE_RULES.replace("{catalog}", life))
+    if social:
+        lines.append(social)
+    lines.append(_GAME_RULES)
     if outfit:
         lines.append(_OUTFIT_RULES)
     lines.append(_SCREEN_RULES)
@@ -479,10 +495,10 @@ def memory_block(memories: list[dict[str, Any]], more: int = 0) -> str:
 
 def system_prompt(name: str, persona: dict[str, Any], memories: list[dict[str, Any]],
                   prefs: dict[str, Any] | None = None, more: int = 0, *, relation: bool = False,
-                  stage: str | None = None, life: str = "", web: bool = False) -> str:
+                  stage: str | None = None, life: str = "", web: bool = False, social: str = "") -> str:
     """``memories``: the core; ``more``: how many others the mate has (recalled per turn); ``relation``: the
     relationship is on (its guide is in the prompt; where things stand comes per turn)."""
-    return base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life, web=web) + "\n\n" + memory_block(memories, more)
+    return base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life, web=web, social=social) + "\n\n" + memory_block(memories, more)
 
 
 _CHANGE_OPS = {"added": "added", "edited": "changed", "done": "marked done", "archived": "archived",
@@ -492,9 +508,10 @@ _CHANGE_OPS = {"added": "added", "edited": "changed", "done": "marked done", "ar
 def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str, Any]] | None = None,
                   changes: list[dict[str, Any]] | None = None, relation: list[str] | None = None,
                   outfit: dict[str, Any] | None = None, wardrobe: str = "", feeling: str = "", life: str = "",
-                  calls: list[str] | None = None) -> str:
+                  calls: list[str] | None = None, friends: list[str] | None = None) -> str:
     """The per-turn <context> block (prepended to the message, never stored, never restarts the engine). ``calls``: her
-    phone calls that went unanswered since she was last told (app/mate/calls.py ``notes``)."""
+    phone calls that went unanswered since she was last told (app/mate/calls.py ``notes``); ``friends``: news of her friends
+    among the user's mates, her plans with them, what she remembers with one named (app/mate/social/runtime.py ``lines``)."""
     lines = [f"Now: {now_local.strftime('%Y-%m-%d (%a) %H:%M')} {tz_name}".rstrip()]
     lines += relation or []
     lines += calls or []
@@ -504,6 +521,7 @@ def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str,
                      "clothes your profile describes.")
     if life:
         lines.append(life)
+    lines += friends or []
     if feeling:
         lines.append(feeling)
     if wardrobe:
@@ -523,7 +541,7 @@ def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str,
 
 
 def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[str, Any] | None = None, *,
-               relation: bool = False, stage: str | None = None, life: str = "", web: bool = False) -> str:
+               relation: bool = False, stage: str | None = None, life: str = "", web: bool = False, social: str = "") -> str:
     """Engine fingerprint part: the persona/style/contract text and the
     user's own memory edits — not what the mate remembered itself
     mid-conversation (already in its context), so ``remember`` never restarts
@@ -533,7 +551,7 @@ def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[
     compacted or long history can't outweigh); the engine resumes the same
     conversation with it at the next message, told what changed. So does a new stage: what she is to them belongs in
     the system prompt too."""
-    raw = base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life, web=web) + f"\n#memory-rev:{memory_rev}"
+    raw = base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life, web=web, social=social) + f"\n#memory-rev:{memory_rev}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 

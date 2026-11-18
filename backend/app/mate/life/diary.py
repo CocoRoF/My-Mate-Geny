@@ -3,17 +3,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.harness.vendors import is_api_provider
 from app.mate import affinity as A
-from app.mate import files
+from app.mate import oneshot
 from app.mate.life import sim
-from app.providers import get_provider
-from app.providers.base import TurnRequest
 
 #: when they last talked to her, for her diary still to be written
 TALKED_WITHIN = timedelta(days=7)
@@ -36,47 +32,15 @@ def facts(day: dict[str, Any], profile: dict[str, Any], talked: bool) -> dict[st
             "talked_with_the_user_today": talked}
 
 
-async def write(mates: Any, mate: dict[str, Any], day: dict[str, Any], profile: dict[str, Any], talked: bool) -> str:
-    svc = mates._svc
-    name = mate["llm"]["provider"]
-    provider = get_provider(name)
-    key = svc._providers.resolved_api_key(name)
-    lease, env = None, {}
+async def write(mates: Any, mate: dict[str, Any], day: dict[str, Any], profile: dict[str, Any], talked: bool,
+                friends: list[str] | None = None) -> str:
+    """``friends``: what she did with friends that day (app/mate/social), in words."""
     persona = mate.get("persona") or {}
     system = PROMPT.format(language={"ko": "Korean", "en": "English"}.get(persona.get("language") or "ko", "Korean"),
                            who=(str(persona.get("description") or "") + "\n" + str(persona.get("personality") or ""))[:3000])
-    try:
-        if svc._pool is not None:
-            lease = await asyncio.to_thread(svc._pool.select, name, begin_turn=True)
-            if lease is not None:
-                if not lease.is_primary and not is_api_provider(name):
-                    env["CLAUDE_CONFIG_DIR" if name == "claude" else "CODEX_HOME"] = lease.config_dir
-                if lease.auth_mode == "api_key":
-                    key = lease.api_key
-        root = files.home_dir(mate["id"]) / ".diary"
-        root.mkdir(parents=True, exist_ok=True)
-        req = TurnRequest(messages=[{"role": "user", "content": json.dumps(facts(day, profile, talked), ensure_ascii=False)}],
-                          model=mate["llm"]["model"], effort="low", cwd=str(root), api_key=key, extra_env=env, timeout_s=90,
-                          system_prompt=system, sealed=True, ephemeral=True, require_sealed_catalog=True, tools=[], allowed_tools=[],
-                          mcp_config={"mcpServers": {}}, engine_home=str(root / "codex"))
-        if name == "codex":
-            req.system_prompt_file = files.engine_file(mate["id"], "diary", "md", system)
-        text = ""
-        async with asyncio.timeout(100):
-            async for ev in provider.run_turn_stream(req):
-                if ev.type == "tool.start":
-                    raise ValueError("the diary tried to use a tool")
-                if ev.type == "text.delta":
-                    text += str(ev.data.get("text") or "")
-                if ev.type == "error":
-                    raise ValueError("the diary failed")
-                if ev.type == "turn.complete":
-                    text = str(ev.data.get("text") or text)
-        return " ".join(text.split())[:MAX_CHARS]
-    finally:
-        if lease is not None:
-            svc._pool.end_turn(lease)
-            svc._pool.release(lease)
+    content = facts(day, profile, talked) | ({"with_friends": friends} if friends else {})
+    text = await oneshot.ask(mates, mate, system, json.dumps(content, ensure_ascii=False), ".diary")
+    return " ".join(text.split())[:MAX_CHARS]
 
 
 def due(doc: dict[str, Any], now: datetime) -> dict[str, Any] | None:

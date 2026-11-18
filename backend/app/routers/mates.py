@@ -408,6 +408,45 @@ async def get_life(mate_id: str, request: Request) -> dict:
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.get("/{mate_id}/social")
+async def get_social(mate_id: str, request: Request) -> dict:
+    """Her friends among the user's mates: who she knows and how, her plans with them, what they did together (app/mate/social)"""
+    try:
+        return _svc(request).social_view(mate_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/{mate_id}/game")
+async def get_game(mate_id: str, request: Request) -> dict:
+    """The game going on with her, and their record (app/mate/games.py): what she keeps secret only once it is over"""
+    try:
+        return _svc(request).game_view(mate_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/{mate_id}/game")
+async def game_action(mate_id: str, body: dict, request: Request) -> dict:
+    """{action: start (game) | throw (hand: rock | scissors | paper) | give_up | close} -> the game as it is now"""
+    svc = _svc(request)
+    action = body.get("action")
+    try:
+        if action == "start":
+            return svc.game_start(mate_id, str(body.get("game") or ""))
+        if action == "throw":
+            return svc.game_throw(mate_id, str(body.get("hand") or ""))
+        if action == "give_up":
+            return svc.game_give_up(mate_id)
+        if action == "close":
+            return svc.game_close(mate_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except MateError as exc:
+        raise _http(exc) from exc
+    raise HTTPException(400, "action: start | throw | give_up | close")
+
+
 @router.put("/{mate_id}/life/plan/{slot}")
 async def set_life_plan(mate_id: str, slot: str, body: dict, request: Request) -> dict:
     """A suggestion for how she spends this slot of the week (activity null: it's up to her). -> her day as it is now."""

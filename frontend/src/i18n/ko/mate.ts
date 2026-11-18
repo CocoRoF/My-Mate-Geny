@@ -73,7 +73,7 @@ const ko: Messages<"mate"> = {
   stateWhy_interrupted: "말을 끊어서",
   stateWhy_poked: "자꾸 건드려서",
   stateWhy_pestered: "옷 얘기로 자꾸 졸라서",
-  stateWhy_said: "“{quote}”라는 말을 들어서",
+  stateWhy_said: "“{quote}” 소리를 들어서",
   stateWhy_late: "시간이 늦어서",
   stateWhy_asleep: "자고 있어서",
   stateWhy_gift: "선물을 받아서",

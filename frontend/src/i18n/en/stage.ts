@@ -20,4 +20,6 @@ export default {
   wear: "Put on",
   outfitNoNote: "No description for this outfit.",
   outfitManage: "Edit the wardrobe",
+  games: "Play",
+  tabFriends: "Friends",
 };

@@ -32,7 +32,10 @@ export default function LifeHud({ mate, life, mood, moodText, onOpen }: { mate: 
         </span>
         <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] leading-tight opacity-85" data-testid="mate-life-where">
           <Icon name="map-pin" size={10} className="shrink-0" />
-          <span className="truncate">{doing ? `${place} · ${doing}` : place}</span>
+          <span className="truncate">
+            {doing ? `${place} · ${doing}` : place}
+            {life.with_mate ? ` · ${t("life.withMate", { name: life.with_mate.name })}` : ""}
+          </span>
           {sky && (
             <span className="ml-0.5 inline-flex shrink-0 items-center gap-0.5 opacity-90" title={t(sky.label)} data-testid="mate-life-sky" data-sky={life.weather}>
               <Icon name={sky.icon} size={10} />

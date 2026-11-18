@@ -13,7 +13,8 @@ HRH_MATE_SESSION; HRH_MATE_SCREEN=1 for ``see_screen`` (a mate's conversation al
 comes back as MCP image content);
 HRH_MATE_STYLE=auto|ask when she may change her own conversation style
 (``update_conversation_style``; absent = not listed); HRH_MATE_OUTFIT=1 when she may change her clothes
-(``change_outfit``); HRH_MATE_STATE=1 for ``feel``; HRH_MATE_LIFE=1 for ``do_activity``. HRH_MATE_MEMORY=1 adds
+(``change_outfit``); HRH_MATE_STATE=1 for ``feel``; HRH_MATE_LIFE=1 for ``do_activity``; HRH_MATE_SOCIAL=1 for
+``introduce_friend``; HRH_MATE_GAME=1 for ``play_game``. HRH_MATE_MEMORY=1 adds
 her memory network and studying (``explore_memory`` … ``list_studies``); HRH_MATE_STUDY=1 is a study session's bridge
 instead: only the study tools (``read_page`` … ``finish_study``, app/mate/study.py).
 """
@@ -399,6 +400,48 @@ DO_ACTIVITY = {
     },
 }
 
+# while the user's mates may know each other (HRH_MATE_SOCIAL=1, app/mate/social)
+INTRODUCE_FRIEND = {
+    "name": "introduce_friend",
+    "description": (
+        "The user introduced someone they know to you, or said you two should meet: call it with that person's name, so you know "
+        "each other from now on (and may meet). Only for what the user actually said. Returns Done, that you already know them, or "
+        "that there is nobody by that name you could meet this way."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Their name, as the user said it."},
+            "note": {"type": "string", "description": "What the user said about them or about the two of you, in a few words (their language)."},
+        },
+        "required": ["name"],
+    },
+}
+
+# little games with the user (HRH_MATE_GAME=1, app/mate/games.py)
+PLAY_GAME = {
+    "name": "play_game",
+    "description": (
+        "Play a little game with the user. start: begin one (game: wordchain = 끝말잇기, twenty = 스무고개, chosung = 초성 퀴즈, rps = "
+        "가위바위보). Then, as your <context> says it is your turn: move (끝말잇기: your word), reject (끝말잇기: their last word isn't a real "
+        "word; they try again), secret (스무고개 / 초성 퀴즈: what they must guess, fixed from then on; 스무고개 with a category), hint "
+        "(초성 퀴즈), give_up (you can't go on: they win), stop (they would rather stop). Returns what happened, or why it can't be done."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["start", "move", "reject", "secret", "hint", "give_up", "stop"]},
+            "game": {"type": "string", "enum": ["wordchain", "twenty", "chosung", "rps"], "description": "For start."},
+            "word": {"type": "string", "description": "For move: your word (끝말잇기)."},
+            "answer": {"type": "string", "description": "For secret: what they must guess."},
+            "category": {"type": "string", "description": "For secret in 스무고개: what kind of thing it is (animal, food …), in their language."},
+            "text": {"type": "string", "description": "For hint."},
+            "reason": {"type": "string", "description": "For reject: why, briefly."},
+        },
+        "required": ["action"],
+    },
+}
+
 # a mate's conversation always has it (HRH_MATE_SCREEN=1, app/mate/service.configure_engine), shared or not
 SEE_SCREEN = {
     "name": "see_screen",
@@ -475,6 +518,8 @@ def tools() -> list[dict]:
             + ([FEEL] if os.environ.get("HRH_MATE_STATE") == "1" else [])
             + ([CHANGE_OUTFIT] if os.environ.get("HRH_MATE_OUTFIT") == "1" else [])
             + ([DO_ACTIVITY] if os.environ.get("HRH_MATE_LIFE") == "1" else [])
+            + ([INTRODUCE_FRIEND] if os.environ.get("HRH_MATE_SOCIAL") == "1" else [])
+            + ([PLAY_GAME] if os.environ.get("HRH_MATE_GAME") == "1" else [])
             + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else [])
             + (ALARM_TOOLS if os.environ.get("HRH_MATE_ALARM") == "1" else [])
             + ([SEARCH_WEB] if os.environ.get("HRH_MATE_SEARCH") == "1" else []))

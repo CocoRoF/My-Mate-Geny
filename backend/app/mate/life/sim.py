@@ -24,6 +24,7 @@ from typing import Any
 
 from app.mate import affinity as A
 from app.mate.life import days as D
+from app.mate.life import sun
 
 NEEDS = ("hunger", "sleep", "affection", "fun", "stress")
 STATS = ("work", "gaming", "stamina", "cooking", "sense", "courage")
@@ -46,7 +47,14 @@ WORDS = ((0.75, "badly"), (0.5, "quite"), (0.3, "a little"))
 #: how each need feels, for her <context>
 BODY_WORDS = {"hunger": "hungry", "sleep": "tired", "affection": "wanting warmth and attention", "fun": "bored", "stress": "stressed"}
 SLOTS = (("morning", 5, 11), ("day", 11, 17), ("evening", 17, 20))
+#: …and with a place to go by (``REAL["where"]``), the light follows the sun there, so a summer evening stays light and a winter
+#: one is dark by six: night until dawn (half an hour before sunrise), morning until 11 (or two hours after a late sunrise), the
+#: day, then the evening light from 75 minutes before sunset until 40 minutes after it (minutes)
+DAWN, MORNING_UNTIL, MORNING_AT_LEAST, EVENING_FROM, DUSK = 30, 11 * 60, 120, 75, 40
 WOKEN_FOR = timedelta(minutes=20)
+#: out with a friend (social/outings.py): the place and activity every profile has for it (profile.check), for when her own day has
+#: nothing like what they do; who she is with is ``doc["with_mate"]``
+OUT, OUTING = "out", "outing"
 #: a message of theirs, on her needs
 HEARD_AFFECTION, HEARD_WARM, HEARD_FUN, HEARD_RUDE_STRESS = 0.05, 0.12, 0.015, 0.08
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -117,7 +125,7 @@ def new(profile: dict[str, Any], now: datetime, tz: Any, seed: str) -> dict[str,
     doc = {"seed": seed, "at": A._iso(now), "needs": dict(START_NEEDS), "stats": {s: float((start.get("stats") or {}).get(s) or 0) for s in STATS},
            "money": int(start.get("money") or 0), "place": start.get("place") or next(iter(profile["places"])), "activity": None,
            "since": A._iso(now), "until": None, "going": None, "paid": None, "timeline": [], "day": _her_day(now, tz),
-           "woken": None, "heard": None, "heard_at": None, "plan": None, "with_user": None, "coins": COINS_START, "coins_day": None, "coins_today": 0,
+           "woken": None, "heard": None, "heard_at": None, "plan": None, "with_user": None, "with_mate": None, "coins": COINS_START, "coins_day": None, "coins_today": 0,
            "kept": [], "notes": [], "week": {}, "days": [], "recent": [], "fired": {}, "flags": [], "last_event": None, "born": A._iso(now),
            "day_stats": None, "day_money": None, "tastes": {}, "received": {}, "favourites": [], "given": [], "moments": [],
            "occasions": {}, "birthdays": {"her": "", "user": ""}, "goals": [], "goals_done": [], "goals_due": []}
@@ -156,6 +164,7 @@ def normalized(doc: Any, profile: dict[str, Any]) -> dict[str, Any] | None:
     doc["goals_done"] = [d for d in doc["goals_done"] if isinstance(d, dict) and d.get("id") and A._t(d.get("at")) is not None][-GOALS_DONE_KEPT:]
     doc["goals_due"] = sorted(A._iso(A._t(d)) for d in doc["goals_due"] if A._t(d) is not None)[:GOALS_AT_ONCE]
     doc.setdefault("born", doc["at"])
+    doc["with_mate"] = doc["with_mate"] if isinstance(doc.get("with_mate"), dict) and doc["with_mate"].get("id") else None
     plan = doc.get("plan") if isinstance(doc.get("plan"), dict) else None
     doc["plan"] = plan if plan and A._t(plan.get("until")) is not None and plan.get("activity") in profile["activities"] else None
     if doc.get("place") not in profile["places"]:
@@ -174,9 +183,10 @@ def _clamp(v: float, need: str) -> float:
 
 
 #: the real world around her (life/world.py fills it in): {"skies": {date: {sky, temp, low, high, city}}, "holidays": {date, …},
-#: "holiday_names": {date: [{en, local}]}, "country": "KR"} — today's weather where the user is, the public holidays of their
-#: country and the country (the days of the year she knows there: life/days.py). Empty: a made-up sky, weekends off.
-REAL: dict[str, Any] = {"skies": {}, "holidays": set(), "holiday_names": {}, "country": ""}
+#: "holiday_names": {date: [{en, local}]}, "country": "KR", "where": (lat, lon)} — today's weather where the user is, the public
+#: holidays of their country, the country (the days of the year she knows there: life/days.py) and where on earth they are (the
+#: light of the day: ``slot``). Empty: a made-up sky, weekends off, the light by the clock.
+REAL: dict[str, Any] = {"skies": {}, "holidays": set(), "holiday_names": {}, "country": "", "where": None}
 
 
 def off_day(local: datetime) -> bool:
@@ -874,7 +884,7 @@ def _switch(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, 
         if doc.get("with_user") and heard_at is not None and t - heard_at < STILL_TALKING:
             plan["until"] = doc["until"] = A._iso(t + STAY_ON)  # (they are still talking: she doesn't get up and go)
             return
-        doc["plan"], doc["with_user"] = None, None
+        doc["plan"], doc["with_user"], doc["with_mate"] = None, None, None
         _next(doc, profile, t, tz, out)
         return
     due = _due(doc, profile, t, tz)
@@ -944,6 +954,7 @@ def decide(doc: dict[str, Any], profile: dict[str, Any], key: Any, now: datetime
         length = (int(low) + int(high)) // 2
     until = arrive + timedelta(minutes=length)
     doc["with_user"] = A._iso(now) if with_user else None
+    doc["with_mate"] = None  # (her own idea, or theirs: whoever she was out with, she has left)
     doc["plan"] = {"activity": key, "until": A._iso(until), "why": " ".join(str(why or "").split())[:120], "at": A._iso(now)}
     if doc.get("activity") == key:
         doc["until"] = A._iso(until)
@@ -951,6 +962,51 @@ def decide(doc: dict[str, Any], profile: dict[str, Any], key: Any, now: datetime
     out: list[dict[str, Any]] = []
     _begin(doc, profile, key, until, None, now, out)
     return {"code": "ok", "activity": key, "place": act["place"], "minutes": trip, "happened": out}
+
+
+def meet(doc: dict[str, Any], profile: dict[str, Any], key: str, until: datetime, now: datetime, tz: Any, *,
+         friend: dict[str, Any]) -> dict[str, Any]:
+    """She goes out with a friend, as they planned (social/outings.py): like ``decide``, but the time is theirs, and her day knows
+    who she is with (``with_mate``: id, name, what they do, and, when she has nothing like it herself, the place's picture and
+    names from the friend's day) until it ends. -> {code: ok | already | unknown}."""
+    act = profile["activities"].get(key)
+    if act is None or key == "commute":
+        return {"code": "unknown"}
+    doc["with_user"] = None
+    doc["with_mate"] = {k: friend[k] for k in ("id", "name", "outing", "kind", "names", "place_names", "art", "body") if k in friend}
+    doc["plan"] = {"activity": key, "until": A._iso(until), "why": f"out with {friend.get('name') or 'a friend'}", "at": A._iso(now),
+                   "mate": friend.get("id")}
+    if doc.get("activity") == key:
+        doc["until"] = A._iso(until)
+        return {"code": "already", "activity": key}
+    out: list[dict[str, Any]] = []
+    _begin(doc, profile, key, until, None, now, out)
+    return {"code": "ok", "activity": key, "happened": out}
+
+
+def ease(doc: dict[str, Any], needs: dict[str, float]) -> None:
+    """Something did her good (or not): her needs, within their bounds."""
+    for n, v in needs.items():
+        if n in doc["needs"]:
+            doc["needs"][n] = _clamp(doc["needs"][n] + float(v), n)
+
+
+def free_between(doc: dict[str, Any], profile: dict[str, Any], start: datetime, end: datetime, tz: Any) -> bool:
+    """Whether she has nothing she must do from ``start`` to ``end`` (and time to get there and back): no obligation of her day
+    then, and not her hours for sleep (social/outings.py, to plan with a friend)."""
+    a, b = start.astimezone(tz), end.astimezone(tz)
+    lead = timedelta(minutes=45)
+    days = {x.date(): x for x in (a, b, b + lead)}  # (a bedtime just after midnight belongs to the next day)
+    blocks = [block for x in days.values() for block in _blocks(doc, profile, x)]
+    for block in blocks:
+        if block["start"] < b + lead and block["end"] > a - lead:
+            return False
+    sleep = (profile["activities"].get("sleep") or {}).get("hours")
+    if sleep and not any(x["activity"] == "sleep" for x in profile.get("routine") or []):  # (no bedtime of her own: when she may sleep)
+        for t in (a, b - timedelta(minutes=1)):
+            if _in_window(list(sleep), t.hour * 60 + t.minute):
+                return False
+    return True
 
 
 # ---- what comes from outside ----
@@ -1056,7 +1112,24 @@ def catalog(profile: dict[str, Any]) -> str:
 # ---- what can be seen of it ----
 
 def slot(local: datetime) -> str:
-    return next((name for name, a, b in SLOTS if a <= local.hour < b), "night")
+    """morning | day | evening | night: the light, which picks her background. By the sun where the user is when that is known
+    (``REAL["where"]``), else by the clock (``SLOTS``)."""
+    where = REAL.get("where")
+    found = sun.minutes(local, where[0], where[1]) if where else None
+    if found is None:
+        return next((name for name, a, b in SLOTS if a <= local.hour < b), "night")
+    rise, sets = found
+    m = local.hour * 60 + local.minute
+    if m < rise - DAWN or m >= sets + DUSK:
+        return "night"
+    if m < min(max(MORNING_UNTIL, rise + MORNING_AT_LEAST), sets - EVENING_FROM):
+        return "morning"
+    return "day" if m < sets - EVENING_FROM else "evening"
+
+
+def season(local: datetime) -> str:
+    where = REAL.get("where")
+    return sun.season(local, where[0] if where else None)
 
 
 def word(v: float) -> str:
@@ -1171,7 +1244,7 @@ def body(doc: dict[str, Any]) -> list[list[str]]:
 def signature(doc: dict[str, Any]) -> list[Any]:
     """Without the fine print: when this changes she is told again, and every window hears (a new day of hers: what the day is;
     a gift she gave, a new favourite; a goal of hers begun, a step further, set back, reached or let go of)."""
-    return [doc.get("place"), doc.get("activity"), body(doc), bool(doc.get("with_user")), doc.get("day"),
+    return [doc.get("place"), doc.get("activity"), body(doc), bool(doc.get("with_user")), (doc.get("with_mate") or {}).get("id"), doc.get("day"),
             (doc.get("given") or [{}])[-1].get("at"), (doc.get("favourites") or [{}])[-1].get("at"),
             [[g.get("id"), g.get("step"), g.get("setback")] for g in doc.get("goals") or []], (doc.get("goals_done") or [{}])[-1].get("at")]
 
@@ -1326,6 +1399,9 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
         minutes = int((now - since).total_seconds() // 60)
         doing = "in bed, up for now because of their messages" if act.get("body") == "sleep" and not asleep(doc, profile, now) else act.get("doing") or "taking it easy"
         where = f"at {place.get('about') or doc.get('place')}, {doing}"
+        friend = doc.get("with_mate") if doc.get("plan") else None
+        if friend and doc.get("place") == OUT:  # (somewhere of the friend's)
+            where = f"at {((friend.get('place_names') or {}).get('en') or 'a place').lower()}, {((friend.get('names') or {}).get('en') or 'out').lower()}"
         if minutes >= 10:
             where += f" (for {f'about {round(minutes / 60)} hours' if minutes >= 90 else f'{minutes} minutes'} now)"
     parts = [f"Your day: you are {where}."]
@@ -1333,6 +1409,11 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
         parts.append(job(profile))
     if doc.get("with_user"):
         parts.append("They are here with you in person: this is not by phone, you can see each other.")
+    friend = doc.get("with_mate") if doc.get("plan") else None
+    if friend:
+        what = (friend.get("names") or {}).get("en") or "out"
+        parts.append(f"You are with {friend.get('name') or 'a friend'} right now ({what.lower()}), as you two planned: their messages "
+                     "reach you on your phone while you are out together.")
     if woke:
         parts.append("Their message just woke you up: you are groggy, you were asleep a moment ago.")
     elif asleep(doc, profile, now):
@@ -1385,19 +1466,25 @@ def summary(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any
     local = now.astimezone(tz)
     real = REAL["skies"].get(local.strftime("%Y-%m-%d")) or {}
     day = next(iter(observances(local)), None)
+    friend = doc.get("with_mate") if doc.get("plan") else None
+    away = friend if friend and doc.get("place") == OUT else None  # (at the friend's place: the friend's picture and names)
     held = holiday_name(local) if off_day(local) and local.weekday() < 5 else {}
     observance = ({"id": day["id"], "name": dict(day["names"]), "tone": day["tone"]} if day else
                   {"id": "holiday", "name": {"en": held.get("en") or held.get("local"), "ko": held.get("local") or held.get("en")}, "tone": "plain"}
                   if held.get("en") or held.get("local") else None)
     whose = birthdays(doc, local)
     fresh = next((g for g in reversed(doc.get("given") or []) if now - (A._t(g["at"]) or now) <= GIFT_FRESH), None)
-    return {"enabled": True, "art": art(profile, doc["place"], slot(local)), "weather": weather(doc, local),
+    return {"enabled": True, "art": (away.get("art") or {}).get(slot(local), "") if away else art(profile, doc["place"], slot(local)),
+            "weather": weather(doc, local),
             "observance": observance, "birthday": ("both" if len(whose) == 2 else whose[0]) if whose else None,
             "gift": {"id": fresh["id"], "name": dict(fresh.get("name") or {}), "at": fresh["at"]} if fresh else None,
             "temp": real.get("temp"), "city": real.get("city") or "", "holiday": off_day(local) and local.weekday() < 5,
-            "outdoor": bool((profile["places"].get(doc["place"]) or {}).get("outdoor")), "place": doc["place"], "place_name": _names(profile, "places", doc["place"]), "activity": doc.get("activity"),
-            "activity_name": _names(profile, "activities", doc.get("activity")), "body": act.get("body") or "", "since": doc.get("since"),
-            "until": doc.get("until"), "slot": slot(local), "asleep": asleep(doc, profile, now), "with_user": bool(doc.get("with_user")),
+            "outdoor": bool(away.get("outdoor")) if away else bool((profile["places"].get(doc["place"]) or {}).get("outdoor")), "place": doc["place"],
+            "place_name": dict(away.get("place_names") or {}) if away else _names(profile, "places", doc["place"]), "activity": doc.get("activity"),
+            "activity_name": dict(away.get("names") or {}) if away else _names(profile, "activities", doc.get("activity")),
+            "body": (away.get("body") if away else act.get("body")) or "", "since": doc.get("since"),
+            "with_mate": {"id": friend["id"], "name": friend.get("name") or "", "kind": friend.get("kind") or ""} if friend else None,
+            "until": doc.get("until"), "slot": slot(local), "season": season(local), "asleep": asleep(doc, profile, now), "with_user": bool(doc.get("with_user")),
             "needs": {n: round(doc["needs"][n], 3) for n in NEEDS}}
 
 
@@ -1420,7 +1507,7 @@ def view(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any) -
                       "keep": bool(x.get("keep")), "have": x["id"] in (doc.get("kept") or [])} for x in profile.get("shop") or []],
             "places": [{"key": k, "name": dict(p.get("names") or {}), "open": place_open(p, local), "hours": p.get("open"), "here": k == doc["place"],
                         "minutes": travel_minutes(profile, doc["place"], k), "art": art(profile, k, slot(local)), "x": p.get("x"), "y": p.get("y")}
-                       for k, p in profile["places"].items()],
+                       for k, p in profile["places"].items() if not p.get("hidden")],
             "today": [{**e, "name": _names(profile, "activities", e.get("activity")), "place_name": _names(profile, "places", e.get("place"))}
                       for e in doc["timeline"] if (A._t(e.get("to")) or now).astimezone(tz) >= start],
             "job": dict((profile.get("job") or {}).get("names") or {}),

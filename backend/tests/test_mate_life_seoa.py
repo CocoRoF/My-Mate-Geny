@@ -38,8 +38,10 @@ def at(rows, day, hour, minute=0):
 
 
 def test_her_world_is_sound(world):
-    assert "rest" in world["activities"] and world["routine"] and len(world["places"]) == 10
+    assert "rest" in world["activities"] and world["routine"] and len([p for p in world["places"].values() if not p.get("hidden")]) == 10
     for key, place in world["places"].items():
+        if place.get("hidden"):
+            continue  # (out with a friend: social/outings.py)
         assert place["names"]["ko"] and place["names"]["en"] and place["about"], key
         assert key == "street" or (0 <= place["x"] <= 100 and 0 <= place["y"] <= 100), key
     for act in world["activities"].values():

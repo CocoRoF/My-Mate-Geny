@@ -63,6 +63,10 @@ interface MateState {
   graphRev: Record<string, number>;
   /** per mate: bumped when its relationship changed elsewhere (the Relationship tab refetches) */
   relationRev: Record<string, number>;
+  /** per mate: her friends among the user's mates changed (the status window's 인맥 tab refetches) */
+  socialRev: Record<string, number>;
+  /** per mate: the game with her moved (the 놀이 window refetches) */
+  gameRev: Record<string, number>;
   /** per mate: bumped when her own conversation-style changes changed (chips and the style tab's history refetch) */
   styleRev: Record<string, number>;
   bumpStyle: (mateId: string) => void;
@@ -194,6 +198,8 @@ export const useMateStore = create<MateState>((set, get) => ({
   memoryRev: {},
   graphRev: {},
   relationRev: {},
+  socialRev: {},
+  gameRev: {},
   styleRev: {},
   bumpStyle: (mateId) => set((s) => ({ styleRev: { ...s.styleRev, [mateId]: (s.styleRev[mateId] ?? 0) + 1 } })),
   mates: [],
@@ -311,6 +317,11 @@ export const useMateStore = create<MateState>((set, get) => ({
     if ((reason === "memory" || reason === "graph" || reason === "study") && mateId) {
       set((s) => ({ graphRev: { ...s.graphRev, [mateId]: (s.graphRev[mateId] ?? 0) + 1 } }));
       if (reason !== "memory") return; // (nothing else about the mate changed: no full reload)
+    }
+    if ((reason === "social" || reason === "game") && mateId) {
+      const k = reason === "social" ? "socialRev" : "gameRev";
+      set((s) => ({ [k]: { ...s[k], [mateId]: (s[k][mateId] ?? 0) + 1 } }) as Partial<MateState>);
+      return; // (nothing else about the mate changed: no full reload)
     }
     if (reason === "relation" && mateId) {
       set((s) => ({ relationRev: { ...s.relationRev, [mateId]: (s.relationRev[mateId] ?? 0) + 1 } }));

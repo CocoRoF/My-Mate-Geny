@@ -246,7 +246,7 @@ def test_the_view_has_what_the_panel_needs(world):
     now += timedelta(hours=2)
     v = sim.view(doc, world, now, KST)
     assert v["enabled"] and v["place_name"]["ko"] and v["activity_name"]["ko"] and v["slot"] == "morning"
-    assert {p["key"] for p in v["places"]} == set(world["places"])
+    assert {p["key"] for p in v["places"]} == {k for k, p in world["places"].items() if not p.get("hidden")}
     assert any(p["here"] for p in v["places"])
     assert v["next"]["activity"] and v["today"]
     assert not next(p for p in v["places"] if p["key"] == "cafe")["open"]  # (08:00)
