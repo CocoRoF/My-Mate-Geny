@@ -188,6 +188,36 @@ const desktopVersion = (): string | null => {
 };
 
 /** the /ws/sessions `client` message: who this window is (`active`: it was just focused / used) */
+// ── where the user is: their last real input (a touch, a key, a click, a scroll) — not a window merely having the
+// focus (a phone left on the desk with the app open isn't where they are). The desktop app also knows their last
+// input anywhere on the computer (hrhNative.idleSeconds: the OS's idle time). The server picks the device in use from
+// it for her voice and her calls (app/mate/capture.py in_use).
+let lastInputAt = 0;
+const noteInput = () => {
+  lastInputAt = Date.now();
+};
+if (typeof window !== "undefined") {
+  for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) window.addEventListener(ev, noteInput, { capture: true, passive: true });
+  const system = window.hrhNative?.idleSeconds;
+  if (typeof system === "function") {
+    const poll = () =>
+      void system().then(
+        (s) => {
+          if (typeof s === "number" && s >= 0) lastInputAt = Math.max(lastInputAt, Date.now() - s * 1000);
+        },
+        () => {},
+      );
+    poll();
+    setInterval(poll, 5000);
+  }
+}
+/** seconds since the user last did something here (null: nothing yet since this page loaded) */
+export function idleSeconds(): number | null {
+  return lastInputAt ? Math.max(0, Math.round((Date.now() - lastInputAt) / 1000)) : null;
+}
+/** the desktop app knows the user's input anywhere on the computer: its windows say so now and then, focused or not */
+export const knowsSystemInput = (): boolean => typeof window !== "undefined" && typeof window.hrhNative?.idleSeconds === "function";
+
 export function clientHello(active: boolean): Record<string, unknown> {
   return {
     ...deviceEventHello(),
@@ -207,6 +237,8 @@ export function clientHello(active: boolean): Record<string, unknown> {
     calls: currentSurface() === "console" ? CALL_CLIENT : 0,
     visible: typeof document === "undefined" || document.visibilityState === "visible",
     active,
+    // (when the user last did something here: seconds; left out until they have)
+    ...(idleSeconds() !== null ? { idle: idleSeconds() } : {}),
   };
 }
 

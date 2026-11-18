@@ -11,6 +11,9 @@ import { useMateStore } from "../../../stores/mateStore";
 import { confirmDialog } from "../../ui/ConfirmDialog";
 import Icon from "../../ui/Icon";
 
+/** 매우 얕게 · 얕게 · 보통 · 깊게 · 매우 깊게 (backend app/mate/study.py DEPTHS) */
+const DEPTHS: Study["depth"][] = ["very_quick", "quick", "normal", "deep", "very_deep"];
+
 const STATE_TONE: Record<Study["state"], string> = {
   queued: "bg-surface-3 text-content-dim",
   running: "bg-accent-soft text-accent",
@@ -52,7 +55,7 @@ export default function StudyPanel({ mate }: { mate: Mate }) {
     setBusy(true);
     setErr("");
     try {
-      const st = await requestStudy(mate.id, mode === "url" ? { kind: "url", url: url.trim(), goal: goal.trim() } : { kind: "topic", topic: topic.trim(), goal: goal.trim(), depth });
+      const st = await requestStudy(mate.id, mode === "url" ? { kind: "url", url: url.trim(), goal: goal.trim(), depth } : { kind: "topic", topic: topic.trim(), goal: goal.trim(), depth });
       setTopic("");
       setUrl("");
       setGoal("");
@@ -91,19 +94,18 @@ export default function StudyPanel({ mate }: { mate: Mate }) {
           <input className="field text-[13px]" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" inputMode="url" data-testid="study-url" />
         )}
         <input className="field text-[12.5px]" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={t("memgraph.goalPh")} data-testid="study-goal" />
-        {mode === "topic" && (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-content-dim">
-            {t("memgraph.depth")}
-            <div className="flex overflow-hidden rounded-lg border border-border" role="group">
-              {(["quick", "normal", "deep"] as const).map((d) => (
-                <button key={d} type="button" className={`px-2.5 py-1 ${depth === d ? "bg-accent text-white" : "hover:bg-surface-3"}`} aria-pressed={depth === d} onClick={() => setDepth(d)} data-testid={`study-depth-${d}`}>
-                  {t(`memgraph.depth_${d}` as MsgKey)}
-                </button>
-              ))}
-            </div>
-            <span className="text-[11.5px] text-content-faint" data-testid="study-depth-hint">{t(`memgraph.depthHint_${depth}` as MsgKey)}</span>
+        {/* how deep: a topic — how many pages, how long; a page — how far into the site it leads to */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-content-dim">
+          {t("memgraph.depth")}
+          <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label={t("memgraph.depth")}>
+            {DEPTHS.map((d) => (
+              <button key={d} type="button" className={`whitespace-nowrap px-2.5 py-1 ${depth === d ? "bg-accent text-white" : "hover:bg-surface-3"}`} aria-pressed={depth === d} onClick={() => setDepth(d)} data-testid={`study-depth-${d}`}>
+                {t(`memgraph.depth_${d}` as MsgKey)}
+              </button>
+            ))}
           </div>
-        )}
+          <span className="text-[11.5px] text-content-faint" data-testid="study-depth-hint">{t(`memgraph.${mode === "url" ? "depthUrl" : "depthHint"}_${depth}` as MsgKey)}</span>
+        </div>
         <div className="flex items-center justify-end gap-2">
           <span className="min-w-0 flex-1 text-[11px] text-content-faint">{t("memgraph.studyCost")}</span>
           <button className="btn-primary !py-1.5 text-[12.5px]" disabled={!can} data-testid="study-submit">
@@ -166,7 +168,7 @@ function StudyCard({ mateId, study, open, onToggle, onChanged }: { mateId: strin
               {live && study.state === "running" && <Icon name="spinner" size={10} spin />} {t(`memgraph.state_${study.state}` as MsgKey)}
             </span>
             <span>{who}</span>
-            {study.kind !== "url" && <span>{t(`memgraph.depth_${study.depth}` as MsgKey)}</span>}
+            {study.kind !== "curiosity" && DEPTHS.includes(study.depth) && <span>{t(`memgraph.depth_${study.depth}` as MsgKey)}</span>}
             <span>{t("memgraph.studyPages", { n: study.pages })} · {t("memgraph.facts", { n: study.facts })}</span>
             <span>{relTime(study.finished_at || study.started_at || study.created_at)}</span>
           </span>

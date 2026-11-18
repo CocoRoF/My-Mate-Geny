@@ -762,6 +762,8 @@ ipcMain.handle("capture:sharing:publish", (e,v) => fromServerPage(e) ? captureSh
 ipcMain.handle("capture:sharing:stop", e => {if(fromServerPage(e))captureSharing.stop();});
 ipcMain.handle("capture:sharing:mode", (e,m,i) => {if(fromServerPage(e))captureSharing.mode(m,i);});
 ipcMain.handle("device:get", e => fromServerPage(e) ? devicePreferences.get() : null);
+// the user's last input on this computer, anywhere (not only our windows): which device they are on
+ipcMain.handle("hrh:idle", e => { if (!fromServerPage(e)) return null; try { return require("electron").powerMonitor.getSystemIdleTime(); } catch { return null; } });
 ipcMain.handle("device:patch", (e,p) => {
   if(!fromServerPage(e))return null;
   deviceEditOrigin=new URL(e.senderFrame.url).origin;

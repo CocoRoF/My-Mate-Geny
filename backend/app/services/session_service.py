@@ -945,6 +945,19 @@ class SessionService:
     def _note_client(self, sid: str, client_msg_id: Any) -> None:
         if isinstance(client_msg_id, str) and client_msg_id:
             self._last_client[sid] = client_msg_id[:200]
+            broker = getattr(self.screen, "broker", None)
+            dev = self.last_client_device(sid)
+            if broker is not None and dev:
+                broker.note_used(dev)  # (they typed it there: that is where they are, now)
+
+    def user_device(self, sid: str) -> str | None:
+        """Where the user is now — the device of theirs they did something on last (a touch, a key, a click; on a
+        computer with the desktop app, anywhere on it), among those with a window on screen — else the device the
+        latest typed message came from. Her voice for a turn goes there (``voice_device``)."""
+        broker = getattr(self.screen, "broker", None)
+        # (used lately; else the one used last however long ago — the app running, she is read aloud where they were)
+        dev = (broker.in_use() or broker.in_use(within=float("inf"))) if broker is not None else None
+        return dev or self.last_client_device(sid)
 
     def last_client_device(self, sid: str) -> str | None:
         """The device (``…~<device>`` of its client_msg_id) the latest typed message came from; None: unknown."""
@@ -1456,9 +1469,9 @@ class SessionService:
                     if ev.type == "session.start":
                         if attempt == 0:
                             if session.get("kind") == "mate":
-                                # Autonomous turns target the device that enabled them, not an
-                                # unrelated device's earlier question. Persist for late joiners too.
-                                ev.data = {**ev.data, "voice_device": self.last_client_device(sid)}
+                                # Her voice goes where the user is now (the device they did something on last), not
+                                # where an earlier message came from. Persist for late joiners too.
+                                ev.data = {**ev.data, "voice_device": self.user_device(sid)}
                             await self._record_event(sid, ev, st)
                             yield ev
                         # (a retry continues the turn: it already has its start event)

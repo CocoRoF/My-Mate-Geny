@@ -250,20 +250,23 @@ NETWORK_TOOLS = [
         "where it came from (a page and its quote, or a conversation), what it connects to, your memories about it."),
      "inputSchema": {"type": "object", "properties": {"node": {"type": "string"}}, "required": ["node"]}},
     {"name": "learn_url", "description": (
-        "Read a web page the user gives you and file what is worth knowing into your memory network. It runs in the "
-        "background (a minute or a few); the result comes back to you as a <study_result>. Tell the user you'll read "
-        "it and end your turn."),
+        "Read a web page the user gives you and file what is worth knowing into your memory network — with `depth` how "
+        "far: very_quick (just the page) … very_deep (the site explored widely, dozens of its pages; the user asked to "
+        "learn all of it). It runs in the background; the result comes back to you as a <study_result>. Tell the user "
+        "you'll read it and end your turn."),
      "inputSchema": {"type": "object", "properties": {
-         "url": {"type": "string"}, "goal": {"type": "string", "description": "Optional: what the user wants from it."}},
+         "url": {"type": "string"}, "goal": {"type": "string", "description": "Optional: what the user wants from it."},
+         "depth": {"type": "string", "enum": ["very_quick", "quick", "normal", "deep", "very_deep"]}},
          "required": ["url"]}},
     {"name": "study_topic", "description": (
         "Study a topic on the web on your own (search, read, take notes into your memory network) — when the user "
         "asks you to learn about something (\"제주도 여행지 공부해 놔\"), or something they care about that you'd "
-        "need to know. Runs in the background (quick ≈ 5–10 min, normal ≈ 15–20, deep ≈ 30–40); the result comes "
-        "back as a <study_result>. Tell the user and end your turn."),
+        "need to know. Runs in the background — depth as the user asks for it: very_quick ≈ 5 min, quick ≈ 10, normal "
+        "≈ 20, deep ≈ 40, very_deep ≈ 90 (dozens of pages); the result comes back as a <study_result>. Tell the user "
+        "and end your turn."),
      "inputSchema": {"type": "object", "properties": {
          "topic": {"type": "string"}, "goal": {"type": "string", "description": "Optional: what to focus on."},
-         "depth": {"type": "string", "enum": ["quick", "normal", "deep"]}}, "required": ["topic"]}},
+         "depth": {"type": "string", "enum": ["very_quick", "quick", "normal", "deep", "very_deep"]}}, "required": ["topic"]}},
     {"name": "list_studies", "description": "Your recent and running studies: topic, state, pages read, facts filed, summary.",
      "inputSchema": {"type": "object", "properties": {}}},
 ]

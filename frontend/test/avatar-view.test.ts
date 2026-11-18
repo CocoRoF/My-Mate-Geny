@@ -9,8 +9,12 @@ import {
   fromKept,
   isHome,
   MARGIN,
+  KEEP_SHAPES,
+  pickKept,
   readKept,
+  readKepts,
   REFIT_SHAPE,
+  storeKept,
   shapeMoved,
   SLIVER,
   toKept,
@@ -263,6 +267,55 @@ test("what is kept is read back; an older box view as one; anything else is no v
     assert.equal(readKept("d"), null);
     assert.equal(readKept("missing"), null);
     assert.equal(readKept(null), null);
+  } finally {
+    if (had) Object.defineProperty(globalThis, "localStorage", had);
+    else delete g.localStorage;
+  }
+});
+
+
+test("one view per shape of the box: each layout keeps its own, setting one leaves the others", () => {
+  const wide = { z: 1.8, ox: 0.1, oy: -0.2, shape: 1.6 }; // (the stage beside the conversation)
+  const tall = { z: 1.2, ox: 0, oy: 0.05, shape: 0.6 }; // (on top of it, a window made narrow)
+  let views = storeKept([], 1.6, wide);
+  views = storeKept(views, 0.6, tall);
+  assert.deepEqual(pickKept(views, 1.55, true), wide);
+  assert.deepEqual(pickKept(views, 0.62, true), tall);
+  // (a shape none was made in: fitted, on the console's stage; the closest elsewhere — the desktop overlay)
+  assert.equal(pickKept(views, 1.05, true), null);
+  assert.deepEqual(pickKept(views, 1.05, false), wide); // (1.05 is nearer 1.6 than 0.6, as ratios go)
+  // setting her again in the wide layout changes only that one
+  const wide2 = { ...wide, z: 2.2 };
+  views = storeKept(views, 1.58, wide2);
+  assert.deepEqual(pickKept(views, 1.6, true), wide2);
+  assert.deepEqual(pickKept(views, 0.6, true), tall);
+  // a reset (fitted) in the tall layout forgets only that one
+  views = storeKept(views, 0.6, null);
+  assert.equal(pickKept(views, 0.6, true), null);
+  assert.deepEqual(pickKept(views, 1.6, true), wide2);
+  // at most KEEP_SHAPES, the newest
+  let many: ReturnType<typeof storeKept> = [];
+  for (let i = 0; i < KEEP_SHAPES + 3; i++) many = storeKept(many, 0.4 * 1.5 ** i, { z: 1 + i / 10, ox: 0, oy: 0, shape: 0.4 * 1.5 ** i });
+  assert.equal(many.length, KEEP_SHAPES);
+  assert.equal(many[many.length - 1].z, 1 + (KEEP_SHAPES + 2) / 10);
+});
+
+test("the views kept come back, and a single one from before as one of them", () => {
+  const store = new Map<string, string>();
+  const g = globalThis as { localStorage?: unknown };
+  const had = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) },
+  });
+  try {
+    store.set("set", JSON.stringify({ views: [{ z: 1.5, ox: 0, oy: 0, shape: 1.6 }, { z: "x" }, { z: 1.1, ox: 0.1, oy: 0, shape: 0.6 }] }));
+    assert.deepEqual(readKepts("set").views.map((v) => v.shape), [1.6, 0.6]);
+    store.set("old", JSON.stringify({ z: 1.5, ox: -0.2, oy: 0.1, shape: 0.68 }));
+    assert.deepEqual(readKepts("old"), { views: [{ z: 1.5, ox: -0.2, oy: 0.1, shape: 0.68 }], box: null });
+    store.set("box", JSON.stringify({ x: -0.19, y: -0.11, z: 1.39 }));
+    assert.deepEqual(readKepts("box"), { views: [], box: { x: -0.19, y: -0.11, z: 1.39 } });
+    assert.deepEqual(readKepts(null), { views: [], box: null });
   } finally {
     if (had) Object.defineProperty(globalThis, "localStorage", had);
     else delete g.localStorage;
