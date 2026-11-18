@@ -157,7 +157,7 @@ Each character's own numbers, from her persona (`TEMPERAMENTS`):
   makes her pull back (pestering angers her ×1.4, silence less); `secure` (한채린): as usual.
 
 **Every mate has one.** Any mate's temperament can be read from her persona by a model (`derive_temperament`, POST
-`/api/mates/{id}/gss/temperament/derive`), kept in `prefs.temperament`, edited in the State tab, and merged over a built-in's own.
+`/api/mates/{id}/gss/temperament/derive`), kept in `prefs.temperament`, edited in Mate settings → 기질, and merged over a built-in's own.
 
 ## 4. Her body and her day
 
@@ -351,20 +351,35 @@ than once lately is told back to her before her next reply: "You have already sa
 something new, in other words: …". Her own catchphrases (her speech habits) and replies of nothing but "..." are hers to say again:
 only a third time is too many.
 
-## 11. The journal, the State Inspector, the simulator, the judge
+## 11. The journal, the State Inspector, and developer tools
 
 - **The journal** (`mate_gss_events`, [`gss/journal.py`](../backend/app/mate/gss/journal.py)): every reading, promise, episode,
   making up, temperament read, judgement, her replies and the exact `<context>` she was told each turn. 3000 entries and 90 days
   per mate (every mate's pruned hourly); wiped with her memory and when she is deleted.
-- **The State Inspector** (`GET /api/mates/{id}/gss`): all of her state now — feelings, the grudge, the bonds, promises, what she
-  repeats, her temperament — and the journal; the State tab in Mate settings shows it.
-- **The simulator** (`POST /api/mates/{id}/gss/simulate`, [`gss/simulate.py`](../backend/app/mate/gss/simulate.py)): a script of
-  messages, her replies and events through the same engine on fresh copies, with a temperament or a starting affinity to try;
-  presets: `threat_sorry_love`, `pout_and_sweet`, `repeat_offender`, `left_unanswered`.
-- **The judge** (`POST /api/mates/{id}/gss/evaluate`, [`gss/evaluate.py`](../backend/app/mate/gss/evaluate.py)): a model scores
-  her last exchanges on persona, variety, hurt and apology, proportion (not furious at play, not cold over venting, not
-  re-litigating, not clingy), address, her own will, the screen and the limits, with the lines that
-  broke them; also `python -m app.mate.gss.evaluate <mate id> [last]` from a shell.
+- **The State Inspector** (`GET /api/mates/{id}/gss`): her state now, and the journal. It returns the feelings, the grudge, the
+  bonds, promises and her temperament.
+  - It never returns what she is told: no `<context>`, no `line`, and none of the journal's `told` or `eval` entries
+    (`GSS.SHOWN_LAYERS`).
+  - The user sees it only where it belongs:
+    - the ♥ status window (메이트 상태): 지금 has every feeling and what is still with her; 관계 has the bonds and the
+      promises; 기록 has the journal;
+    - Mate settings → 기질: her temperament, the one setting here.
+- **Developer tools**, not the user's, so there is no route or screen for them:
+  - The simulator ([`gss/simulate.py`](../backend/app/mate/gss/simulate.py)) runs a script of messages, her replies and
+    events through the same engine on fresh copies. It can try a temperament or a starting affinity. Its presets are
+    `threat_sorry_love`, `pout_and_sweet`, `repeat_offender` and `left_unanswered`. Tests use it.
+  - The judge ([`gss/evaluate.py`](../backend/app/mate/gss/evaluate.py)): `python -m app.mate.gss.evaluate <mate id> [last]`
+    from a shell. A model scores her last exchanges on:
+    - persona;
+    - variety;
+    - hurt and apology;
+    - proportion: not furious at play, not cold over venting, not re-litigating, not clingy;
+    - address;
+    - her own will;
+    - the screen;
+    - the limits.
+
+    It quotes the lines that broke them.
 
 ## Where to look
 
@@ -387,11 +402,11 @@ Where the Geny-State-System was thin, what was done about it (2026-11-17), and w
 |---|---|---|---|
 | 1 | Appraisal by a model | §7: every message read by Claude Code kept warm (else Codex), waited for before her turn, counted when it comes; no word guesses live | a labelled set of real conversations to measure it; the reading of her own replies |
 | 2 | No repeating herself | §10 | rewriting a draft that repeats (today she is only told) |
-| 3 | Inspector, scenarios, judge | §11: the journal, the State tab, the simulator with presets, the judge on demand | running the judge nightly on its own; scenario curves pinned in tests for every preset |
+| 3 | Inspector, scenarios, judge | §11: the journal (the ♥ status window), the simulator with presets and the judge as developer tools | running the judge nightly on its own; scenario curves pinned in tests for every preset |
 | 4 | More than one number | §5: trust, romance, respect | the stage following closeness and trust together (today trust only tempers what she is told) |
 | 5 | Remembered episodes | §9 | patterns by kind ("when you're tired"), not only by count |
 | 6 | Promises both ways | §8 | her promises kept or not, judged from her later replies |
-| 7 | A temperament for every mate | §3: read from the persona, conflict and attachment styles, editable with the simulator | — |
+| 7 | A temperament for every mate | §3: read from the persona, conflict and attachment styles, editable in Mate settings → 기질 | — |
 | 8 | Repair both ways | §2: space, making up, owning her own snaps, broken promises | gestures (a gift, effort over days) counted as part of repair |
 | 9 | Beyond her words | §6 "Beyond her words": voice, face strength, reply timing | quick bursts when excited (the chat splits by line, not sentence) |
 | 10 | Goals of her own | [mate-life.md](mate-life.md) "Her goals" | — |

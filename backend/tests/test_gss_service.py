@@ -60,18 +60,19 @@ def test_a_hurt_that_stung_is_remembered_and_isnt_a_new_memory_for_the_relations
     assert any(e["layer"] == "said" for e in mates.gss.journal.recent(m["id"]))
 
 
-def test_the_inspector_and_the_simulator_over_http():
+def test_the_inspector_and_the_temperament_over_http():
     with TestClient(app) as c:
         assert c.post("/api/auth/login", json={"username": "admin", "password": "test-pass"}).status_code == 200
         m = c.post("/api/mates", json={"name": "Gss"}).json()
         got = c.get(f"/api/mates/{m['id']}/gss").json()
-        assert set(got) >= {"mate", "state", "temperament", "bonds", "promises", "repeats", "journal"}
+        assert set(got) >= {"mate", "state", "temperament", "bonds", "promises", "journal"}
         assert set(got["bonds"]) >= {"trust", "romance", "respect", "affinity", "words"}
-        sim = c.post(f"/api/mates/{m['id']}/gss/simulate", json={"preset": "threat_sorry_love"}).json()
-        assert sim["points"][0]["grudge"] > 0 and "threat_sorry_love" in sim["presets"]
-        mine = c.post(f"/api/mates/{m['id']}/gss/simulate",
-                      json={"steps": [{"after_min": 0, "say": "멍청아"}], "then_hours": [1], "temperament": {"holds": 2.0}}).json()
-        assert len(mine["points"]) == 2
+        # (never what she is told — the prompt — nor a judge's report: not the user's to see)
+        assert "line" not in got["state"] and "repeats" not in got
+        assert not any(e["layer"] in ("told", "eval") for e in got["journal"])
+        # (the simulator and the judge are developer tools now: no routes)
+        assert c.post(f"/api/mates/{m['id']}/gss/simulate", json={"preset": "threat_sorry_love"}).status_code in (404, 405)
+        assert c.post(f"/api/mates/{m['id']}/gss/evaluate", json={}).status_code in (404, 405)
         bad = c.patch(f"/api/mates/{m['id']}", json={"prefs": {"temperament": "angry"}})
         assert bad.status_code == 400
         ok = c.patch(f"/api/mates/{m['id']}", json={"prefs": {"temperament": {"forgives": 1.3, "conflict": "withdraw"}}}).json()

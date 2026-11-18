@@ -324,6 +324,10 @@ class GSSRuntime:
 
     # ---- the State Inspector ----
 
+    # what the user is shown of the journal: what happened — never what she is told each turn (the prompt) nor a
+    # model's judgement of her replies (a developer's tool: python -m app.mate.gss.evaluate)
+    SHOWN_LAYERS = ("heard", "feeling", "grudge", "bond", "promise", "episode", "said", "temperament")
+
     def inspect(self, mate_id: str, *, limit: int = 200, before: int | None = None) -> dict[str, Any]:
         mate = self.store.get(mate_id)
         now, tz = datetime.now(timezone.utc), self.store.tz()
@@ -331,10 +335,9 @@ class GSSRuntime:
         rel = self.store.relation_doc(mate_id) or A.new()
         view = S.view(doc, w, now, tz)
         return {"mate": {"id": mate_id, "name": mate["name"], "builtin": mate.get("builtin")},
-                "state": {**view, "grudge": S.held(doc, w, now), "episodes": S.episodes(doc, now),
-                          "line": S.line(S.summary(doc, w, now, tz))},
+                "state": {**view, "grudge": S.held(doc, w, now), "episodes": S.episodes(doc, now)},
                 "temperament": w["temperament"], "temperament_custom": (mate.get("prefs") or {}).get("temperament") or {},
                 "bonds": {**{b: round(float(rel.get(b) or 0.0), 1) for b in A.BONDS}, "affinity": round(float(rel["affinity"]), 1),
                           "stage": rel["stage"], "words": A.bond_words(rel), "romance_open": A.romance_open(rel)},
-                "promises": list(reversed(P.listed(doc))), "repeats": echo.repeats(doc),
-                "journal": self.journal.recent(mate_id, limit=limit, before=before)}
+                "promises": list(reversed(P.listed(doc))),
+                "journal": self.journal.recent(mate_id, limit=limit, before=before, layers=list(self.SHOWN_LAYERS))}

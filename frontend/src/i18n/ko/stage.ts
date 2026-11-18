@@ -7,6 +7,8 @@ export default {
   statusTitle: "{name}의 상태",
   statusSub: "호감도와 감정, 지금 있는 곳과 컨디션",
   tabNow: "지금",
+  tabRelation: "관계",
+  tabLog: "기록",
   bond: "관계",
   bondOff: "관계 기능 꺼짐",
   bondMore: "자세히",

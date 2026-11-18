@@ -42,7 +42,7 @@ export function useLifeView(mate: Mate): { v: LifeView | null; setV: (v: LifeVie
 
 export function Card({ title, right, children, testId, className = "" }: { title?: ReactNode; right?: ReactNode; children: ReactNode; testId?: string; className?: string }) {
   return (
-    <section className={`rounded-2xl border border-white/10 bg-white/[0.04] p-4 ${className}`} data-testid={testId}>
+    <section className={`rounded-2xl border border-content/10 bg-content/[0.035] p-4 ${className}`} data-testid={testId}>
       {(title || right) && (
         <div className="mb-3 flex items-center justify-between gap-2">
           <h3 className="min-w-0 truncate text-[12.5px] font-semibold text-content">{title}</h3>
@@ -92,7 +92,7 @@ export function NeedsList({ v }: { v: LifeView }) {
           <li key={need} className="flex items-center gap-2.5" data-testid={`life-need-${need}`}>
             <Icon name={icon} size={13} className="shrink-0 text-content-faint" />
             <span className="w-12 shrink-0 text-[12px] text-content-dim">{t(label)}</span>
-            <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10">
+            <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-content/10">
               <span className={`block h-full rounded-full transition-[width] duration-700 ${needTone(value)}`} style={{ width: `${Math.max(4, Math.round((1 - value) * 100))}%` }} />
             </span>
             <span className="w-[6.5rem] shrink-0 truncate text-right text-[11.5px] text-content-dim">{t(words[needStep(value)])}</span>
@@ -141,7 +141,7 @@ export function MapView({ v, picked, onPick }: { v: LifeView; picked: string | n
   const places = (v.places ?? []).filter((p) => p.key !== "street" && p.x != null && p.y != null);
   if (!v.map) return null;
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-white/10" data-testid="life-map">
+    <section className="relative overflow-hidden rounded-2xl border border-content/10" data-testid="life-map">
       <img src={v.map} alt="" className="block w-full" draggable={false} />
       {places.map((p) => (
         <button
@@ -169,7 +169,7 @@ export function PlaceDetail({ p, withUser, onSay }: { p: LifePlace; withUser?: b
   const locale = useLang();
   const name = lifeName(p.name, locale, p.key);
   return (
-    <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]" data-testid={`life-place-detail-${p.key}`}>
+    <section className="overflow-hidden rounded-2xl border border-content/10 bg-content/[0.035]" data-testid={`life-place-detail-${p.key}`}>
       <div className="relative">
         {p.art && <img src={p.art} alt="" className={`block aspect-[16/8] w-full object-cover ${p.open ? "" : "opacity-50 grayscale"}`} draggable={false} />}
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
@@ -209,7 +209,7 @@ export function PlaceGrid({ v, picked, onPick }: { v: LifeView; picked: string |
           <button
             type="button"
             onClick={() => onPick(p.key)}
-            className={`block w-full overflow-hidden rounded-xl border text-left transition ${p.key === picked ? "border-violet ring-1 ring-violet/60" : p.here ? "border-accent" : "border-white/10"} bg-white/[0.04]`}
+            className={`block w-full overflow-hidden rounded-xl border text-left transition ${p.key === picked ? "border-violet ring-1 ring-violet/60" : p.here ? "border-accent" : "border-content/10"} bg-content/[0.035]`}
             aria-pressed={p.key === picked}
             data-testid={`life-place-${p.key}`}
           >
@@ -319,7 +319,7 @@ function DayCard({ d }: { d: LifeDay }) {
   const grown = STATS.filter(({ stat }) => (d.grown?.[stat] ?? 0) > 0);
   return (
     <Card title={fmtDate(`${d.day}T12:00:00`, { month: "long", day: "numeric", weekday: "short" })} testId={`life-day-${d.day}`}>
-      {d.diary && <p className="mb-2.5 whitespace-pre-wrap rounded-lg bg-white/[0.05] px-3 py-2 text-[12.5px] italic leading-relaxed text-content" data-testid="life-diary">{d.diary}</p>}
+      {d.diary && <p className="mb-2.5 whitespace-pre-wrap rounded-lg bg-content/[0.05] px-3 py-2 text-[12.5px] italic leading-relaxed text-content" data-testid="life-diary">{d.diary}</p>}
       {!!d.titles.length && (
         <ul className="mb-2.5 space-y-1">
           {d.titles.map((title, i) => (
@@ -332,7 +332,7 @@ function DayCard({ d }: { d: LifeDay }) {
       )}
       <div className="flex flex-wrap gap-1.5">
         {Object.entries(d.hours).filter(([k]) => k !== "commute").map(([k, h]) => (
-          <span key={k} className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-content-dim">
+          <span key={k} className="rounded-full bg-content/10 px-2 py-0.5 text-[11px] text-content-dim">
             {lifeName(d.names[k], locale, k)} {t("life.hours", { n: h })}
           </span>
         ))}
@@ -369,7 +369,7 @@ export function GiftsSection({ v, mate, onChange, onError }: { v: LifeView; mate
       </Card>
       <ul className="space-y-2" data-testid="life-shop">
         {(v.shop ?? []).map((g) => (
-          <li key={g.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5" data-testid={`life-gift-${g.id}`}>
+          <li key={g.id} className="flex items-center gap-3 rounded-xl border border-content/10 bg-content/[0.035] px-3 py-2.5" data-testid={`life-gift-${g.id}`}>
             <Icon name={g.kind === "food" ? "utensils" : "gift"} size={15} className="shrink-0 text-content-faint" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-[12.5px] font-medium text-content">{lifeName(g.name, locale, g.id)}</p>
@@ -467,7 +467,7 @@ function GoalsCard({ v }: { v: LifeView }) {
               <span className="min-w-0 flex-1 truncate text-[12px] text-content-dim">{lifeName(g.name, locale, g.id)}</span>
               <span className="shrink-0 text-[11.5px] text-content-dim">{t(GOAL_STEP[g.step] ?? GOAL_STEP[0])}</span>
             </div>
-            <span className="ml-[23px] mt-1.5 block h-1.5 overflow-hidden rounded-full bg-white/10">
+            <span className="ml-[23px] mt-1.5 block h-1.5 overflow-hidden rounded-full bg-content/10">
               <span className="block h-full rounded-full bg-violet transition-[width] duration-700" style={{ width: `${Math.max(4, Math.round(Math.min(1, g.progress) * 100))}%` }} />
             </span>
             {g.setback && <p className="ml-[23px] mt-1 text-[11px] text-content-faint">{t("life.goalSetback")}</p>}
@@ -501,7 +501,7 @@ export function GrowthSection({ v }: { v: LifeView }) {
               <li key={stat} className="flex items-center gap-2.5" data-testid={`life-stat-${stat}`}>
                 <Icon name={icon} size={13} className="shrink-0 text-content-faint" />
                 <span className="w-12 shrink-0 text-[12px] text-content-dim">{t(label)}</span>
-                <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10">
+                <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-content/10">
                   <span className="block h-full rounded-full bg-violet" style={{ width: `${Math.round(value)}%` }} />
                 </span>
                 <span className="w-8 shrink-0 text-right text-[11.5px] tabular-nums text-content-dim">{Math.floor(value)}</span>
@@ -514,7 +514,7 @@ export function GrowthSection({ v }: { v: LifeView }) {
         <Card title={t("life.tastes")} testId="life-tastes">
           <div className="flex flex-wrap gap-1.5">
             {v.tastes.map((x) => (
-              <span key={x.activity} className="flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-0.5 text-[11.5px] text-content-dim">
+              <span key={x.activity} className="flex items-center gap-1 rounded-full bg-content/10 px-2.5 py-0.5 text-[11.5px] text-content-dim">
                 <Icon name="heart" size={10} className={x.v >= 0.25 ? "text-violet" : "text-content-faint"} />
                 {lifeName(x.name, locale, x.activity)}
               </span>

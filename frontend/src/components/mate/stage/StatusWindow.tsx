@@ -1,5 +1,7 @@
-/** Status: how close you are and how she feels, where she is and how she is (what today is, a gift she just gave), and the rest of
- * her day (plan, what she wants for herself and her growth, journal, gifts, what she gave and the moments you shared). */
+/** Status (메이트 상태) — only what is, never settings: how close you are and every feeling she has now with what is still
+ * with her, where she is and how she is (what today is, a gift she just gave); what she is to you and the promises both
+ * ways (관계); the rest of her day (plan, what she wants for herself and her growth, journal, gifts, what she gave and the
+ * moments you shared); and the record of what happened (기록). How she is made — her temperament — is Mate settings → 기질. */
 import { useState } from "react";
 import type { Mate } from "../../../api/mates";
 import { useLang, useT, type MsgKey } from "../../../i18n";
@@ -7,14 +9,19 @@ import { fmtTime } from "../../../i18n/format";
 import { STATE_EMOJI } from "../../../mate/relationJournal";
 import Icon from "../../ui/Icon";
 import { RelationRing, STAGE_LABEL } from "../RelationRing";
-import { stateName, stateWhy, STATE_LABEL } from "../StateCard";
+import { stateName, stateWhy } from "../StateCard";
 import { Card, GiftsSection, GrowthSection, JournalSection, KeepsakesSection, LifeOff, NeedsList, PlanSection, SayChips, SKY, SLOT_LABEL, TodayList, useLifeView } from "../life/LifeSections";
 import { lifeName } from "../life/needs";
 import StageWindow, { type WindowTab } from "./StageWindow";
+import Journal from "../gss/Journal";
+import { Between, Mind, NowContext, Promises, useGssView } from "../gss/StateView";
 
-type Tab = "now" | "plan" | "growth" | "journal" | "gifts" | "keepsakes";
-const TABS: WindowTab<Tab>[] = [
-  { id: "now", icon: "heart", label: "stage.tabNow" },
+type Tab = "now" | "relation" | "plan" | "growth" | "journal" | "gifts" | "keepsakes" | "log";
+const NOW: WindowTab<Tab> = { id: "now", icon: "heart", label: "stage.tabNow" };
+const RELATION: WindowTab<Tab> = { id: "relation", icon: "user", label: "stage.tabRelation" };
+const LOG: WindowTab<Tab> = { id: "log", icon: "history", label: "stage.tabLog" };
+// (her day — only while it is on)
+const LIFE_TABS: WindowTab<Tab>[] = [
   { id: "plan", icon: "calendar", label: "life.tabPlan" },
   { id: "growth", icon: "trending-up", label: "life.tabGrowth" },
   { id: "journal", icon: "book", label: "life.tabJournal" },
@@ -28,14 +35,19 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
   const locale = useLang();
   const [tab, setTab] = useState<Tab>("now");
   const { v, setV, err, setErr } = useLifeView(mate);
+  const gss = useGssView(mate);
   const life = v?.enabled ? v : null;
+  const tabs = life ? [NOW, RELATION, ...LIFE_TABS, LOG] : [NOW, RELATION, LOG];
+  const shown: Tab = tabs.some((x) => x.id === tab) ? tab : "now";
   const rel = mate.relation;
   const state = mate.state;
   const sky = SKY[life?.weather ?? "clear"];
   return (
-    <StageWindow title={t("stage.statusTitle", { name: mate.name })} sub={t("stage.statusSub")} icon="heart" phone={phone} onClose={onClose} tabs={life ? TABS : undefined} tab={tab} onTab={setTab} testId="stage-status">
+    <StageWindow title={t("stage.statusTitle", { name: mate.name })} sub={t("stage.statusSub")} icon="heart" phone={phone} onClose={onClose} tabs={tabs} tab={shown} onTab={setTab} testId="stage-status">
+      <NowContext.Provider value={gss.now}>
       {err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{t("life.error", { error: err })}</p>}
-      {tab === "now" || !life ? (
+      {gss.err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{gss.err}</p>}
+      {shown === "now" ? (
         <>
           <Card testId="stage-status-bond">
             <div className="flex items-center gap-3">
@@ -45,7 +57,7 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
                   <span className="absolute text-[13px] font-semibold tabular-nums text-content" data-testid="stage-status-affinity">{Math.round(rel.affinity)}</span>
                 </span>
               ) : (
-                <span className="grid h-[54px] w-[54px] shrink-0 place-items-center rounded-full bg-white/10 text-content-faint">
+                <span className="grid h-[54px] w-[54px] shrink-0 place-items-center rounded-full bg-content/10 text-content-faint">
                   <Icon name="heart" size={18} />
                 </span>
               )}
@@ -63,19 +75,8 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
                 {t("stage.bondMore")} <Icon name="chevron" size={13} />
               </button>
             </div>
-            {!!state?.top.length && (
-              <ul className="mt-3 flex flex-wrap gap-1.5">
-                {state.top.map((f) => (
-                  <li key={f.emotion} className="flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11.5px] text-content-dim" title={stateWhy(t, f.why)}>
-                    {t(STATE_LABEL[f.emotion])}
-                    <span className="h-1 w-8 overflow-hidden rounded-full bg-white/15">
-                      <span className="block h-full rounded-full bg-violet" style={{ width: `${Math.round(Math.min(1, f.v) * 100)}%` }} />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
           </Card>
+          {gss.v && <Mind s={gss.v.state} name={mate.name} />}
           {!v ? (
             !err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>
           ) : !life ? (
@@ -137,17 +138,33 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
             </>
           )}
         </>
-      ) : tab === "plan" ? (
+      ) : shown === "relation" ? (
+        gss.v ? (
+          <>
+            <Between b={gss.v.bonds} name={mate.name} />
+            <Promises promises={gss.v.promises ?? []} name={mate.name} />
+          </>
+        ) : (
+          !gss.err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>
+        )
+      ) : shown === "log" ? (
+        gss.v ? (
+          <Journal entries={gss.entries} name={mate.name} more={gss.more} onMore={() => void gss.loadMore()} />
+        ) : (
+          !gss.err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>
+        )
+      ) : !life ? null : shown === "plan" ? (
         <PlanSection v={life} mate={mate} onChange={setV} onError={setErr} />
-      ) : tab === "growth" ? (
+      ) : shown === "growth" ? (
         <GrowthSection v={life} />
-      ) : tab === "journal" ? (
+      ) : shown === "journal" ? (
         <JournalSection v={life} />
-      ) : tab === "keepsakes" ? (
+      ) : shown === "keepsakes" ? (
         <KeepsakesSection v={life} mate={mate} />
       ) : (
         <GiftsSection v={life} mate={mate} onChange={setV} onError={setErr} />
       )}
+      </NowContext.Provider>
     </StageWindow>
   );
 }

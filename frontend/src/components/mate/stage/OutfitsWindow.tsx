@@ -37,7 +37,7 @@ export default function OutfitsWindow({ mate, phone, onClose, onManage }: { mate
             type="button"
             onClick={() => setPicked(c.id)}
             aria-pressed={c.id === picked}
-            className={`relative flex min-w-0 flex-col overflow-hidden rounded-xl border text-left transition ${c.id === picked ? "border-violet ring-1 ring-violet/60" : "border-white/10"} bg-white/[0.04]`}
+            className={`relative flex min-w-0 flex-col overflow-hidden rounded-xl border text-left transition ${c.id === picked ? "border-violet ring-1 ring-violet/60" : "border-content/10"} bg-content/[0.035]`}
             data-testid="stage-outfit"
             data-outfit={c.id}
             data-locked={!!c.locked}
@@ -61,7 +61,7 @@ export default function OutfitsWindow({ mate, phone, onClose, onManage }: { mate
         ))}
       </div>
       {card && (
-        <div className="flex items-center gap-2.5 rounded-2xl border border-white/10 bg-white/[0.04] p-3" data-testid="stage-outfit-detail">
+        <div className="flex items-center gap-2.5 rounded-2xl border border-content/10 bg-content/[0.035] p-3" data-testid="stage-outfit-detail">
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-semibold text-content">{nameOf(card)}</p>
             <p className="line-clamp-2 text-[11.5px] leading-snug text-content-faint">
