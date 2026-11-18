@@ -28,10 +28,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The version: <line>.<builds since the line began> — 0.5.0 is the apps run APP_LINE_FROM; the run number itself keeps
-  # rising (Android's versionCode). The prepare job works it out once; every other job takes it from there.
-  APP_LINE: '0.5'
-  APP_LINE_FROM: '144'
+  # The version: <line>.<n>, n one past the highest published release of the line (its first build is <line>.0, so 1.0.0);
+  # the line is the product's version (backend/app/__init__.py, the package.json files: test_version.py keeps them equal).
+  # The run number keeps rising (Android's versionCode). The prepare job works it out once; every other job takes it from there.
+  APP_LINE: '1.0'
   GH_TOKEN: ${{ github.token }}
   LOCAL_PYTHON_VERSION: '3.12.16'
   UV_VERSION: '0.13.6'
@@ -45,7 +45,10 @@ jobs:
       - id: version
         name: Version
         run: |
-          v="$APP_LINE.$(( ${{ github.run_number }} - APP_LINE_FROM ))"
+          # (a run cancelled before it published leaves only a draft: the next one takes the same number, and that draft over)
+          last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --exclude-drafts --json tagName --jq '.[].tagName' \
+                 | sed -n "s/^apps-v${APP_LINE//./\\.}\.\([0-9][0-9]*\)$/\1/p" | sort -n | tail -1)
+          v="$APP_LINE.$(( ${last:--1} + 1 ))"
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "VERSION=$v" >> "$GITHUB_ENV"
           echo "Apps $v (run ${{ github.run_number }})"
@@ -88,6 +91,8 @@ jobs:
         run: |
           if ! gh release view "apps-v$VERSION" >/dev/null 2>&1; then
             gh release create "apps-v$VERSION" --draft --title "Apps $VERSION" --notes "Building…" --target "$GITHUB_SHA"
+          else
+            gh release edit "apps-v$VERSION" --target "$GITHUB_SHA" --notes "Building…"  # (a cancelled run's draft: this commit now)
           fi
 
   desktop:
