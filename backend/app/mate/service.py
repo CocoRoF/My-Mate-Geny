@@ -665,8 +665,12 @@ class MateService:
         stage = rel["stage"] if relation else None
         world = self.store.life_profile(mate.get("builtin"), prefs) if mate_id else None
         life = sim.catalog(world) if world else ""
+        # 메이트 공통 설정 → 스스로 인터넷 검색: her engine's own web search (Claude WebSearch, Codex's), else the
+        # server's (search_web on the bridge)
+        web = self.store.web_search()
+        native_web = engine in ("claude", "codex")
         prompt = system_prompt(mate["name"], mate["persona"], core, prefs, more=len(memories) - len(core),
-                               relation=relation, stage=stage, life=life)
+                               relation=relation, stage=stage, life=life, web=web)
         # the per-turn context (docs/mate-memory-affinity.md §2): settings note (persona edited since the
         # conversation last ran), then the clock, recalled memories, the user's memory edits — prepended to
         # this message, never stored, never a restart
@@ -681,14 +685,16 @@ class MateService:
                     m["content"] = self.calls.follow_up_prompt(mate["name"], turn_meta["call"])
                     break
         req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0), prefs,
-                                    relation=relation, stage=stage, life=life)
+                                    relation=relation, stage=stage, life=life, web=web)
         if engine == "codex" and mate_id:
             prompt = self._codex_prompt(mate_id, prompt, req.prompt_key, resuming=bool(req.cli_session_id))
             req.engine_home = str(files.mate_dir(mate_id) / "codex")
         # (a file: persona + 200 memories can outgrow one argv string)
         req.system_prompt_file = files.engine_file(mate_id, "prompt", "md", prompt)
-        req.tools = []                     # no Bash/Read/Edit/WebFetch… — it can't do the work itself
-        req.allowed_tools = ["mcp__mate"]  # all mate bridge tools
+        # no Bash/Read/Edit/WebFetch… — it can't do the work itself; a web search of her own when that is on
+        req.tools = ["WebSearch"] if web and engine == "claude" else []
+        req.allowed_tools = ["mcp__mate"] + (["WebSearch"] if web and engine == "claude" else [])  # + all bridge tools
+        req.web_search = web and engine == "codex"
         req.sealed = True
         req.mode = "agent"
         req.extra_dirs = []
@@ -715,6 +721,8 @@ class MateService:
                 "HRH_MATE_STATE": "1",
                 **({"HRH_MATE_OUTFIT": "1"} if (prefs.get("self_outfit") or "auto") != "off" else {}),
                 **({"HRH_MATE_LIFE": "1"} if world else {}),
+                # (the server's own search, for an engine without one: an API model)
+                **({"HRH_MATE_SEARCH": "1"} if web and not native_web else {}),
             },
         }}}
         # (a 0600 file, so the token isn't in the process list; Codex: in its
@@ -1913,6 +1921,20 @@ class MateService:
         if d["neighbors"]:
             out.append("Connected: " + ", ".join(f"{x['name']} [{x['id']}]" for x in d["neighbors"][:20]))
         return "\n".join(out)
+
+    async def _tool_search_web(self, mate, _sid, args):
+        """메이트 공통 설정 → 스스로 인터넷 검색, for an engine without a web search of its own"""
+        if not self.store.web_search():
+            raise MateError("Searching the web is switched off (Settings → 메이트).")
+        from app.mate.study import web_search
+
+        q = str(args.get("query") or "").strip()[:200]
+        if not q:
+            raise MateError("search_web needs a query")
+        hits = await web_search(q)
+        if not hits:
+            return "No results (try other words, or another language)."
+        return "\n".join(f"- {h['title']} — {h['url']}\n  {h['snippet']}" for h in hits[:8])
 
     async def _tool_learn_url(self, mate, _sid, args):
         try:

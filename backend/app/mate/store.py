@@ -1943,8 +1943,14 @@ class MateStore:
         self._put_setting("user_icon", name)
         self._changed("settings")
 
+    def web_search(self) -> bool:
+        """메이트 공통 설정 → 스스로 인터넷 검색: every mate may search the web herself in a conversation (on unless
+        switched off) — her engine's own search, else the server's (app/mate/service.py configure_engine)"""
+        return (self._setting("web_search") or "1") != "0"
+
     def settings(self) -> dict[str, Any]:
         out: dict[str, Any] = {k: self._setting(k) for k in SETTING_URLS}
+        out["web_search"] = self.web_search()
         out["timezone"] = self._setting("timezone")
         out["user_name"] = self.user_name()
         out["user_birthday"] = self.user_birthday()
@@ -1991,6 +1997,9 @@ class MateStore:
         if tzname is not None and tzname != self._setting("timezone"):
             self._put_setting("timezone", tzname)
             changed.add("timezone")
+        if isinstance(patch.get("web_search"), bool) and patch["web_search"] != self.web_search():
+            self._put_setting("web_search", "1" if patch["web_search"] else "0")
+            changed.add("web_search")
         for k, url in urls.items():
             if url != self._setting(k):
                 changed.add(k)

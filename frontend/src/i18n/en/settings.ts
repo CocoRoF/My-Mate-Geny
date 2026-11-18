@@ -120,6 +120,9 @@ export default {
 
   // desktop
   speakFirstOn: "Let your mate speak first on this device",
+  webSearchTitle: "Web search",
+  webSearchOn: "Search the web on her own",
+  webSearchHelp: "On: in a conversation a mate looks up what she doesn't know or what may have changed (today's news, weather, a release, a price, a schedule) herself, and answers. She uses her engine's own web search, else the server's. Your personal details never go into a search. For every mate.",
   phoneTitle: "Phone calls",
   phoneHint: "With the app closed this phone checks in briefly about every 15 minutes: what your mate said comes as message notifications, her calls ring like real calls. Nothing runs in between and nothing stays in the shade. A call goes on with the screen off. She calls only when speaking first is on here.",
   phoneChecksLast: "With the app closed it checks in about every 15 minutes · last check {ago}",
