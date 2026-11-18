@@ -311,7 +311,7 @@ npx tsc -p . --noEmit                  # 타입 체크
 
 채팅은 **엔진 × workspace × 대화**로 이루어집니다. 자세한 내용:
 [구조](docs/architecture.md) · [프로바이더](docs/providers.md) · [원격 workspace](docs/remote.md) · [Higgsfield](docs/higgsfield.md) ·
-[메이트](docs/mate.md) · [인증](docs/auth.md) · [모니터링](docs/monitoring.md) · [배포](docs/deploy.md)
+[메이트](docs/mate.md) · [인증](docs/auth.md) · [Geny Net — 휴대폰으로 데스크톱 앱에](docs/geny-net.md) · [모니터링](docs/monitoring.md) · [배포](docs/deploy.md)
 (문서는 영어)
 
 *(옛 이름은 "hr-harnessor"입니다. 기존 설치가 그대로 업데이트되도록 `~/.hr-harnessor` 상태 폴더, 쿠키·저장소

@@ -21,6 +21,7 @@ import mate from "./mate.ts";
 import memgraph from "./memgraph.ts";
 import mateSettings from "./mateSettings.ts";
 import nav from "./nav.ts";
+import net from "./net.ts";
 import profile from "./profile.ts";
 import providers from "./providers.ts";
 import session from "./session.ts";
@@ -34,6 +35,6 @@ import usage from "./usage.ts";
 import voiceStudio from "./voiceStudio.ts";
 import workspace from "./workspace.ts";
 
-const en = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, guide, gss, higgsfield, imageStudio, life, localVoice, mate, mateSettings, memgraph, nav, profile, providers, session, settings, stage, studio, tasks, topbar, turn, usage, voiceStudio, workspace };
+const en = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, guide, gss, higgsfield, imageStudio, life, localVoice, mate, mateSettings, memgraph, nav, net, profile, providers, session, settings, stage, studio, tasks, topbar, turn, usage, voiceStudio, workspace };
 export type Catalog = typeof en;
 export default en;

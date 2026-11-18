@@ -23,6 +23,20 @@
   .check input{accent-color:#5b7cff;width:18px;height:18px;margin:0;flex:none}
   .go{width:100%;padding:14px;border:0;border-radius:12px;background:linear-gradient(135deg,#6e8bff,#5b7cff);color:#fff;font:inherit;font-weight:600}
   .go:disabled{opacity:.6}
+  .alt{width:100%;padding:13px;border:1px solid #2b3241;border-radius:12px;background:#141821;color:#e6e9f0;font:inherit;font-weight:600;display:flex;align-items:center;justify-content:center;gap:9px}
+  .alt svg{width:19px;height:19px;flex:none}
+  .or{display:flex;align-items:center;gap:12px;color:#5e6676;font-size:12px;margin:18px 0}
+  .or:before,.or:after{content:"";flex:1;height:1px;background:#232936}
+  .linked{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #2b3241;border-radius:12px;margin-bottom:12px}
+  .linked .who{flex:1;min-width:0} .linked .who b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .linked .who span{font-size:12px;color:#9aa3b4}
+  .linked button{padding:9px 14px;border:0;border-radius:10px;background:linear-gradient(135deg,#6e8bff,#5b7cff);color:#fff;font:inherit;font-weight:600}
+  .linked .forget{background:none;color:#7c8597;padding:9px 6px;font-weight:400;font-size:13px}
+  .pair{text-align:center}
+  .pair .sas{font:600 40px ui-monospace,monospace;letter-spacing:.14em;margin:14px 0 8px;font-variant-numeric:tabular-nums}
+  .pair p{color:#9aa3b4;font-size:14px;margin:0 0 18px;line-height:1.5}
+  .pair .cancel{background:none;border:0;color:#9aa3b4;font:inherit;padding:10px}
+  [hidden]{display:none!important}
   .status{min-height:22px;margin-top:16px;font-size:14px;color:#9aa3b4;display:flex;gap:8px;align-items:flex-start}
   .status.err{color:#fca5a5}
   .status small{display:block;color:#7c8597;margin-top:3px;word-break:break-word}
@@ -40,6 +54,9 @@
   html.light .pw button{background:#ebeef3;color:#474f5f}
   html.light .check input{accent-color:#3d5ae6}
   html.light .go{background:linear-gradient(135deg,#4c68f0,#3a56de)}
+  html.light .alt,html.light .linked{background:#fff;border-color:#c2c8d4;color:#161a23}
+  html.light .or:before,html.light .or:after{background:#c2c8d4}
+  html.light .linked .who span,html.light .pair p,html.light .pair .cancel{color:#474f5f}
   html.light .status.err{color:#b41a22}
   html.light .status small{color:#606879}
   html.light .spin{border-color:#c2c8d4;border-top-color:#3d5ae6}
@@ -55,6 +72,9 @@
   html:not(.dark) .pw button{background:#ebeef3;color:#474f5f}
   html:not(.dark) .check input{accent-color:#3d5ae6}
   html:not(.dark) .go{background:linear-gradient(135deg,#4c68f0,#3a56de)}
+  html:not(.dark) .alt,html:not(.dark) .linked{background:#fff;border-color:#c2c8d4;color:#161a23}
+  html:not(.dark) .or:before,html:not(.dark) .or:after{background:#c2c8d4}
+  html:not(.dark) .linked .who span,html:not(.dark) .pair p,html:not(.dark) .pair .cancel{color:#474f5f}
   html:not(.dark) .status.err{color:#b41a22}
   html:not(.dark) .status small{color:#606879}
   html:not(.dark) .spin{border-color:#c2c8d4;border-top-color:#3d5ae6}
@@ -83,6 +103,18 @@
     <h1>Connect to your server</h1>
     <p class="sub">My Mate Geny <span id="ver"></span></p>
   </div>
+  <!-- Geny Net (GenyNetPlugin.java): the computer this phone is paired with -->
+  <div class="linked" id="linked" hidden>
+    <div class="who"><b id="linkedName"></b><span>My Mate Geny desktop app</span></div>
+    <button type="button" class="forget" id="forget">Forget</button>
+    <button type="button" id="openLinked">Open</button>
+  </div>
+  <!-- a QR code from Settings → 디바이스 인증: pair with the desktop app, or sign in to a server -->
+  <button type="button" class="alt" id="scan">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M15 15h2v2h-2zM19 15h2M15 19h2M19 19h2v2"/></svg>
+    Connect with QR code
+  </button>
+  <div class="or">or sign in with a password</div>
   <div class="field">
     <label for="server">Server address</label>
     <input id="server" name="server" type="url" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="example.com or 192.168.0.10:58080" autocomplete="url">
@@ -103,6 +135,14 @@
   <button type="submit" class="go" id="go">Connect</button>
   <div class="status" id="status" role="status" aria-live="polite"></div>
 </form>
+<!-- pairing: the six digits the computer shows too -->
+<div class="card pair" id="pair" hidden>
+  <div class="head"><img src="logo.png" alt=""><h1>Check the number</h1></div>
+  <div class="sas" id="sas"></div>
+  <p id="pairHint"></p>
+  <div class="status" id="pairStatus" role="status" aria-live="polite" style="justify-content:center"></div>
+  <button type="button" class="cancel" id="pairCancel">Cancel</button>
+</div>
 <script src="connect-core.js"></script>
 <script src="connect.js"></script>
 </body></html>

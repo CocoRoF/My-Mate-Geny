@@ -20,6 +20,7 @@ from starlette.responses import Response
 
 from app import __version__
 from app.auth import AuthManager, AuthMiddleware, OpenCORSMiddleware
+from app.net.ingress import NetIngress
 from app.mate.asset_versions import BuiltinAssetVersions
 from app.config import settings
 from app.static_files import ConsoleStaticFiles, index_response
@@ -59,6 +60,7 @@ from app.routers import (
     usage,
     voice_local,
     image_local,
+    net as net_router,
     workspaces,
 )
 from app.avatar.service import AvatarService
@@ -226,7 +228,20 @@ async def lifespan(app: FastAPI):
     await app.state.speech_input.start()
     await session_service.remote_jobs.start()
 
+    # Geny Net (docs/geny-net.md): the user's own phone reaching this desktop — on once a device is paired
+    app.state.net = None
+    if settings.execution_mode == "local" and settings.net_ingress_port:
+        from app.net.service import NetService
+        app.state.net = NetService(db, settings.home_dir, settings.net_ingress_port,
+                                   on_change=lambda: session_service.broadcast_list({"type": "net.changed"}))
+        try:
+            await app.state.net.start_if_used()
+        except Exception:  # noqa: BLE001 - the app works without it; Settings → 디바이스 인증 shows it off
+            logging.getLogger(__name__).exception("Geny Net failed to start")
+
     yield
+    if app.state.net is not None:
+        await app.state.net.stop()
     await setup.service.stop()
     await app.state.memory_worker.stop()
     await app.state.mate_service.studies.stop()
@@ -297,6 +312,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(OpenCORSMiddleware)
+# (outermost: a request that came over Geny Net is told what it may reach before anything else sees it)
+app.add_middleware(NetIngress)
 
 for r in (
     mcp_router.router,
@@ -336,8 +353,14 @@ for r in (
     setup.router,
     voice_local.router,
     image_local.router,
+    net_router.router,
 ):
     app.include_router(r)
+
+if settings.net_relay:  # a Geny Net relay for desktops away from their phones (app/net/relay.py)
+    from app.net import relay as net_relay
+
+    app.include_router(net_relay.router)
 
 app.include_router(stream.router)
 app.include_router(sessions_ws.router)

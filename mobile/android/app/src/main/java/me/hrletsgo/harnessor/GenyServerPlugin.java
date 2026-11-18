@@ -232,7 +232,8 @@ public class GenyServerPlugin extends Plugin {
         SharedPreferences p = prefs(getContext());
         JSObject r = new JSObject();
         r.put("server", nz(cleanBase(p.getString(K_SERVER, null))));
-        r.put("lastServer", nz(cleanBase(p.getString(K_LAST, null))));
+        String last = cleanBase(p.getString(K_LAST, null));
+        r.put("lastServer", nz(last != null && last.equals(GenyNet.base(getContext())) ? null : last));
         r.put("username", nz(p.getString(K_USER, null)));
         r.put("remember", p.getBoolean(K_REMEMBER, true));
         String version = "";
@@ -263,6 +264,18 @@ public class GenyServerPlugin extends Plugin {
         r.put("themeMode", m);
         r.put("theme", ThemeBars.dark(getContext(), m) ? "dark" : "light");
         call.resolve(r);
+    }
+
+    /** the server the next activity start opens (and `start` first): the connect page's choice, or Geny Net's */
+    static void select(Context c, String base, String start, boolean remember) {
+        SharedPreferences.Editor e = prefs(c).edit()
+            .putString(K_SERVER, base)
+            .putString(K_PENDING, start)
+            .putBoolean(K_REMEMBER, remember)
+            .putBoolean(K_EPHEMERAL, !remember);
+        // (Geny Net's address is the phone's own proxy: not one to type in, so not the connect page's prefill)
+        if (remember && !base.equals(GenyNet.base(c))) e.putString(K_LAST, base);
+        e.apply();
     }
 
     /** {server, start, username, remember}: save the server and open start (its exchange URL). */

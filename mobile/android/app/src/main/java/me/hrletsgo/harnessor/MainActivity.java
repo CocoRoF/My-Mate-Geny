@@ -43,8 +43,15 @@ public class MainActivity extends BridgeActivity {
             GenyCallPlugin.deliverLater(intent);
             setIntent(new Intent(Intent.ACTION_MAIN));
         }
+        // a geny:// code opened from outside the app (the camera app, a browser): asked about before anything happens
+        String link = savedInstanceState == null ? genyLink(intent) : null;
+        if (link != null) setIntent(new Intent(Intent.ACTION_MAIN));
         registerPlugin(GenyServerPlugin.class);
         registerPlugin(GenyCallPlugin.class);
+        registerPlugin(GenyNetPlugin.class);
+        // on the paired computer (Geny Net): its proxy up and the WebView's pass to it set before the page loads
+        GenyNet.ensureProxy(this);
+        if (GenyNet.active(this)) GenyNet.allowWebView(this);
         config = GenyServerPlugin.buildConfig(this);
         super.onCreate(savedInstanceState);
         // The Mate reads replies aloud when they arrive (not inside a tap), so
@@ -53,6 +60,7 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
         // (her ringing brought it up over the lock screen: it stays there until the page takes or ends the call)
         if (ringing) GenyCallPlugin.overLock(this, true);
+        if (link != null && GenyServerPlugin.server(this) != null) askLink(link);
         // the background link, so her calls ring with the app closed (GenyLinkService): on if it should be
         GenyLinkService.sync(this);
         GenyCheck.schedule(this); // (her calls and messages with the app closed: checks now and then, no line held)
@@ -154,7 +162,41 @@ public class MainActivity extends BridgeActivity {
             recreate();
             return;
         }
+        String link = genyLink(intent);
+        if (link != null) {
+            setIntent(new Intent(Intent.ACTION_MAIN));
+            if (GenyServerPlugin.server(this) == null) recreate(); // (the connect page takes it up, and asks)
+            else askLink(link);
+            return;
+        }
         super.onNewIntent(intent);
+    }
+
+    /** geny://link (pair with a computer) or geny://login (sign in to a server), or null. On the connect page it is
+     *  kept for the page (which asks first); in the console the user is asked here (askLink) — a link can come from
+     *  anywhere, and following it leaves the server the app is on. */
+    private String genyLink(Intent intent) {
+        Uri u = intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) ? null : intent.getData();
+        if (u == null || !"geny".equals(u.getScheme())) return null;
+        if (GenyServerPlugin.server(this) == null) GenyNet.incoming(this, u.toString(), false);
+        return u.toString();
+    }
+
+    private void askLink(String link) {
+        Uri u = Uri.parse(link);
+        boolean login = "login".equals(u.getHost());
+        String where = login ? String.valueOf(GenyServerPlugin.cleanBase(u.getQueryParameter("u"))) : u.getQueryParameter("d");
+        if (!login && (where == null || where.isEmpty())) where = getString(R.string.link_ask_pair_any);
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(login ? R.string.link_ask_login : R.string.link_ask_pair)
+            .setMessage(getString(login ? R.string.link_ask_login_text : R.string.link_ask_pair_text, where))
+            .setPositiveButton(R.string.link_ask_go, (d, w) -> {
+                GenyNet.incoming(this, link, true);
+                GenyServerPlugin.forgetServer(this, false); // (to the connect page, which goes on with it)
+                recreate();
+            })
+            .setNegativeButton(R.string.link_ask_cancel, null)
+            .show();
     }
 
     /** 받기 on her ringing: the server holds the call while the page comes up to take it (it would go missed meanwhile) */

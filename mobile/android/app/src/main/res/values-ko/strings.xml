@@ -29,4 +29,13 @@
     <string name="channel_messages">메이트의 메시지</string>
     <string name="channel_messages_about">앱을 닫아 둔 동안 메이트가 한 말</string>
     <string name="messages_me">나</string>
+
+    <!-- 앱 밖에서 연 geny:// 코드 (MainActivity.askLink) -->
+    <string name="link_ask_login">이 코드로 로그인할까요?</string>
+    <string name="link_ask_login_text">이 휴대폰이 %1$s에 로그인해요.</string>
+    <string name="link_ask_pair">컴퓨터에 연결할까요?</string>
+    <string name="link_ask_pair_text">이 휴대폰을 %1$s(My Mate Geny 데스크톱 앱)에 연결해요.</string>
+    <string name="link_ask_pair_any">컴퓨터</string>
+    <string name="link_ask_go">계속</string>
+    <string name="link_ask_cancel">취소</string>
 </resources>

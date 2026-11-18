@@ -16,6 +16,7 @@ export type View = "mate" | "chat" | "settings";
 export type SettingsTab =
   | "updates"
   | "account"
+  | "devices"
   | "language"
   | "appearance"
   | "notifications"
@@ -32,6 +33,7 @@ export type SettingsTab =
 export const SETTINGS_TABS: readonly SettingsTab[] = [
   "updates",
   "account",
+  "devices",
   "language",
   "appearance",
   "notifications",

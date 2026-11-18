@@ -23,6 +23,8 @@ export const TABS: readonly TabMeta[] = [
   // the app and you: set once (docs/settings.md)
   { id: "updates", label: "settings.tabUpdates", icon: "download", hint: "settings.updatesHint", group: "general" },
   { id: "account", label: "settings.secAccount", icon: "user", hint: "settings.accountHint", group: "general" },
+  // a phone signs in by a QR code: Geny Net pairing on the desktop app, a sign-in code on a server (docs/geny-net.md)
+  { id: "devices", label: "net.tab", icon: "smartphone", group: "general" },
   { id: "language", label: "settings.secLanguage", icon: "languages", hint: "settings.languageHint", group: "general" },
   { id: "appearance", label: "settings.secAppearance", icon: "appearance", hint: "settings.appearanceHint", group: "general" },
   { id: "notifications", label: "settings.secNotifications", icon: "bell", hint: "settings.notifHint", group: "general" },

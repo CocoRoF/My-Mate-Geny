@@ -35,4 +35,13 @@
     <string name="channel_messages">Messages from your mate</string>
     <string name="channel_messages_about">What your mate said while the app was closed</string>
     <string name="messages_me">You</string>
+
+    <!-- a geny:// code opened from outside the app (MainActivity.askLink, docs/geny-net.md) -->
+    <string name="link_ask_login">Sign in with this code?</string>
+    <string name="link_ask_login_text">This phone signs in to %1$s.</string>
+    <string name="link_ask_pair">Connect to a computer?</string>
+    <string name="link_ask_pair_text">This phone connects to %1$s (the My Mate Geny desktop app).</string>
+    <string name="link_ask_pair_any">a computer</string>
+    <string name="link_ask_go">Continue</string>
+    <string name="link_ask_cancel">Cancel</string>
 </resources>

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     data_home: str = ""
     host: str = "0.0.0.0"
     port: int = 8080
+    # Geny Net (docs/geny-net.md): the local backend's second loopback socket, the one its TLS pipes come in by
+    # (local_main.py sets it; 0 = none) — and, on a server, being a relay for desktops (NET_RELAY=1).
+    net_ingress_port: int = 0
+    net_relay: bool = False
 
     # CORS — comma-separated string in env, parsed to list
     cors_origins: str = "http://localhost:5173,http://localhost:3000"

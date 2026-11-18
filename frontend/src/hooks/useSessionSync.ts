@@ -4,6 +4,7 @@ import { sharingSnapshot, stopOwnedSharing, resumeSharing } from "../mate/localS
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { IMAGE_CHANGED } from "../api/image";
+import { NET_CHANGED } from "../api/net";
 import { onResync } from "../lib/sync";
 import { useConfigStore } from "../stores/configStore";
 import { useProviderStore } from "../stores/providerStore";
@@ -111,6 +112,11 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
         if (msg.type === "cli.changed" || msg.type === "cli.log") {
           // Settings → Providers → CLI versions: a status change / an upgrade's new log lines (stores/cliToolsStore.ts)
           useCliToolsStore.getState().remote(msg as { type: string; data?: Record<string, unknown> });
+          return;
+        }
+        if (msg.type === "net.changed") {
+          // Settings → 디바이스 인증: a phone asked to pair, was allowed, came online (api/net.ts)
+          window.dispatchEvent(new CustomEvent(NET_CHANGED));
           return;
         }
         if (msg.type === "image.changed") {

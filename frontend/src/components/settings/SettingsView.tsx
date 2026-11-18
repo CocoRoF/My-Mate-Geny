@@ -7,6 +7,8 @@
  *                         in-app updater (downloads/UpdateCard.tsx ↔ desktop/src/updater.js), the Android app's
  *                         version, then the apps to download (downloads/DownloadsView.tsx; `/?view=downloads`)
  *     Account             the single admin account: username, password, sign out other devices (/api/auth/*)
+ *     디바이스 인증        a phone signs in by a QR code: Geny Net pairing (desktop app) or a sign-in code (server)
+ *                         (DevicesTab.tsx, docs/geny-net.md)
  *     Language            English / 한국어, applied at once and saved for every device (i18n/, /api/preferences)
  *     Appearance          System / Light / Dark, applied at once in every window, saved for every device unless
  *                         "This device only" (lib/theme.ts, lib/themeSync.ts)
@@ -70,6 +72,7 @@ const UsageView = lazy(() => import("../usage/UsageView"));
 const AdminView = lazy(() => import("../admin/AdminView"));
 const VoiceStudio = lazy(() => import("../voicestudio/VoiceStudio"));
 const ImageStudio = lazy(() => import("../imagestudio/ImageStudio"));
+const DevicesTab = lazy(() => import("./DevicesTab"));
 
 /** a tab's card (the tab's title is the page's — SettingsView) */
 function Card({ id, children }: { id: string; children: ReactNode }) {
@@ -731,6 +734,8 @@ function TabContent({ id }: { id: SettingsTab }) {
       );
     case "account":
       return <AccountSection />;
+    case "devices":
+      return <DevicesTab />;
     case "language":
       return <LanguageSection />;
     case "appearance":
