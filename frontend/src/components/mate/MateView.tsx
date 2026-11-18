@@ -25,6 +25,7 @@ import { MenuButton } from "../layout/MobileTopBar";
 import Icon, { type IconName } from "../ui/Icon";
 import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
 import MateComposer, { ReadAloudToggle } from "./MateComposer";
+import AlarmChip from "./call/AlarmChip";
 import CallButton from "./call/CallButton";
 import { onAndroid } from "../../mate/call/native";
 import MateMessages from "./MateMessages";
@@ -405,8 +406,10 @@ export default function MateView() {
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {/* a phone call with her (docs/mate-calls.md): the Android app, a phone's browser */}
-          {(onAndroid() || (phoneScreen && touch)) && <CallButton mate={mate} className="btn-ghost !px-2.5" />}
+          {/* a phone call with her (docs/mate-calls.md): the Android app, a phone's browser, the desktop app (its microphone
+              and speakers) */}
+          <AlarmChip mateId={mate.id} />
+          {(onAndroid() || (phoneScreen && touch) || /^desktop-/.test(window.hrhNative?.platform ?? "")) && <CallButton mate={mate} className="btn-ghost !px-2.5" />}
           {(compact || touch) && <ReadAloudToggle mate={mate} conv={conv} className="btn-ghost !px-2.5" size={16} />}
           {!compact && (
             <>

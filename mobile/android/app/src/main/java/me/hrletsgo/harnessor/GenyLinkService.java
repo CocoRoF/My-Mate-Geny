@@ -457,8 +457,12 @@ public class GenyLinkService extends Service {
         switch (m.optString("type")) {
             case "hello":
                 policy(m);
+                GenyWakes.set(this, m.optJSONArray("wakes"));
                 JSONObject now = m.optJSONObject("ring");
                 if (now != null) ring(now);
+                break;
+            case "wakes":
+                GenyWakes.set(this, m.optJSONArray("wakes"));
                 break;
             case "policy":
                 policy(m);

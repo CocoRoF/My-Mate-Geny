@@ -260,6 +260,17 @@ public class GenyCallPlugin extends Plugin {
         }
     }
 
+    /** her alarms coming up (UTC ISO, a little before each: app/mate/alarms.py): the app wakes itself then (GenyWakes) */
+    @PluginMethod
+    public void setWakes(PluginCall call) {
+        try {
+            GenyWakes.set(getContext(), call.getArray("wakes"));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("wakes: " + e.getMessage());
+        }
+    }
+
     @PluginMethod
     public void setSpeaker(PluginCall call) {
         try {

@@ -201,9 +201,10 @@ export function clientHello(active: boolean): Record<string, unknown> {
     shares: sharedScopes(),
     screen_policy: {enabled:devicePreferences().screen.proactive_enabled,interval:60,mate_id:devicePreferences().screen.proactive_mate||"",fixed:true},
     screen_ready: true,
-    // (her phone calls ring the Android app: app/mate/calls.py)
+    // (her calls ring the window with the call screen — the console, the Android app — on the device they are on:
+    // app/mate/calls.py; the overlay, the quick card, the chat window and the hidden runtime have none)
     native: typeof window !== "undefined" ? window.hrhNative?.platform || "" : "",
-    calls: CALL_CLIENT,
+    calls: currentSurface() === "console" ? CALL_CLIENT : 0,
     visible: typeof document === "undefined" || document.visibilityState === "visible",
     active,
   };

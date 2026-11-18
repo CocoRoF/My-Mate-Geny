@@ -51,6 +51,8 @@ from app.routers import (
     higgsfield as higgsfield_router,
     history,
     mate_calls,
+    mate_alarms,
+    done_notify as done_notify_router,
     mate_internal,
     mates,
     preferences as preferences_router,
@@ -172,6 +174,10 @@ async def lifespan(app: FastAPI):
     app.state.calls = CallService(app.state.mate_service)  # phone calls with her (docs/mate-calls.md)
     app.state.calls.voice = app.state.voice_service
     app.state.calls.start()
+    # "끝나면 알려 줘": a chat tells their mate when it's done, and she phones them (app/services/done_notify.py)
+    from app.services.done_notify import DoneNotify
+    app.state.done_notify = DoneNotify(session_service, app.state.mate_service)
+    session_service.done_notify = app.state.done_notify
     # Higgsfield: accounts + what the chats' agents get (docs/higgsfield.md)
     higgsfield = HiggsfieldService(db, vault)
     app.state.higgsfield = higgsfield
@@ -343,6 +349,9 @@ for r in (
     downloads.router,
     admin.router,
     mate_calls.router,
+    mate_alarms.router,
+    done_notify_router.router,
+    done_notify_router.internal,
     mates.router,
     mate_internal.router,
     avatar_router.router,

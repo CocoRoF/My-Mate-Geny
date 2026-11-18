@@ -856,6 +856,7 @@ lists each message's `files` (names).
 | `feel(emotion, strength, reason)` | say how she feels and why, when it changed noticeably (docs/mate-memory-affinity.md §5.4) |
 | `change_outfit(outfit, reason)` | unless `prefs.self_outfit` is off: change her clothes, when she decides to (see "Outfits") |
 | `see_screen(reason?)` | always: a picture of the user's screen — the share while they share, else one look through the desktop app of the device they talk from (below) |
+| `set_alarm(at, about?)` · `list_alarms` · `cancel_alarm(alarm_id)` | always: she phones them at that time — an alarm they set with her ("9시에 깨워 줘"); `at` their local HH:MM, YYYY-MM-DD HH:MM or +minutes (docs/mate-calls.md "Alarms") |
 
 Policy in the prompt: find the chat already working on that project and send
 there; if none, find the folder and create a chat; if the folder is unknown or

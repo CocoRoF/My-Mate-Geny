@@ -10,7 +10,7 @@ export interface CallInfo {
   direction: "outgoing" | "incoming";
   status: "ringing" | "dialing" | "active" | "ended";
   device: string;
-  /** why she called: question · work · lonely */
+  /** why she called: question · work · lonely · alarm (they set it with her) · done (a chat they asked about finished) */
   reason: string;
   created_at: string;
   answered_at: string | null;
@@ -75,4 +75,27 @@ export const hangupCall = (id: string) => post<{ call: CallInfo }>(`/api/mate-ca
 export async function activeCall(): Promise<CallInfo | null> {
   const res = await apiResponse("/api/mate-calls/active");
   return ((await res.json()) as { call: CallInfo | null }).call;
+}
+
+/** her alarms waiting (backend app/mate/alarms.py): she phones them then; `wakes` — when a phone should be awake for them */
+export interface MateAlarm {
+  id: string;
+  mate_id: string;
+  /** alarm: a time they set · done: a chat they asked about finished */
+  kind: "alarm" | "done";
+  about: string;
+  status: "pending" | "ringing";
+  attempts: number;
+  /** when it is for (UTC) and that in their time ("YYYY-MM-DD HH:MM") */
+  due: string;
+  local: string;
+}
+
+export async function listAlarms(): Promise<{ alarms: MateAlarm[]; wakes: string[] }> {
+  const res = await apiResponse("/api/mate-alarms");
+  return (await res.json()) as { alarms: MateAlarm[]; wakes: string[] };
+}
+
+export async function cancelAlarm(id: string): Promise<void> {
+  await apiResponse(`/api/mate-alarms/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

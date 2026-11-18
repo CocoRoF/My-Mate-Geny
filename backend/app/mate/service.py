@@ -708,6 +708,7 @@ class MateService:
                 "HRH_MATE_SESSION": session["id"],
                 "HRH_MATE_MEMORY": "1",
                 "HRH_MATE_SCREEN": "1",  # see_screen, shared or not (the capture says why it can't look)
+                "HRH_MATE_ALARM": "1",  # set_alarm / list_alarms / cancel_alarm: she phones them then (app/mate/alarms.py)
                 # update_conversation_style — unless she may not change her own style
                 **({"HRH_MATE_STYLE": prefs.get("self_edit") or "auto"}
                    if (prefs.get("self_edit") or "auto") != "off" else {}),
@@ -1546,6 +1547,45 @@ class MateService:
             key = "last_user" if r["role"] == "user" else "last_answer"
             out.setdefault(key, _clip(r["content"], 200))
         return out
+
+    # ---- alarms: she phones them at a time they ask for (app/mate/alarms.py) ----
+
+    def _alarm_clock(self) -> Any:
+        if self.calls is None:
+            raise MateError("phone calls aren't available on this server, so an alarm can't ring")
+        return self.calls.alarms
+
+    async def _tool_set_alarm(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> Any:
+        from app.mate.alarms import parse_when
+
+        clock = self._alarm_clock()
+        tz = self.store.tz()
+        at = parse_when(str(args.get("at") or ""), clock.book.now(), tz)
+        a = clock.book.add(mate["id"], at, str(args.get("about") or ""))
+        clock.poke()
+        local = clock.public(a, tz)["local"]
+        known = bool(self.calls.seen or self.calls.phones or self.calls.reachable(None))
+        note = ("" if known else " Nothing that can take your call has connected yet: the app must be running on their phone "
+                "or computer then — tell them.")
+        return f"Alarm {a['id']} set for {local} (their time). You'll call them then.{note}"
+
+    async def _tool_list_alarms(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> Any:
+        clock = self._alarm_clock()
+        tz = self.store.tz()
+        rows = [clock.public(a, tz) for a in clock.book.upcoming(mate["id"])]
+        if not rows:
+            return "No alarms of yours are waiting."
+        return [{"alarm_id": r["id"], "when": r["local"], "about": r["about"], "kind": r["kind"]} for r in rows]
+
+    async def _tool_cancel_alarm(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> Any:
+        clock = self._alarm_clock()
+        aid = str(args.get("alarm_id") or "").strip()
+        try:
+            a = clock.book.cancel(aid, mate["id"])
+        except KeyError:
+            raise MateError(f"no alarm of yours with id {aid!r} (see list_alarms)") from None
+        clock.poke()
+        return f"Alarm {a['id']} ({clock.public(a, self.store.tz())['local']}) called off."
 
     async def _tool_list_sessions(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> Any:
         q = str(args.get("query") or "").strip().lower()

@@ -167,6 +167,7 @@ class SessionService:
         self.persistent_engines = True  # Claude: one long-lived CLI process per chat
         # Higgsfield for the chats' agents (app.higgsfield.agent; main.py sets it). None = not wired.
         self.screen: Any = None
+        self.done_notify: Any = None  # ("끝나면 알려 줘": app/services/done_notify.py, set by app/main.py)
         self.mcp = None
         self.higgsfield: HiggsfieldAgent | None = None
         self._hf_note: dict[str, str] = {}  # sid -> the Higgsfield note Codex was last told (in its message)
@@ -1347,6 +1348,8 @@ class SessionService:
             self.mcp.configure(sid, req)
         if self.screen is not None and session.get("kind") not in ("mate", "avatar"):
             self.screen.configure(sid, req)
+        if self.done_notify is not None and session.get("kind") not in ("mate", "avatar"):
+            self.done_notify.configure(sid, req)  # ("끝나면 알려 줘": app/services/done_notify.py)
         if provider_name == "codex" and req.system_append:
             # Codex hears the note in its message: in a new thread, or when it changed since it was told
             req.note_in_prompt = not resume_id or self._hf_note.get(sid) != req.system_append

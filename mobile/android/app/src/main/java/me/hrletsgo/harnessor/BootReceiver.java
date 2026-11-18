@@ -14,6 +14,7 @@ public class BootReceiver extends BroadcastReceiver {
         if (Intent.ACTION_BOOT_COMPLETED.equals(a) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(a)) {
             GenyCheck.schedule(context);
             GenyLinkService.sync(context);
+            GenyWakes.arm(context); // (her alarms: the system forgets them at a reboot)
         }
     }
 }

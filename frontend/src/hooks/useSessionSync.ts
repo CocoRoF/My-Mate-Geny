@@ -14,6 +14,7 @@ import { useMateStore } from "../stores/mateStore";
 import { cancelCaptureRequest, clientHello, handleCaptureRequest } from "../mate/screenCapture";
 import { useSessionStore } from "../stores/sessionStore";
 import { useCallStore } from "../stores/callStore";
+import { handWakes, useAlarmStore } from "../stores/alarmStore";
 import type { CallInfo } from "../api/calls";
 
 const SETTLE_MS = 250; // a turn start = message + title + run state: one fetch
@@ -102,6 +103,13 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
             else useCallStore.getState().remote(call);
           }
           return;
+        }
+        // her alarms changed (set, rung, called off): the lists, and the phone's wakes
+        if (msg.type === "alarms.changed" || msg.type === "hello") {
+          const data = msg.data as { wakes?: unknown } | undefined;
+          if (Array.isArray(data?.wakes)) handWakes(data.wakes.filter((w): w is string => typeof w === "string"));
+          void useAlarmStore.getState().load();
+          if (msg.type === "alarms.changed") return;
         }
         if (msg.type === "mcp.changed" || msg.type === "hello") void useMcpStore.getState().load();
         if (msg.type === "providers.changed") {

@@ -416,6 +416,44 @@ SEE_SCREEN = {
         },
     },
 }
+# her calls they ask for (HRH_MATE_ALARM=1, every conversation of hers: app/mate/alarms.py)
+ALARM_TOOLS = [
+    {
+        "name": "set_alarm",
+        "description": (
+            "Set an alarm: at that time you phone them — a real call, on the device they are using (their phone, or the "
+            "computer they are on). Use it whenever they ask you to wake them, remind them or call them at a time "
+            "(\"9시에 깨워 줘\", \"30분 뒤에 전화해\", \"내일 아침 7시에 알람\", \"call me at 3\"). `at` is their local time: HH:MM "
+            "(the next time it is that), YYYY-MM-DD HH:MM, or +minutes from now (+30, +90, +2h). `about`: what it is for, in "
+            "their words — you'll have it when you call. Then tell them, briefly and as yourself, when you'll call. If they "
+            "don't pick up you call again a couple of times, then leave them a message. Never say you set one without "
+            "calling this."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "at": {"type": "string", "description": "When: HH:MM, YYYY-MM-DD HH:MM (their time), or +minutes."},
+                "about": {"type": "string", "description": "What it is for (wake up, a meeting, take the medicine…)."},
+            },
+            "required": ["at"],
+        },
+    },
+    {
+        "name": "list_alarms",
+        "description": "The alarms of yours still waiting — when (their time), what for, and each one's id.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "cancel_alarm",
+        "description": "Call off an alarm of yours (its id from list_alarms) when they ask you not to call after all.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"alarm_id": {"type": "string", "description": "The alarm's id."}},
+            "required": ["alarm_id"],
+        },
+    },
+]
+
 _SLOW = {"see_screen": 150}  # (waits for the user's answer + the capture; the backend always answers sooner)
 
 
@@ -427,7 +465,8 @@ def tools() -> list[dict]:
             + ([FEEL] if os.environ.get("HRH_MATE_STATE") == "1" else [])
             + ([CHANGE_OUTFIT] if os.environ.get("HRH_MATE_OUTFIT") == "1" else [])
             + ([DO_ACTIVITY] if os.environ.get("HRH_MATE_LIFE") == "1" else [])
-            + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else []))
+            + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else [])
+            + (ALARM_TOOLS if os.environ.get("HRH_MATE_ALARM") == "1" else []))
 
 
 def _call(name: str, args: dict) -> dict:

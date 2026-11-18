@@ -34,7 +34,7 @@ test("the call plugin is the app's and the activity hands it her notification's 
 
 test("every method the console calls exists, under the same names", () => {
   const called = [...page.matchAll(/(?:call|ask)(?:<[^(]*>)?\("(\w+)"/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(called)].sort(), ["begin", "cancelRing", "end", "link", "openSettings", "ring", "setBackground", "setSpeaker", "status"]);
+  assert.deepEqual([...new Set(called)].sort(), ["begin", "cancelRing", "end", "link", "openSettings", "ring", "setBackground", "setSpeaker", "setWakes", "status"]);
   for (const m of called) assert.match(plugin, new RegExp(`@PluginMethod\\s+public void ${m}\\(PluginCall call\\)`), m);
   assert.match(page, /eventName: "callAction"/);
   assert.match(plugin, /notifyListeners\("callAction", \w+, true\)/);
@@ -125,4 +125,24 @@ test("every notification shows the app's own mark in the status bar, not Android
   // (the page's own notifications: Capacitor's LocalNotifications takes its icon from the config — else ic_dialog_info, the "i")
   const config = JSON.parse(read(path.join(ROOT, "capacitor.config.json")));
   assert.equal(config.plugins.LocalNotifications.smallIcon, "ic_stat_geny");
+});
+
+test("her alarms ring on time with the app closed: the system's alarm clock wakes it a little before each", () => {
+  const wakes = read(path.join(JAVA, "GenyWakes.java"));
+  const receiver = read(path.join(JAVA, "WakeReceiver.java"));
+  const worker = read(path.join(JAVA, "GenyCheckWorker.java"));
+  // (the server's list: from the link's hello, a "wakes" message, the page; the soonest set as an alarm clock)
+  assert.match(wakes, /setAlarmClock\(new AlarmManager\.AlarmClockInfo/);
+  assert.match(wakes, /canScheduleExactAlarms\(\)/);
+  assert.match(wakes, /setExpedited\(/);
+  assert.match(receiver, /GenyWakes\.fired\(context\)/);
+  for (const src of [worker, service]) {
+    assert.match(src, /case "hello":[\s\S]*?GenyWakes\.set\(/);
+    assert.match(src, /case "wakes":\s+GenyWakes\.set\(/);
+  }
+  assert.match(plugin, /@PluginMethod\s+public void setWakes\(PluginCall call\)/);
+  assert.match(boot, /GenyWakes\.arm\(context\)/);
+  assert.match(manifest, /android:name="\.WakeReceiver" android:exported="false"/);
+  assert.match(manifest, /android\.permission\.USE_EXACT_ALARM"/);
+  assert.match(manifest, /android\.permission\.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32"/);
 });

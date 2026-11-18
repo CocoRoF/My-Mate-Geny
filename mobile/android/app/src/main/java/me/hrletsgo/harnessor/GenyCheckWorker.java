@@ -86,7 +86,11 @@ public class GenyCheckWorker extends Worker {
         }
         switch (m.optString("type")) {
             case "hello":
+                GenyWakes.set(c, m.optJSONArray("wakes"));
                 GenyLinkService.ringFrom(c, m.optJSONObject("ring"));
+                return false;
+            case "wakes":
+                GenyWakes.set(c, m.optJSONArray("wakes"));
                 return false;
             case "notices":
                 JSONArray items = m.optJSONArray("items");

@@ -152,6 +152,7 @@ export type EventType =
   | "steer.rejected"
   | "task.update"
   | "task.state"
+  | "session.notify" // “끝나면 알려 줘” armed or not (backend app/services/done_notify.py)
   | "usage.update"
   | "turn.snapshot"
   | "turn.changes"

@@ -44,6 +44,10 @@ from app.services._ids import now_iso
 CALL_MODEL = "claude-haiku-5-5"   # a call is always on the lightest model, never her usual one
 CALL_CLIENT = 1                   # the call screen a page announces in its hello (``calls``)
 RING_S = 30                       # she calls: unanswered this long → a missed call
+ALARM_RING_S = 60                 # …an alarm (or "it's done") they asked for rings longer
+ASKED = ("alarm", "done")         # the calls she makes because they asked (app/mate/alarms.py): no feelings, no cooldown
+PRIMARY_RECENT = timedelta(minutes=15)  # a device used this recently is the one they are on (the others stay quiet)
+DEVICES_KEY = "call_devices"      # when each device that can take a call was last used (its device → {kind, at})
 DIAL_S = 45                       # they call: no call screen connected this long → given up
 RESUME_S = 10                     # a dropped call socket may come back this long
 MAX_CALL_S = 60 * 60              # an hour at most
@@ -112,7 +116,9 @@ def _t(iso: str | None) -> datetime | None:
 #: why she called (``Call.reason``), as she remembers it
 WHY = {"question": "you had asked them something and were still waiting for the answer",
        "work": "you had news for them from work you'd handed off",
-       "lonely": "you missed them and wanted to hear their voice"}
+       "lonely": "you missed them and wanted to hear their voice",
+       "alarm": "they had asked you to call them then — an alarm they set with you",
+       "done": "a chat they had asked to be told about finished its work"}
 
 
 def describe(card: dict[str, Any], tz: Any = timezone.utc, *, name: str = "You", lines: int = 40) -> str:
@@ -317,7 +323,8 @@ class Call:
     direction: str            # "outgoing": the user called her · "incoming": she called the user
     status: str               # ringing (she calls) · dialing (they call) · active · ended
     device: str = ""
-    reason: str = ""          # why she called: question · work · lonely
+    reason: str = ""          # why she called: question · work · lonely · alarm · done (they asked: alarms.py)
+    rang: list[str] = field(default_factory=list)  # the devices it rang on (a link joining later rings too)
     about: str = ""
     created_at: str = field(default_factory=now_iso)
     answered_at: str | None = None
@@ -389,6 +396,11 @@ class CallService:
         db.execute("UPDATE mate_calls SET status='ended', end_reason='restart', ended_at=COALESCE(ended_at, ?) "
                    "WHERE status IN ('ringing','dialing','active')", (now_iso(),))
         self.phones = self._load_phones()
+        self.seen = self._load_devices()
+        self._seen_saved: dict[str, float] = {}
+        from app.mate.alarms import AlarmBook, AlarmClock
+
+        self.alarms = AlarmClock(AlarmBook(db, clock), self, on_change=self._alarms_changed)
         mates.calls = self
         self.svc.call_note = lambda card: describe(card, self.store.tz())  # (her chat's handoffs and catch-ups)
 
@@ -471,28 +483,33 @@ class CallService:
 
     # ---- she calls them ----
 
-    async def ring(self, mate_id: str, device: str, reason: str, about: str = "") -> Call:
+    async def ring(self, mate_id: str, device: str, reason: str, about: str = "", *, also: list[str] | None = None) -> Call:
+        """She calls ``device`` (and ``also`` these: an alarm that rang out once rings every device that can take it — the
+        first to pick up has it, the others stop: ``call.update``)."""
         if self.active() is not None:
             raise CallError("a call is already on", status=409, code="busy")
         mate = self.store.get(mate_id)
         sid = self.mates.conversation(mate_id)["session_id"]
+        devices = [d for d in dict.fromkeys([device, *(also or [])]) if d]
         call = Call(id="call_" + secrets.token_hex(8), mate_id=mate_id, name=mate["name"], session_id=sid,
-                    direction="incoming", status="ringing", device=device, reason=reason, about=about,
-                    created_at=self._now_iso())
+                    direction="incoming", status="ringing", device=device if len(devices) <= 1 else "", reason=reason,
+                    about=about, created_at=self._now_iso())
         self._open(call)
         self._hold_local(call, mate)
-        ring = {"type": "call.ring", "data": call.public()}
-        for c in self.broker.clients():
-            if c.device == device:
-                self._tell(c, ring)
-        for lk in list(self.links.values()):
-            if lk.device == device:
-                self._tell(lk, ring)  # (the app's ringing with the page itself gone: the phone rings like a call)
-        self._later(call, RING_S, lambda: self._spawn(call, self.end(call, "missed"))
+        for d in devices:
+            ring = {"type": "call.ring", "data": {**call.public(), "device": d}}
+            for c in self.broker.clients():
+                if c.device == d:
+                    self._tell(c, ring)
+            for lk in list(self.links.values()):
+                if lk.device == d:
+                    self._tell(lk, ring)  # (the app's ringing with the page itself gone: the phone rings like a call)
+        call.rang = devices
+        self._later(call, ALARM_RING_S if reason in ASKED else RING_S, lambda: self._spawn(call, self.end(call, "missed"))
                     if call.status == "ringing" and not call.answering else None)
         self._spawn(call, self._prepare(call))  # (warm: her hello is ready the moment they pick up)
         self.mates._log("info", f"“{mate['name']}” is calling ({reason})", code="mate.call_ring",
-                        detail={"call": call.id, "reason": reason, "device": device})
+                        detail={"call": call.id, "reason": reason, "devices": devices})
         return call
 
     async def accept(self, cid: str, device: str = "") -> Call:
@@ -730,9 +747,15 @@ class CallService:
         else:
             why = {"question": "you asked them something and are still waiting for an answer",
                    "work": "the work you passed on to a chat has news for them",
-                   "lonely": "you missed them and wanted to hear their voice — nothing urgent"}.get(call.reason, "you wanted to talk")
+                   "lonely": "you missed them and wanted to hear their voice — nothing urgent",
+                   "alarm": "they asked you to — it's the alarm they set with you, for now",
+                   "done": "a chat they asked to be told about has finished its work"}.get(call.reason, "you wanted to talk")
             hello = f"[They picked up your call. You called them because {why}"
             hello += (f": “{clip(call.about, 300)}”" if call.about else "") + ". Say hello and why you called, in a few words.]"
+            if call.reason == "alarm":
+                hello = hello[:-1] + " Wake them or remind them the way you would, as yourself.]"
+            elif call.reason == "done":
+                hello = hello[:-1] + " Tell them it's done and the gist of it; more only if they ask.]"
         await self._start_reply(call, hello, greeting=True)
 
     async def _start_reply(self, call: Call, prompt: str, *, greeting: bool = False) -> None:
@@ -942,6 +965,9 @@ class CallService:
                                                   "tools_refused": call.tool_attempts})
         if status == "talked":
             self.mates._state_event(call.mate_id, lambda doc, who, at, tz: S.call_talked(doc, who, at, tz))
+        if call.reason in ASKED:
+            # (an alarm or a "done" they asked for: whether they picked up is the alarm clock's business, not her heart's)
+            self._spawn_free(self.alarms.after_call(call.id, status))
         elif call.direction == "incoming" and status in ("declined", "missed"):
             n = self.unanswered_in_a_row(call.mate_id)
             self.mates._state_event(call.mate_id, lambda doc, who, at, tz: S.call_unanswered(doc, who, status == "declined",
@@ -1034,7 +1060,8 @@ class CallService:
     def unanswered_in_a_row(self, mate_id: str) -> int:
         n = 0
         for r in self.store._db.query("SELECT status FROM mate_calls WHERE mate_id=? AND direction='incoming' AND status "
-                                      "NOT IN ('ringing','dialing','active') ORDER BY created_at DESC LIMIT 20", (mate_id,)):
+                                      "NOT IN ('ringing','dialing','active') AND reason NOT IN ('alarm','done') "
+                                      "ORDER BY created_at DESC LIMIT 20", (mate_id,)):
             if r["status"] in ("declined", "missed"):
                 n += 1
             elif r["status"] == "talked":
@@ -1067,6 +1094,154 @@ class CallService:
         able = [(str(self.phones[d].get("at") or ""), d) for d in linked if d in self.phones and self._hers(self.phones[d], mate)]
         return max(able)[1] if able else None
 
+    # ---- the device they are on (the one a call rings on) ----
+
+    def _load_devices(self) -> dict[str, dict[str, Any]]:
+        try:
+            doc = json.loads(self.store._setting(DEVICES_KEY) or "{}")
+        except ValueError:
+            doc = {}
+        return {str(k): v for k, v in doc.items() if isinstance(v, dict)} if isinstance(doc, dict) else {}
+
+    @staticmethod
+    def _kind(native: str) -> str:
+        return "android" if native == "android" else "desktop" if native.startswith("desktop-") else "browser"
+
+    @staticmethod
+    def _takes_calls(c: Any) -> bool:
+        """a window with the call screen: the console (the phone app is one too) — not the overlay, the quick card, the chat
+        window or the hidden runtime, which say so themselves (``calls`` 0) or, from an older page, by their surface"""
+        return bool(c.device) and c.calls >= CALL_CLIENT and (c.native == "android" or (c.surface or "console") == "console")
+
+    def used(self, client: Any) -> None:
+        """A window that takes calls was just used (its hello said ``active``): kept for its device, so a phone whose app has
+        closed since still counts as the one they were on (at most once a minute per device)."""
+        if not self._takes_calls(client):
+            return
+        now = time.monotonic()
+        if now - self._seen_saved.get(client.device, -1e9) < 60:
+            return
+        self._seen_saved[client.device] = now
+        self.seen[client.device] = {"kind": self._kind(client.native), "at": self._now_iso()}
+        if len(self.seen) > 30:
+            self.seen = dict(sorted(self.seen.items(), key=lambda kv: str(kv[1].get("at") or ""))[-30:])
+        self.store._put_setting(DEVICES_KEY, json.dumps(self.seen))
+
+    def _phone_lets(self, device: str, mate: dict[str, Any]) -> bool:
+        """this phone lets her call it (a page of it open says so, else what it last said)"""
+        pages = [c for c in self.broker.clients() if c.device == device and c.native == "android" and c.screen_policy]
+        if pages:
+            return any(self._hers(c.screen_policy, mate) for c in pages)
+        return self._hers(self.phones.get(device) or {}, mate)
+
+    def reachable(self, mate: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+        """The devices a call can ring now — a window with the call screen open, or a phone's link up — with when each was
+        last used. ``mate``: her own call — a phone only if it lets her call it (its "she may call me"), a computer only
+        while some phone of theirs does (the permission is theirs, set on the phone; the ring goes where they are)."""
+        out: dict[str, dict[str, Any]] = {}
+        for c in self.broker.clients():
+            if not self._takes_calls(c):
+                continue
+            d = out.setdefault(c.device, {"kind": self._kind(c.native), "open": True, "active": 0.0, "visible": False})
+            d["active"] = max(d["active"], c.active_at)
+            d["visible"] = d["visible"] or c.visible
+        for lk in self.links.values():
+            if lk.device not in out:
+                out[lk.device] = {"kind": "android", "open": False, "active": 0.0, "visible": False}
+        if mate is not None:
+            phones = {*(d for d, v in out.items() if v["kind"] == "android"), *self.phones}
+            if not any(self._phone_lets(d, mate) for d in phones):
+                return {}
+            out = {d: v for d, v in out.items() if v["kind"] != "android" or self._phone_lets(d, mate)}
+        for dev, d in out.items():
+            d["seen"] = str((self.seen.get(dev) or {}).get("at") or (self.phones.get(dev) or {}).get("at") or "")
+        return out
+
+    def primary(self, devices: dict[str, dict[str, Any]]) -> str | None:
+        """The one they are on: the one used last — a window used in this server's life by how recently, else what was kept
+        of each (a phone whose app has closed since); a page on screen before one behind; a phone before a computer when
+        nothing tells them apart (it is the one with them)."""
+        if not devices:
+            return None
+        now = time.monotonic()
+
+        def score(item: tuple[str, dict[str, Any]]) -> tuple[Any, ...]:
+            dev, d = item
+            fresh = d["active"] > 0 and now - d["active"] < PRIMARY_RECENT.total_seconds()
+            return (fresh, d["active"] if fresh else 0.0, d["seen"], d["visible"], d["kind"] == "android", dev)
+
+        return max(devices.items(), key=score)[0]
+
+    def callee(self, mate: dict[str, Any], *, asked: bool) -> str | None:
+        """Where her call rings: the device they are on, of those it can ring now. ``asked``: an alarm or a "done" they asked
+        for — any device with the call screen; her own call — only those that let her speak first."""
+        return self.primary(self.reachable(None if asked else mate))
+
+    # ---- alarms and "it's done" (app/mate/alarms.py) ----
+
+    async def alarm(self, a: dict[str, Any]) -> str:
+        """An alarm is due: she calls them (the first time on the device they are on; again — it rang out — on every device
+        that can take it). → ``ringing`` · ``busy`` (a call is on) · ``unreachable`` (nowhere to ring now) · ``gone``."""
+        if self.active() is not None:
+            return "busy"
+        try:
+            mate = self.store.get(a["mate_id"])
+        except KeyError:
+            self.alarms.book.mark(a["id"], "cancelled")
+            return "gone"
+        devices = self.reachable(None)
+        first = self.primary(devices)
+        if first is None:
+            return "unreachable"
+        also = [d for d in devices if d != first] if a["attempts"] >= 1 else []
+        try:
+            call = await self.ring(mate["id"], first, "alarm" if a["kind"] == "alarm" else "done", a["about"], also=also)
+        except CallError:
+            return "busy"
+        self.alarms.book.mark(a["id"], "ringing", attempts=a["attempts"] + 1, call_id=call.id)
+        return "ringing"
+
+    async def alarm_missed(self, a: dict[str, Any], *, late: bool) -> None:
+        """Never picked up (or due while the server was down): she leaves them a message about it instead."""
+        try:
+            sid = self.mates.conversation(a["mate_id"])["session_id"]
+        except (KeyError, MateError):
+            return
+        tz = self.store.tz()
+        due = _t(a.get("due") or a.get("at"))
+        when = due.astimezone(tz).strftime("%H:%M") if due else ""
+        if a["kind"] == "done":
+            text = (f"[A chat they asked to be told about finished its work: “{clip(a['about'], 500)}”. You called to tell them "
+                    "and they didn't pick up. Leave them a short message about it, in your own words.]")
+        elif late:
+            text = (f"[The alarm they set with you for {when} — “{clip(a['about'], 300)}” — came while you couldn't call (the "
+                    "app was down). Leave them a short message about it, in your own words.]")
+        else:
+            text = (f"[The alarm they set with you for {when} — “{clip(a['about'], 300)}” — you called {a['attempts']} times and "
+                    "they didn't pick up. Leave them a short message about it, in your own words.]")
+        from app.services.session_service import TurnBusyError
+
+        meta = {"internal": True, "kind": "alarm", "alarm": a["id"]}
+        deadline = time.monotonic() + 15 * 60
+        while True:
+            try:
+                self.svc.start_turn(sid, text, meta=meta)
+                return
+            except TurnBusyError:
+                if time.monotonic() > deadline:
+                    return
+                await asyncio.sleep(2.0)
+            except KeyError:
+                return
+
+    def _alarms_changed(self) -> None:
+        """Alarms set, rung, cancelled: the windows' lists, and every phone's wakes."""
+        msg = {"type": "alarms.changed", "data": {"wakes": self.alarms.wakes()}}
+        for c in self.broker.clients():
+            self._tell(c, msg)
+        for lk in list(self.links.values()):
+            self._tell(lk, {"type": "wakes", "wakes": msg["data"]["wakes"]})
+
     # ---- the phone app's background link ----
 
     def _load_phones(self) -> dict[str, dict[str, Any]]:
@@ -1078,7 +1253,10 @@ class CallService:
 
     def saw(self, client: Any) -> None:
         """A phone app's page said who it is (``/ws/sessions`` hello): whether it lets her speak first, and to whom, is
-        kept for its device — so once the page is gone (the app closed) its background link still knows."""
+        kept for its device — so once the page is gone (the app closed) its background link still knows. Any window that
+        takes calls and was just used: the device they are on (``used``)."""
+        if getattr(client, "active_at", 0) and time.monotonic() - client.active_at < 2:
+            self.used(client)
         if getattr(client, "native", "") != "android" or not client.device or client.calls < CALL_CLIENT:
             return
         pol = client.screen_policy or {}
@@ -1116,8 +1294,14 @@ class CallService:
         where every call stands."""
         lk = Link(id=secrets.token_hex(6), device=str(device)[:80], send=send, connected_at=time.monotonic())
         self.links[lk.id] = lk
-        ringing = next((c for c in self.calls.values() if c.status == "ringing" and c.device == lk.device), None)
-        self._tell(lk, {"type": "hello", **self.reach(lk.device), "ring": ringing.public() if ringing else None})
+        ringing = next((c for c in self.calls.values() if c.status == "ringing" and (c.device == lk.device or lk.device in c.rang)),
+                       None)
+        # (``wakes``: when to be awake for her alarms — the app sets itself to wake a little before each)
+        self._tell(lk, {"type": "hello", **self.reach(lk.device), "ring": {**ringing.public(), "device": lk.device} if ringing else None,
+                        "wakes": self.alarms.wakes()})
+        if ringing is None:
+            # (it woke for an alarm due any moment: the clock looks now, and finds it on the line)
+            self.alarms.poke_quiet()
         return lk
 
     def unlink(self, lid: str) -> None:
@@ -1218,7 +1402,7 @@ class CallService:
         sid = mate.get("session_id")
         if mate.get("draft") or not sid:
             return "no_conversation"
-        device = self.phone(mate)
+        device = self.callee(mate, asked=False)
         if device is None:
             return "no_phone"
         now = datetime.fromtimestamp(self.clock(), timezone.utc)
@@ -1234,8 +1418,8 @@ class CallService:
         last_user = self._last_user(sid)
         if last_user is not None and now - last_user < CHATTING:
             return "chatting"
-        mine = self.store._db.query_one("SELECT created_at FROM mate_calls WHERE mate_id=? AND direction='incoming' ORDER BY "
-                                        "created_at DESC LIMIT 1", (mate_id,))
+        mine = self.store._db.query_one("SELECT created_at FROM mate_calls WHERE mate_id=? AND direction='incoming' AND reason "
+                                        "NOT IN ('alarm','done') ORDER BY created_at DESC LIMIT 1", (mate_id,))
         if mine and (at := _t(mine["created_at"])) and now - at < cooldown(self.unanswered_in_a_row(mate_id)):
             return "cooldown"
         last = self.store._db.query_one("SELECT ended_at FROM mate_calls WHERE mate_id=? AND ended_at IS NOT NULL ORDER BY "
@@ -1270,6 +1454,7 @@ class CallService:
 
     def start(self) -> None:
         self.task = asyncio.create_task(self.run())
+        self.alarms.start()
         self._end_links_on_exit()
 
     def end_links(self) -> None:
@@ -1300,10 +1485,12 @@ class CallService:
             signal.signal(sig, handler)
 
     async def stop(self) -> None:
-        if self.task is not None:
-            self.task.cancel()
+        for task in (self.task, self.alarms.task):
+            if task is None:
+                continue
+            task.cancel()
             try:
-                await self.task
+                await task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
         for call in list(self.calls.values()):
@@ -1335,6 +1522,13 @@ class CallService:
         task = asyncio.ensure_future(coro)
         call.tasks.add(task)
         task.add_done_callback(call.tasks.discard)
+        return task
+
+    def _spawn_free(self, coro: Awaitable[Any]) -> asyncio.Task:
+        """a task that outlives the call it came from (what an alarm does after its call)"""
+        task = asyncio.ensure_future(coro)
+        self._followups.add(task)
+        task.add_done_callback(self._followups.discard)
         return task
 
     def _send(self, call: Call, msg: dict[str, Any]) -> None:

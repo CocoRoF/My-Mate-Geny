@@ -504,6 +504,24 @@ ipcMain.handle("hrh:notify", (e, { title, body } = {}) => {
   if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true);
   return true;
 });
+// Her call rings this computer (docs/mate-calls.md "On the desktop"): the console — the window with the call screen —
+// comes up in front, out of the tray or from behind another window, and the system says so; it rings itself (the page's
+// own tone, its 거절 / 수락). Only the console's page asks (the other windows have no call screen).
+ipcMain.handle("hrh:call-ring", (e, { title, body } = {}) => {
+  if (!ours(e)) return false;
+  openConsole();
+  if (win && !win.isDestroyed()) {
+    win.setAlwaysOnTop(true, "pop-up-menu");
+    setTimeout(() => win && !win.isDestroyed() && win.setAlwaysOnTop(false), 1500); // (in front, not stuck there)
+    win.flashFrame(true);
+  }
+  if (Notification.isSupported()) {
+    const n = new Notification({ title: String(title || PRODUCT), body: String(body || ""), silent: true });
+    n.on("click", () => openConsole());
+    n.show();
+  }
+  return true;
+});
 ipcMain.handle("hrh:openExternal", (e, url) => {
   if (ours(e) && /^https?:/.test(String(url))) shell.openExternal(String(url));
 });

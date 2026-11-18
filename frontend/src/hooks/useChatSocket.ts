@@ -11,6 +11,7 @@ import type { Attachment, PlanUsage, ProviderEvent } from "../types";
 import { tr } from "../i18n";
 import { plainPreview } from "../mate/markdown";
 import { rememberConversation } from "../lib/lastConversation";
+import { useDoneNotifyStore, type DoneNotifyState } from "../stores/doneNotifyStore";
 
 declare global {
   interface Window {
@@ -22,6 +23,8 @@ declare global {
       platform: string;
       version: string;
       notify?: (title: string, body: string) => void;
+      /** desktop: her call rings — the console comes up (restored, in front) and says so (desktop/src/main.js hrh:call-ring) */
+      ringCall?: (title: string, body: string) => void;
       openExternal?: (url: string) => void;
       /** desktop: which window this page is in (console | mate-overlay | mate-quick | mate-chat | bar) */
       surface?: string;
@@ -134,6 +137,11 @@ export function useChatSocket(sessionId: string | null) {
         }
         if (ev.type === "task.state") {
           useTaskStore.getState().upsert(sessionId, ev.data as any);
+          return;
+        }
+        if (ev.type === "session.notify") {
+          // (“끝나면 알려 줘” armed or not: app/services/done_notify.py)
+          useDoneNotifyStore.getState().set(sessionId, ev.data as unknown as DoneNotifyState);
           return;
         }
         if (ev.type === "usage.update") {

@@ -143,6 +143,9 @@ import {
   LuMoveUpRight,
   LuType,
   LuGrid3X3,
+  LuAlarmClock,
+  LuBellRing,
+  LuMessagesSquare,
 } from "react-icons/lu";
 
 const MAP = {
@@ -292,6 +295,10 @@ const MAP = {
   "shape-arrow": LuMoveUpRight,
   text: LuType,
   mosaic: LuGrid3X3,
+  // her alarms, a chat's "tell me when it's done", another chat beside this one
+  "alarm-clock": LuAlarmClock,
+  "bell-ring": LuBellRing,
+  chats: LuMessagesSquare,
 } satisfies Record<string, IconType>;
 
 export type IconName = keyof typeof MAP;

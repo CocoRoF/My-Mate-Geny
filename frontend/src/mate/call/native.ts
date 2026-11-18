@@ -98,6 +98,9 @@ export const callNative = {
   /** call mode: the route (loudspeaker or earpiece), the screen kept on; the app holds the microphone and shows the call */
   begin: (speaker: boolean, about?: { id: string; mate: string; name: string }) => call("begin", { speaker, ...about }),
   setSpeaker: (on: boolean) => call("setSpeaker", { on }),
+  /** her alarms coming up (UTC, a little before each: app/mate/alarms.py wakes): the app wakes itself then to be on the
+   *  line when she calls, its page closed or not (an app from before alarms ignores it) */
+  setWakes: (wakes: string[]) => call("setWakes", { wakes }),
   end: () => call("end"),
   /** her ringing as a call notification (shown while the app is in the background or the phone is locked) → shown:
    *  the phone rings, so the page doesn't */

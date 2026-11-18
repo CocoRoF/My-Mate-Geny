@@ -500,7 +500,7 @@ async def test_with_the_app_closed_her_call_still_rings_the_phone_through_its_ba
         assert calls.phone(mate) is None  # (no link yet: nothing to ring)
         heard: list = []
         lk = calls.link("phone-1", heard.append)
-        assert heard[0] == {"type": "hello", "calls": True, "mate": "Haru", "ring": None}
+        assert heard[0] == {"type": "hello", "calls": True, "mate": "Haru", "ring": None, "wakes": []}
         assert calls.phone(mate) == "phone-1" and calls.phone(store.get(other["id"])) is None
         # what the page said is kept: a restarted server still knows the phone
         assert CallService(mates).phones["phone-1"]["mate_id"] == mate["id"]

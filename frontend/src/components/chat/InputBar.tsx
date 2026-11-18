@@ -1,5 +1,5 @@
 import { useLocalScreenControls } from "../composer/LocalScreenControls";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { resetContext } from "../../api/sessions";
 import { useChatStore } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -11,6 +11,10 @@ import Icon from "../ui/Icon";
 import ChatControls from "./ChatControls";
 import ComposerMenu from "./ComposerMenu";
 import UsageFooter from "./UsageFooter";
+import { DoneBell, DoneChip } from "./DoneNotify";
+import LinkedChat from "./LinkedChat";
+import ChatPicker from "./ChatPicker";
+import { useLinkedChats } from "../../stores/linkedChatStore";
 import ContextMeter from "./ContextMeter";
 import { useWorkbench } from "../../stores/workbenchStore";
 import { usePhone } from "../../lib/device";
@@ -55,6 +59,9 @@ export default function InputBar({
   );
   const c = useComposer({ sid, store: useChatStore, onSend, onSteer, onStop, actions: ACTIONS, runAction, slash: true, mentions: true });
   const screen = useLocalScreenControls(sid, session.title);
+  // another chat beside this one (+ → 다른 세션의 대화): picked, it stays above the message box until its ✕
+  const linked = useLinkedChats((s) => s.links[sid]);
+  const [picking, setPicking] = useState(false);
   const { items, uploading, failed, hasContent, notice, setNotice, isStreaming, touch, trigger } = c;
 
   // "Mention in chat" from the explorer appends `@path ` here.
@@ -90,6 +97,8 @@ export default function InputBar({
           </div>
         )}
 
+        {linked && <LinkedChat key={linked} sid={sid} other={linked} />}
+        <DoneChip sid={sid} />
         <QueuedList queue={c.queue} onRemove={c.unqueue} />
 
         <div className="relative rounded-2xl border border-border bg-surface-2/80 shadow-card backdrop-blur-sm focus-within:border-accent/50 transition">
@@ -134,8 +143,19 @@ export default function InputBar({
               >
                 <Icon name="plus" size={18} />
               </button>
-              {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} onShareScreen={screen.open} screenShared={screen.active} />}
+              {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} onShareScreen={screen.open} screenShared={screen.active} onLinkChat={() => setPicking(true)} />}
+              {picking && (
+                <ChatPicker
+                  current={sid}
+                  onClose={() => setPicking(false)}
+                  onPick={(other) => {
+                    useLinkedChats.getState().link(sid, other);
+                    setPicking(false);
+                  }}
+                />
+              )}
             </div>
+            <DoneBell sid={sid} />
             {/* while a turn runs, Queue / Add now need the room */}
             {phone && !(isStreaming && hasContent) && <ChatControls session={session} compact />}
             {items.length > 0 && (

@@ -584,6 +584,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 if screens is None or screens.token_info(request.headers.get("x-screen-token")) is None:
                     return JSONResponse({"detail": "invalid screen token"}, status_code=401)
                 return await call_next(request)
+            if path.startswith(INTERNAL_PREFIX + "notify/"):
+                # a chat's "tell me when it's done" (app/services/done_notify.py): its own per-chat token
+                notify = getattr(request.app.state, "done_notify", None)
+                if notify is None or notify.token_info(request.headers.get("x-notify-token")) is None:
+                    return JSONResponse({"detail": "invalid notify token"}, status_code=401)
+                return await call_next(request)
             if path.startswith(INTERNAL_PREFIX + "avatar/"):
                 # the Avatar Create agent's bridge (app/avatar/mcp_bridge.py): its own per-conversation token
                 avatars = getattr(request.app.state, "avatar_service", None)

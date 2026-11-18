@@ -7,12 +7,14 @@ import { useT } from "../../i18n";
 
 export type PickKind = "photo" | "camera" | "file";
 
-/** The + menu: Photos / Camera (touch screens) / Files, and Share screen where the page can (the Mate composer). */
+/** The + menu: Photos / Camera (touch screens) / Files, Share screen where the page can, and — a work chat — another chat's
+ *  conversation kept above the message box (components/chat/LinkedChat.tsx). */
 export function AttachMenu({
   onPick,
   onClose,
   onShareScreen,
   screenShared = false,
+  onLinkChat,
   className = "bottom-[calc(100%+8px)] left-0",
 }: {
   onPick: (kind: PickKind) => void;
@@ -21,6 +23,8 @@ export function AttachMenu({
   onShareScreen?: () => void;
   /** sharing is on for this conversation (the item then changes or stops it) */
   screenShared?: boolean;
+  /** offered only when given: pick another chat to keep beside this one */
+  onLinkChat?: () => void;
   className?: string;
 }) {
   const t = useT();
@@ -86,6 +90,24 @@ export function AttachMenu({
           <span className="text-left">
             <span className="block font-medium">{t("composer.shareScreen")}</span>
             <span className={`block text-[11px] ${screenShared ? "text-danger" : "text-content-faint"}`}>{t(screenShared ? "composer.shareScreenOn" : "composer.shareScreenHint")}</span>
+          </span>
+        </button>
+      )}
+      {onLinkChat && (
+        <button
+          onClick={() => {
+            onClose();
+            onLinkChat();
+          }}
+          className="flex w-full items-center gap-3 px-3 py-2.5 text-[13px] text-content hover:bg-surface-3"
+          data-testid="attach-link-chat"
+        >
+          <span className="grid place-items-center w-7 h-7 rounded-lg bg-success/12 text-success">
+            <Icon name="chats" size={15} />
+          </span>
+          <span className="text-left">
+            <span className="block font-medium">{t("composer.linkChat")}</span>
+            <span className="block text-[11px] text-content-faint">{t("composer.linkChatHint")}</span>
           </span>
         </button>
       )}

@@ -45,6 +45,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.mate.calls import LINK_PING_S, CallError, CallService
 
 CHECKIN_MAX_S = 180  # a check-in stays open at most this long (her ring, the app coming up to take it)
+ALARM_HOLD_S = 90    # an alarm due this soon: a check-in (the phone woke itself for it) stays on the line for it
 from app.mate.store import MateError
 from app.services._ids import now_iso
 from app.ws.gate import admit
@@ -103,7 +104,12 @@ async def link(request: Request, device: str = "", checkin: int = 0, since: str 
         return JSONResponse({"detail": "device is required", "code": "error"}, status_code=400)
 
     def ringing_here() -> bool:
-        return any(c.status == "ringing" and c.device == device for c in calls.calls.values())
+        return any(c.status == "ringing" and (c.device == device or device in c.rang) for c in calls.calls.values())
+
+    def alarm_soon() -> bool:
+        """an alarm is about to ring (app/mate/alarms.py): the phone woke a little before it to be on the line"""
+        nxt = calls.alarms.book.next_at()
+        return nxt is not None and (nxt - calls.alarms.book.now()).total_seconds() < ALARM_HOLD_S
 
     async def events() -> Any:
         queue: asyncio.Queue = asyncio.Queue(maxsize=256)
@@ -114,7 +120,7 @@ async def link(request: Request, device: str = "", checkin: int = 0, since: str 
                 now = now_iso()
                 queue.put_nowait({"type": "notices", "now": now, "items": calls.notices(since) if since else []})
                 await calls.checkin(device)
-                if not ringing_here():
+                if not ringing_here() and not alarm_soon():
                     queue.put_nowait({"type": "bye", "reason": "checked"})
             while True:
                 try:
@@ -124,7 +130,8 @@ async def link(request: Request, device: str = "", checkin: int = 0, since: str 
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                 if msg.get("type") == "bye":
                     return  # (the server is stopping — the app comes back to the next one — or a check-in is done)
-                if checkin and (time.monotonic() > until or (msg.get("type") == "call.update" and not ringing_here())):
+                if checkin and (time.monotonic() > until or (msg.get("type") in ("call.update", "ping") and not ringing_here()
+                                                              and not alarm_soon())):
                     # (her call was taken, turned down or missed: the check-in is over)
                     yield f"data: {json.dumps({'type': 'bye', 'reason': 'checked'})}\n\n"
                     return

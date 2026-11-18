@@ -62,7 +62,8 @@ export default function App() {
   const loadSessions = useSessionStore((s) => s.load);
   const loadConfig = useConfigStore((s) => s.load);
   useSessionSync(); // every device's session list follows server-pushed changes
-  const calling = useCallStore((s) => s.phase !== "idle");
+  // (a call here — or one on another device of theirs, shown as a quiet pill)
+  const calling = useCallStore((s) => s.phase !== "idle" || !!s.elsewhere);
   useEffect(() => {
     installCallActions(); // (her call notification's buttons, in the Android app)
     void useCallStore.getState().resume(); // (her ringing, when the app is opened from it)

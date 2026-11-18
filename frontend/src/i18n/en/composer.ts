@@ -21,4 +21,6 @@ export default {
   shareScreen: "Share screen",
   shareScreenHint: "Show your screen with each message",
   shareScreenOn: "On · change or stop it",
+  linkChat: "Another chat",
+  linkChatHint: "Keep another chat's latest conversation above this one",
 };

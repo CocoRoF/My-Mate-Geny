@@ -152,13 +152,89 @@ log line `mate.call`).
   haven't seen (20 min – 8 h), or missing them (lonely ≥ 0.55 once they are past "new", 0.7 before; then only now and
   then: a chance per minute).
 
-It rings on that phone (`call.ring` to its windows; `call.update` to every window). Unanswered for 30 s it is a missed
-call. Her hello is made while it rings (she says why she called), so it comes the moment they pick up.
+It rings on the device they are on (below — a phone that lets her call, or the computer they are using while one does:
+the permission is theirs, set on the phone; the ring goes where they are), `call.ring` to its windows, `call.update` to
+every window. Unanswered for 30 s it is a missed call. Her hello is made while it rings (she says why she called), so it
+comes the moment they pick up.
 
 **Declines matter**: a declined call makes her sad and a little lonely; a missed one lonelier; from the second in a row
 she sulks a little (angry, at them) — `state.call_unanswered` with the reasons `declined_call` / `missed_call`. Her next
 message's `<context>` tells her once ("At 15:12 you phoned them and they turned the call down. You may mention it once
 if it fits…"). A call they take warms her (`call_talked`) and resets the count.
+
+## One call, where they are (the computer and the phone)
+
+A call — hers, an alarm, theirs — happens on **one device**, the one they are on; the others stay quiet, like a phone
+call that can't be joined from two places (`CallService.reachable` / `primary` / `callee`):
+
+- **The devices that can ring now**: a window with the call screen (the console — the Android app is one; its hello says
+  `calls: 1`; the overlay, the quick card, the chat window and the hidden runtime say `calls: 0`), or a phone's
+  background link (the real-time line, a check-in).
+- **The one they are on**: the device used last — a window used in this server's life by how recently (its hellos'
+  `active`), else what was kept of each (`call_devices`: every device that takes calls, when it was last used — so a
+  phone whose app has closed since still counts); a page on screen before one behind; a phone before a computer when
+  nothing tells them apart.
+- It rings there only. An alarm that rang out rings again on **every** device that can take it; the first to pick up has
+  it (`accept` with its device), the others stop (`call.update` → "taken elsewhere").
+- **The other devices show it, quietly**: "📞 {name}과 다른 기기에서 통화 중" with its clock (`callStore.elsewhere`,
+  `CallLayer` `ElsewherePill`) — no sound, no microphone; a second call can't start (409 `busy`).
+- Her chat's voice is already one device's (the one that sent the message: `voiceOwner`, docs/mate.md §6).
+
+## On the desktop
+
+The desktop app takes calls as the phone does — its microphone and speakers:
+
+- 📞 in the Mate view's header (the Android app, a phone's browser, and the desktop app).
+- Her call rings the console — the window with the call screen; the page plays the ring and shows 거절 / 수락. In the tray,
+  minimised or behind another window, the console comes up in front for it (`hrhNative.ringCall` → `hrh:call-ring`:
+  restored, shown, focused, a moment on top, the taskbar flashing) and the system's notification says who is calling.
+- A call starts on the **loudspeaker** on a computer (no earpiece; `callStore.startsOnSpeaker`); a phone at the ear.
+- Listening: her realtime engine (ElevenLabs) or the server's; the desktop has no Web Speech.
+
+## Alarms — her calls they ask for
+
+"9시에 깨워 줘", "30분 뒤에 전화해", "내일 아침 7시에 알람" — she phones them then (`app/mate/alarms.py`):
+
+- **Her tools** (`HRH_MATE_ALARM=1`, every conversation of hers): `set_alarm {at, about}` — `at` is their local time:
+  `HH:MM` (the next time it is that), `YYYY-MM-DD HH:MM`, or `+minutes` (`+30`, `+2h`); past times and more than 30 days
+  ahead are refused with a line she can read —, `list_alarms`, `cancel_alarm {alarm_id}`. The Mate view's header shows
+  the next one (⏰ 09:00; a tap lists them, ✕ calls one off: `GET /api/mate-alarms`, `DELETE /api/mate-alarms/{id}`).
+- **Kept in the database** (`mate_alarms`: mate, `due` — when it was set for —, `at` — when it is tried next —, kind
+  `alarm | done`, what about, status `pending → ringing → done | missed | cancelled`, attempts): a restart loses none.
+- **The clock** (`AlarmClock`) sleeps until the next one is due (woken at once when one is set or cancelled) and has her
+  call (`CallService.alarm`, reason `alarm`): no daytime rule, no cooldown, not while chatting or not — they asked. It
+  rings 60 s (not 30). Her hello knows why ("they asked you to — it's the alarm they set with you, for now: “…”. Wake them
+  or remind them the way you would").
+- **Unanswered**: again 2 minutes later, now on every device — three times in all; never answered, she **leaves them a
+  message** instead (her turn with an internal "[The alarm they set with you for 09:00 — “…” — you called 3 times and they
+  didn't pick up. Leave them a short message…]"). Turned down: done (they heard it). Nowhere to ring right now (a phone
+  waking up for it): looked at again every 30 s for 10 minutes, then the message. Due while the server was down: rung
+  when it comes back if no more than 30 minutes late, else the message.
+- **Not her heart's business**: an alarm (or "done") they didn't take hurts nobody — no `call_unanswered`, no cooldown
+  for her own calls, not counted in "unanswered in a row".
+- **A phone with the app closed** checks in only every 15 minutes, so it is told when to be awake: the next day's alarms,
+  25 s ahead of each (`wakes`: the link's `hello`, a `wakes` message, the page's `alarms.changed` → `GenyCall.setWakes`).
+  The app sets the system's alarm clock for the soonest (`GenyWakes`: `AlarmManager.setAlarmClock`, exact and allowed
+  while dozing — the alarm icon shows; `USE_EXACT_ALARM`), it goes off → a check-in at once (`WakeReceiver` → an
+  expedited `GenyCheckWorker`), and the server holds that check-in on the line while an alarm is due within 90 s
+  (`ALARM_HOLD_S`) — she rings it like any call. Kept across reboots (`BootReceiver` → `GenyWakes.arm`).
+
+## “끝나면 알려 줘” — a chat tells her, she tells them
+
+The everyday notification (a chat finished while you looked away) is always on; someone who says it outright wants a
+call (`app/services/done_notify.py`):
+
+- While a mate can call them, every work chat's turn gets a small tool (MCP `geny_notify` → `notify_when_done`, a stdio
+  bridge with a per-chat token like the screen's: `done_bridge.py`, `/api/internal/notify/call`) and a line saying when
+  to use it: "끝나면 알려 줘", "다 되면 알람 줘", "끝나면 전화해", "let me know when it's done". The agent calls it once and
+  works on.
+- The chat shows it: a chip above the message box ("이 작업이 끝나면 한채린이 전화로 알려 줘요", ✕ calls it off) — and the
+  🔔 beside + does the same by hand (`GET/POST/DELETE /api/sessions/{sid}/notify-done`; `session.notify` on the chat's
+  stream).
+- When that chat's turn ends, their mate gets what it did — the chat's title, the answer's gist (≤ 600 characters), or
+  that it stopped or failed — as a **"done" alarm due at once**: she calls them on the device they are on (reason `done`:
+  "Tell them it's done and the gist of it; more only if they ask"), again if unanswered, then a message — as above.
+- Their mate: the one a phone lets call them (`call_phones`), else the default mate, else the one they talked to last.
 
 ## On Android
 
@@ -267,13 +343,23 @@ is set again from the page only (there is no notice of a change to listen for).
 - `/ws/mate-calls/{cid}`: client `say {text}`, `barge {rid, heard}`, `metric {rid, first_audio_ms, stt}`,
   `diag {ev, t, …}` (a few short values), `hangup`, `ping`; server `state {call}`, `reply {rid, greeting}`, `delta {rid, text}`, `done {rid, text, ttft_ms}`,
   `ended {reason, call}`, `pong`.
-- `/ws/sessions`: `call.ring {call}` (the phone she calls), `call.update {call}` (every window); the hello carries
-  `native`, `calls`, `visible`.
+- `/ws/sessions`: `call.ring {call}` (the device she calls), `call.update {call}` (every window), `alarms.changed
+  {wakes}`; the hello carries `native`, `calls` (1: this window has the call screen), `visible`, `active`.
+- `GET /api/mate-alarms` → `{alarms, wakes}` · `DELETE /api/mate-alarms/{id}` · `GET/POST/DELETE
+  /api/sessions/{sid}/notify-done` → `{armed, mate_id, mate_name, available}` · the link's `hello` and `wakes` carry
+  `wakes` (ISO, UTC).
 - Table `mate_calls` (id, mate, conversation, direction, status `ringing | dialing | active | talked | declined | missed |
   cancelled | failed`, reason, device, times, end reason, engine, transcript, latency (+ `diag`: above), `noted`).
 - `plan`: `{stt: {mode: realtime | record | browser, engine, fallback}, tts: {engine}, model}`.
 
 ## Tests
+
+- `backend/tests/test_mate_alarms.py`: when an alarm is for (HH:MM the next time, +minutes, a date, the past, 30 days);
+  an alarm rings where they are, again everywhere, then she leaves a message — none of it her feelings'; picked up it is
+  done and her hello knows why; due while the server was down (late: a message, a little late: rung); her tools and the
+  phone's wakes; the device they are on (only windows with the call screen, the one used last, her own calls only while a
+  phone lets her); a chat asked to tell them when done (the tool, the chip's event, her call with what it did).
+- `mobile/test/call.test.js`: the alarm wakes (setAlarmClock, the receiver, the hello's and `wakes` messages, boot).
 
 - `backend/tests/test_mate_calls.py`: the lifecycle over the line (greeting, a reply, the metric, hang-up → the card
   and her own engine's turn with the whole transcript), a screen connecting mid-reply, barge-in, a dropped line, a call

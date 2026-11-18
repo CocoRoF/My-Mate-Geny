@@ -6,6 +6,8 @@
  *   chat can be read while you talk (tap the pill to come back);
  * - the end, for a moment: "통화 종료 · 03:12", "연결이 끊겼어요"…
  * Android's Back folds the call screen (it never hangs up). Dark and light, small phones (the buttons shrink).
+ * A call with her on another device of theirs (the phone in their hand, the computer): a quiet pill here — no sound, no
+ * microphone; one call, where they are (calls.CallService).
  */
 import { useEffect, useState } from "react";
 import { useBackHandler } from "../../../lib/back";
@@ -219,9 +221,25 @@ function CallPill() {
   );
 }
 
+/** her call on another device of theirs: this one only says so (its clock running), and stays quiet */
+function ElsewherePill({ call }: { call: NonNullable<CallState["elsewhere"]> }) {
+  const t = useT();
+  const started = call.answered_at ? Date.parse(call.answered_at) : NaN;
+  const now = useNow(Number.isFinite(started), 1000);
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.4rem)] z-[85] flex justify-center px-3 animate-fade-in">
+      <div className="flex h-9 max-w-full items-center gap-2 rounded-full border border-success/40 bg-surface-2/95 px-3 text-[12.5px] text-content shadow-float" data-testid="call-elsewhere" role="status">
+        <Icon name="phone" size={13} className="shrink-0 text-success" />
+        <span className="min-w-0 truncate">{t("mate.callElsewhere", { name: call.name })}</span>
+        {Number.isFinite(started) && <span className="shrink-0 tabular-nums text-content-faint">{callClock(now - started)}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function CallLayer() {
   const s = useCallStore();
-  if (s.phase === "idle") return null;
+  if (s.phase === "idle") return s.elsewhere ? <ElsewherePill call={s.elsewhere} /> : null;
   if (s.phase === "incoming") return <IncomingCall />;
   if (s.minimized && (s.phase === "dialing" || s.phase === "active")) return <CallPill />;
   return <CallScreen />;

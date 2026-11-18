@@ -56,6 +56,8 @@
         </service>
         <!-- 거절 / 끊기 on a call's notification, without opening the app -->
         <receiver android:name=".CallActionReceiver" android:exported="false" />
+        <!-- her alarms with the app closed: the system's alarm clock wakes it a little before each (GenyWakes) -->
+        <receiver android:name=".WakeReceiver" android:exported="false" />
         <!-- the link comes back after a reboot and after an update -->
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>
@@ -112,6 +114,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- her alarms ring on time with the app closed (GenyWakes: AlarmManager.setAlarmClock) — an alarm is what the app is
+         for here (USE_EXACT_ALARM, Android 13+); before that, SCHEDULE_EXACT_ALARM -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Download page: open the installer for a new version downloaded in the app (GenyServerPlugin.installApk) -->

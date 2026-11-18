@@ -10,6 +10,7 @@ import { tr } from "../i18n";
 import { getMateAudioQueue } from "../mate/audioQueue";
 import { IDLE, reduceCall, type CallEvent, type CallMachine, type EndReason } from "../mate/call/machine";
 import { callNative, onAndroid } from "../mate/call/native";
+import { currentSurface } from "../mate/desktop";
 import { Tones, vibrate } from "../mate/call/tones";
 import { deviceId } from "../mate/voiceOwner";
 import { useMateStore } from "./mateStore";
@@ -29,6 +30,8 @@ export interface CallState extends CallMachine {
   /** can't listen on this device: said plainly on the call screen */
   deaf: string | null;
   error: string | null;
+  /** a call with her on another device of theirs (this one stays quiet: one call, where they are — calls.CallService) */
+  elsewhere: CallInfo | null;
 
   dial: (mate: Mate) => Promise<void>;
   /** her ringing on this page (`quiet`: the phone rings already — the app came up from her call notification) */
@@ -44,6 +47,12 @@ export interface CallState extends CallMachine {
   /** a page that came back (reload, the app reopened): the call it was on, or her ringing (`quiet`: the phone rings) */
   resume: (quiet?: boolean) => Promise<void>;
 }
+
+/** this window has the call screen (the console — the Android app is one too): the others never ring */
+export const takesCalls = () => currentSurface() === "console";
+
+/** a call starts on the loudspeaker on a computer (no earpiece); on a phone at the ear, like any call */
+export const startsOnSpeaker = () => !onAndroid() && !(typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches);
 
 /** a call is on (or ringing) on this page */
 export const callBusy = (s: { phase: CallMachine["phase"] }) => s.phase === "dialing" || s.phase === "incoming" || s.phase === "active";
@@ -115,6 +124,7 @@ export const useCallStore = create<CallState>((set, get) => {
   return {
     ...IDLE,
     ...CLEARED,
+    elsewhere: null,
     call: null,
     mate: null,
     plan: null,
@@ -123,7 +133,7 @@ export const useCallStore = create<CallState>((set, get) => {
       if (callBusy(get())) return;
       clearTimeout(endTimer);
       step({ type: "dial", mateId: mate.id, at: Date.now() });
-      set({ ...CLEARED, mate, call: null, plan: null });
+      set({ ...CLEARED, mate, call: null, plan: null, speaker: startsOnSpeaker() });
       try {
         const { call, plan } = await dialMate(mate.id, deviceId);
         if (get().phase !== "dialing") {
@@ -141,13 +151,16 @@ export const useCallStore = create<CallState>((set, get) => {
     },
 
     incoming: (call, quiet = false) => {
-      if (call.device && call.device !== deviceId) return;
+      if (!takesCalls() || (call.device && call.device !== deviceId)) return;
       const before = get();
       if (callBusy(before)) return;
       clearTimeout(endTimer);
       step({ type: "ring", callId: call.id, mateId: call.mate_id, at: Date.now() });
       const mate = mateOf(call.mate_id);
-      set({ ...CLEARED, call, mate, plan: null });
+      set({ ...CLEARED, call, mate, plan: null, speaker: startsOnSpeaker() });
+      // (the desktop app in the tray, minimised or behind another window: it comes up for her call, and says so)
+      if (typeof document !== "undefined" && (document.visibilityState !== "visible" || !document.hasFocus()))
+        window.hrhNative?.ringCall?.(mate?.name || call.name, tr("mate.callRingBody", { name: mate?.name || call.name }));
       // the ring: the phone's own (a call notification, while the app is in the background or the phone locked), else
       // the page's — never both
       const name = mate?.name || call.name;
@@ -165,7 +178,13 @@ export const useCallStore = create<CallState>((set, get) => {
 
     remote: (call) => {
       const s = get();
-      if (s.callId !== call.id) return;
+      if (s.callId !== call.id) {
+        // (a call on another device of theirs: this one shows it, quiet; gone when it ends)
+        const away = call.status === "active" && !!call.device && call.device !== deviceId;
+        if (away) set({ elsewhere: call });
+        else if (s.elsewhere?.id === call.id) set({ elsewhere: null });
+        return;
+      }
       set({ call });
       step({ type: "remote", callId: call.id, status: call.status, endReason: call.end_reason, at: Date.now() });
     },
@@ -231,6 +250,7 @@ export const useCallStore = create<CallState>((set, get) => {
       } catch {
         return;
       }
+      if (call?.status === "active" && call.device && call.device !== deviceId) set({ elsewhere: call });
       if (!call || (call.device && call.device !== deviceId)) return;
       if (call.status === "ringing") {
         if (onAndroid()) get().incoming(call, quiet);
