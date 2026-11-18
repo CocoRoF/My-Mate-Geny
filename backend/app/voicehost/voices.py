@@ -71,7 +71,8 @@ def _builtin(key: str) -> dict[str, Any] | None:
                              "stats": {}})
     return {"id": f"{BUILTIN}{key}", "name": spec.get("name") or key, "language": spec.get("language", "ko"),
             "instruct": spec.get("instruct", ""), "builtin": True, "source": spec.get("source", ""),
-            "rights": spec.get("rights", ""), "description": spec.get("description", ""), "default_model": "",
+            "rights": spec.get("rights", ""), "rights_ko": spec.get("rights_ko", ""), "source_ko": spec.get("source_ko", ""),
+            "description": spec.get("description", ""), "default_model": "",
             "default_params": {}, "tags": [], "starred": False, "references": refs}
 
 

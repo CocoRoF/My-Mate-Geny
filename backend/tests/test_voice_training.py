@@ -410,6 +410,14 @@ async def test_the_built_in_voices_come_with_their_adapters(vh, tmp_path, monkey
     assert info.get("adapter") == rid
     assert vh.settings_doc()["shipped"] == [{"voice_id": "builtin:seoa", "model_id": "omnivoice", "bytes": entry["bytes"],
                                              "ready": True, "installed": True, "error": ""}]
+    # the models she is trained for: here now, or coming with a model not installed yet (the profile says both)
+    vh.shipped.catalog = {**vh.shipped.catalog, ("builtin:seoa", "voxcpm2"): {**entry, "asset": "v.zip"},
+                          ("builtin:chaerin", "voxcpm2"): {**entry, "asset": "c.zip"}}
+    assert vh.trainings.trained_for("builtin:seoa") == {"omnivoice": "ready", "voxcpm2": "later"}
+    pub = _public_voice(vh.voices.get("builtin:seoa"), vh.trainings.speaks_with("builtin:seoa"),
+                        vh.trainings.trained_for("builtin:seoa"))
+    assert pub["adapters"] == {"omnivoice": rid} and pub["trained"] == {"omnivoice": "ready", "voxcpm2": "later"}
+    vh.shipped.catalog = {("builtin:seoa", "omnivoice"): entry}
     # off (Voice Studio → 설정): the voice as it was
     vh.put_settings({"shipped_adapters": False})
     assert vh.trainings.adapter_for("builtin:seoa", spec) is None and vh.trainings.speaks_with("builtin:seoa") == {}

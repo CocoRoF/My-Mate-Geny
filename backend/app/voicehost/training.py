@@ -170,6 +170,13 @@ class Trainings:
         out = self.h.shipped.of_voice(voice_id) if self.s.shipped_adapters else {}
         return {**out, **self.adapters(voice_id)}
 
+    def trained_for(self, voice_id: str) -> dict[str, str]:
+        """{model id: "ready" — it speaks with its adapter there now —, or "later" — a built-in voice's shipped adapter
+        for a model not installed yet (or not fetched yet): it comes with the model}, in the catalog's order"""
+        later = {m for (v, m) in self.h.shipped.catalog if v == voice_id} if self.s.shipped_adapters else set()
+        ready = self.speaks_with(voice_id)
+        return {m.id: "ready" if m.id in ready else "later" for m in catalog.CATALOG if m.id in ready or m.id in later}
+
     def adapters(self, voice_id: str) -> dict[str, str]:
         """{model id: the run whose adapter the voice speaks with there}"""
         return {r["model_id"]: r["run_id"]

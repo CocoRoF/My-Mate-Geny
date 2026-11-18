@@ -30,7 +30,7 @@
    "seconds": 9.66
   }
  },
- "source": "ElevenLabs voice v3EOFtkby3I668mHkwMa (the owner's generated ElevenLabs voice '메스가키'), eleven_v4_turbo, 24 kHz PCM, 2026-11-14: each line twice (two seeds), the take whose Scribe transcript matched the line, silence trimmed, levelled to -20 dBFS RMS",
+ "source": "ElevenLabs voice v3EOFtkby3I668mHkwMa (the owner's generated ElevenLabs voice for 서아), eleven_v4_turbo, 24 kHz PCM, 2026-11-14: each line twice (two seeds), the take whose Scribe transcript matched the line, silence trimmed, levelled to -20 dBFS RMS",
  "rights": "Made by the owner from their own ElevenLabs voice; the owner confirmed holding all rights to it (2026-11-14).",
  "sounds": {
   "laugh": [
@@ -44,5 +44,7 @@
    "sounds/giggle-3.wav"
   ]
  },
- "sounds_source": "laughs made with OmniVoice from the neutral clip (2026-11-15): 48 takes of \"[laughter] 아하하하\" / \"[laughter] 하하하하\" / \"[laughter] hahaha\", the 3 an AudioSet classifier (AST) heard laughing most kept (scores 0.51, 0.45, 0.43); each giggle is the strongest second of a laugh"
+ "sounds_source": "laughs made with OmniVoice from the neutral clip (2026-11-15): 48 takes of \"[laughter] 아하하하\" / \"[laughter] 하하하하\" / \"[laughter] hahaha\", the 3 an AudioSet classifier (AST) heard laughing most kept (scores 0.51, 0.45, 0.43); each giggle is the strongest second of a laugh",
+ "rights_ko": "소유자가 직접 가진 ElevenLabs 목소리로 만들었고, 소유자가 모든 권리를 가지고 있음을 확인했어요 (2026-11-14).",
+ "source_ko": "소유자가 만든 서아의 ElevenLabs 목소리(v3EOFtkby3I668mHkwMa), eleven_v4_turbo, 24 kHz PCM, 2026-11-14: 대사마다 두 번(시드 두 개) 만들어 Scribe 받아쓰기가 대사와 맞은 쪽을 고르고, 앞뒤 무음을 자르고 -20 dBFS RMS로 맞췄어요."
 }

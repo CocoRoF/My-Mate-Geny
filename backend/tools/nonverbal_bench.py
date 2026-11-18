@@ -6,7 +6,8 @@ still all there: a tag can swallow the words after it).
 Run it with the engine's own environment (the runtime the app installed), from the backend folder:
 
     <runtimes>/omni/bin/python tools/nonverbal_bench.py --engine omnivoice --model <models>/omnivoice \\
-        --check <models>/sound-check [--whisper <models>/whisper-large-v3-turbo] [--cases cases.json] [--takes 3]
+        --check <models>/sound-check [--whisper <models>/whisper-large-v3-turbo] [--cases cases.json] [--takes 3] \\
+        [--adapter <a voice's adapter folder>] [--no-clip]
 
 A case: {"id", "text", "kind" (laugh | sigh | none), "words" (what must still be heard), "language", "params",
 "instruct"}. Without --cases, the built-in set: each sound as written, as the recipe renders it, and as a tag alone.
@@ -29,7 +30,7 @@ from app.voicehost import nonverbal as NV  # noqa: E402
 
 VOICES = Path(__file__).resolve().parents[1] / "app/mate/builtin/voices"
 ENGINES = {"omnivoice": ("omnivoice", "OmniVoiceEngine"), "cosyvoice3": ("cosyvoice3", "CosyVoice3Engine"),
-           "qwen3_tts": ("qwen3_tts", "Qwen3TTSEngine")}
+           "qwen3_tts": ("qwen3_tts", "Qwen3TTSEngine"), "voxcpm": ("voxcpm", "VoxCPMEngine")}
 
 
 def default_cases(engine: str) -> list[dict]:
@@ -69,6 +70,8 @@ def main() -> int:
     ap.add_argument("--cases", default="")
     ap.add_argument("--takes", type=int, default=3)
     ap.add_argument("--out", default="")
+    ap.add_argument("--adapter", default="", help="a voice's trained adapter (its folder): the line made with it")
+    ap.add_argument("--no-clip", action="store_true", help="no reference clip (a trained voice on its own)")
     a = ap.parse_args()
 
     import numpy as np
@@ -95,14 +98,15 @@ def main() -> int:
     out_dir = Path(a.out) if a.out else None
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"{'case':16} {'kind':6} {'laugh':>6} {'sigh':>6} {'words':>6}  heard (first take) | text")
+    print(f"{'case':16} {'kind':6} {'laugh':>6} {'heard':>6} {'sigh':>6} {'words':>6}  heard (first take) | text")
     for c in cases:
         scores = {"laugh": [], "sigh": [], "words": []}
         heard0 = ""
         for take in range(a.takes):
             for f in (random.seed, np.random.seed, torch.manual_seed):
                 f(take + 1)
-            w = eng.synthesize(SynthRequest(text=[c["text"]], language=c.get("language", "ko"), reference=ref,
+            w = eng.synthesize(SynthRequest(text=[c["text"]], language=c.get("language", "ko"),
+                                            reference=None if a.no_clip else ref, adapter=a.adapter,
                                             instruct=c.get("instruct", ""), params=c.get("params", {})))[0]
             sr = eng.sample_rate
             if out_dir:
@@ -118,7 +122,8 @@ def main() -> int:
                 want = re.sub(r"[^\w]", "", c.get("words", ""))
                 scores["words"].append(_lcs(want, re.sub(r"[^\w]", "", text)) / max(1, len(want)) if want else 1.0)
         mean = {k: (sum(v) / len(v) if v else float("nan")) for k, v in scores.items()}
-        print(f"{c['id']:16} {c['kind']:6} {mean['laugh']:6.2f} {mean['sigh']:6.2f} {mean['words']:6.2f}  "
+        heard = sum(x >= 0.1 for x in scores["laugh"]) / max(1, len(scores["laugh"]))  # (a laugh heard: ≥ 0.1)
+        print(f"{c['id']:16} {c['kind']:6} {mean['laugh']:6.2f} {heard:6.0%} {mean['sigh']:6.2f} {mean['words']:6.2f}  "
               f"{heard0[:28]:28} | {c['text']}", flush=True)
     return 0
 

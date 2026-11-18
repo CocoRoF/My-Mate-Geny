@@ -144,6 +144,9 @@ export interface LocalVoice {
   builtin: boolean;
   source?: string;
   rights?: string;
+  /** a built-in voice's rights and source in Korean (the page shows them in its language) */
+  rights_ko?: string;
+  source_ko?: string;
   description?: string;
   default_model?: string;
   default_params?: Record<string, unknown>;
@@ -156,6 +159,9 @@ export interface LocalVoice {
   /** {model id: what it speaks with on that model}: a training's adapter (Voice Studio → 학습), or for a built-in
    *  voice the one it came with ("shipped-…") */
   adapters?: Record<string, string>;
+  /** every model it is trained for: "ready" (it speaks with its adapter there now) or "later" (a built-in voice's
+   *  adapter for a model not installed yet: it comes with the model) */
+  trained?: Record<string, "ready" | "later">;
 }
 
 /** the server lists a profile's sound clips among its clips: here they are kept apart */
@@ -213,19 +219,33 @@ export const deleteVoiceReference = (rid: string) => apiFetch<{ deleted: boolean
 export const referenceAudioUrl = (vid: string, rid: string) => `/api/voice/voices/${enc(vid)}/references/${enc(rid)}/audio`;
 
 /** a profile's laughs: its own sound clips (how many of each), the ones made for it (backend VoiceHost.voice_sounds) */
+/** a set of laughs a model made for a voice (in its trained voice there: ``adapter``, the run) */
+export interface MadeSounds {
+  id: string;
+  model_id: string;
+  adapter: string;
+  kinds: Record<string, string[]>;
+  scores: Record<string, number | null>;
+  made_at: number;
+  checked: boolean;
+}
 export interface VoiceSounds {
   own: Partial<Record<SoundLabel, number>>;
-  made: { kinds: Record<string, string[]>; scores: Record<string, number | null>; model_id: string; made_at: number; checked: boolean } | null;
+  /** what each model made, the latest first */
+  made: MadeSounds[];
   making: boolean;
-  /** the installed model that would make them ("": none can) */
+  /** the installed model that would make them by default ("": none can) */
   maker: string;
+  /** the installed models it can be made with (the ones that laugh on their own) */
+  makers: string[];
   auto: boolean;
   heard?: (number | null)[];
 }
 export const getVoiceSounds = (vid: string) => apiFetch<VoiceSounds>(`/api/voice/voices/${enc(vid)}/sounds`);
-export const makeVoiceSounds = (vid: string) => apiFetch<VoiceSounds>(`/api/voice/voices/${enc(vid)}/sounds`, { method: "POST" });
+export const makeVoiceSounds = (vid: string, modelId = "") =>
+  apiFetch<VoiceSounds>(`/api/voice/voices/${enc(vid)}/sounds`, { method: "POST", ...j(modelId ? { model_id: modelId } : {}) });
 export const forgetVoiceSounds = (vid: string) => apiFetch<VoiceSounds>(`/api/voice/voices/${enc(vid)}/sounds`, { method: "DELETE" });
-export const voiceSoundUrl = (vid: string, name: string) => `/api/voice/voices/${enc(vid)}/sounds/${enc(name)}`;
+export const voiceSoundUrl = (vid: string, name: string, of: string) => `/api/voice/voices/${enc(vid)}/sounds/${enc(name)}?of=${enc(of)}`;
 
 export interface PreviewInfo {
   [k: string]: string;

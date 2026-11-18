@@ -20,7 +20,7 @@ import {
   type VoiceRef,
   type VoiceStatus,
 } from "../../api/voice";
-import { useT, type MsgKey } from "../../i18n";
+import { useLang, useT, type MsgKey } from "../../i18n";
 import { confirmDialog } from "../ui/ConfirmDialog";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field, Segmented } from "../mate/settings/ui";
@@ -31,9 +31,14 @@ import { Card, FeelingDot, Modal, ParamControls, PlayButton, readableAudio, refU
 /** what a feeling without a clip speaks like (backend voicehost/voices.py _CHAIN) */
 const FALLBACK: Partial<Record<Feeling, Feeling>> = { smile: "joy", fear: "sadness", disgust: "anger" };
 
-/** the models it has learned to speak on (Voice Studio → 학습; a built-in voice's own came with it), by name; "" none */
-const trainedOn = (v: LocalVoice, status: VoiceStatus | null) =>
-  Object.keys(v.adapters ?? {}).map((id) => status?.models.find((m) => m.id === id)?.name ?? id).join(", ");
+/** the models it speaks on with what it learned (Voice Studio → 학습; a built-in voice's own came with it), by name —
+ *  or ("later") those whose adapter comes once the model is installed; "" none */
+const trainedOn = (v: LocalVoice, status: VoiceStatus | null, which: "ready" | "later" = "ready") =>
+  Object.entries(v.trained ?? Object.fromEntries(Object.keys(v.adapters ?? {}).map((m) => [m, "ready"])))
+    .filter(([, s]) => s === which)
+    .map(([id]) => status?.models.find((m) => m.id === id)?.name ?? id)
+    .join(", ");
+const trainedAny = (v: LocalVoice, status: VoiceStatus | null) => trainedOn(v, status) || trainedOn(v, status, "later");
 /** only the adapters a built-in voice came with (none trained here) */
 const onlyShipped = (v: LocalVoice) => Object.values(v.adapters ?? {}).every((r) => r.startsWith("shipped-"));
 
@@ -91,7 +96,7 @@ export default function ProfilesPage() {
                     {v.starred && <Icon name="star" size={12} className="text-warning" />}
                     <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-content">{v.name}</span>
                     {v.builtin && <span className="pill border border-accent/30 bg-accent-soft text-[10px] text-accent">{t("localVoice.builtin")}</span>}
-                    {trainedOn(v, status) && <span className="pill border border-success/30 bg-success/10 text-[10px] text-success" title={t("voiceStudio.trTrainedHint", { models: trainedOn(v, status) })}>{t("voiceStudio.trTrained")}</span>}
+                    {trainedAny(v, status) && <span className="pill border border-success/30 bg-success/10 text-[10px] text-success" title={t("voiceStudio.trTrainedHint", { models: trainedAny(v, status) })}>{t("voiceStudio.trTrained")}</span>}
                   </span>
                   <span className="mt-1 flex items-center gap-1">
                     {FEELINGS.map((f) => (
@@ -173,7 +178,8 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
 function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onPick: (id: string) => void }) {
   const t = useT();
-  const { reloadVoices, openInGenerate, status } = useStudio();
+  const lang = useLang();
+  const { reloadVoices, openInGenerate, status, go } = useStudio();
   const languages = useLanguages();
   const [clip, setClip] = useState<ClipSource | null>(null);
   const [recordFor, setRecordFor] = useState<Feeling | null>(null);
@@ -247,8 +253,14 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
         }
       >
         {v.description && <p className="mb-1 text-[12.5px] leading-relaxed text-content-dim">{v.description}</p>}
-        {v.rights && <p className="text-[11.5px] text-content-faint">{t("localVoice.rights", { x: v.rights })}</p>}
+        {v.rights && <p className="text-[11.5px] text-content-faint">{t("localVoice.rights", { x: (lang === "ko" && v.rights_ko) || v.rights })}</p>}
         {v.builtin && <p className="mt-1 text-[11.5px] text-content-faint">{t("voiceStudio.pfBuiltinHint")}</p>}
+        {trainedOn(v, status, "later") && (
+          <p className="mt-1.5 text-[11.5px] leading-relaxed text-content-dim" data-testid="vs-profile-trained-later">
+            {t("voiceStudio.pfTrainedLater", { models: trainedOn(v, status, "later") })}{" "}
+            <button className="whitespace-nowrap text-link hover:underline" onClick={() => go("models")}>{t("voiceStudio.pfToModels")}</button>
+          </p>
+        )}
         <ErrorLine text={err} />
       </Card>
 
@@ -527,6 +539,7 @@ function Details({ v }: { v: LocalVoice }) {
 
 function BuiltinDetails({ v }: { v: LocalVoice }) {
   const t = useT();
+  const lang = useLang();
   return (
     <Card title={t("voiceStudio.pfDetails")}>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
@@ -547,7 +560,7 @@ function BuiltinDetails({ v }: { v: LocalVoice }) {
         {v.source && (
           <>
             <dt className="text-content-faint">{t("voiceStudio.pfSource")}</dt>
-            <dd className="break-all text-content">{v.source}</dd>
+            <dd className="break-all text-content">{(lang === "ko" && v.source_ko) || v.source}</dd>
           </>
         )}
       </dl>

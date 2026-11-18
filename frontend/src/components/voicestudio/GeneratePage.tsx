@@ -15,8 +15,6 @@ import { Card, DownloadMenu, PlayButton, secs, sourceLabel, useStudio, usePlayer
 
 const MAX_CHARS = 2000;
 const NV_KEY = "vs_nonverbal";
-/** what the 넣기 chips write: a tag the server makes the sound of (backend app/voicehost/nonverbal.py) */
-const TAGS = ["laugh", "giggle", "sigh", "yawn", "gasp", "pout"] as const;
 
 /** the sounds a line was made with, in words ("웃음 (이 목소리의 웃음) · 한숨") */
 export function soundsMade(t: ReturnType<typeof useT>, e: HistoryEntry): string {
@@ -53,20 +51,6 @@ export default function GeneratePage() {
     } catch {
       /* private mode: this page only */
     }
-  };
-  const insert = (tag: string) => {
-    const el = area.current;
-    const at = el ? el.selectionStart : text.length;
-    const end = el ? el.selectionEnd : text.length;
-    const word = `[${t(`voiceStudio.nvTag_${tag}` as MsgKey)}]`;
-    const pad = (s: string, i: number) => (i > 0 && !/\s/.test(s[i - 1]) ? " " : "");
-    const next = text.slice(0, at) + pad(text, at) + word + " " + text.slice(end);
-    setText(next.slice(0, MAX_CHARS));
-    requestAnimationFrame(() => {
-      const c = at + pad(text, at).length + word.length + 1;
-      el?.focus();
-      el?.setSelectionRange(c, c);
-    });
   };
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -158,22 +142,6 @@ export default function GeneratePage() {
               <input type="checkbox" checked={nonverbal} onChange={(e) => keepNonverbal(e.target.checked)} data-testid="vs-gen-nonverbal" />
               {t("voiceStudio.nvToggle")}
             </label>
-            {nonverbal && (
-              <>
-                <span className="ml-1 text-[11px] text-content-faint">{t("voiceStudio.nvInsert")}</span>
-                {TAGS.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    className="rounded-full border border-border px-2 py-0.5 text-[11.5px] text-content-dim hover:border-accent/50 hover:text-content"
-                    onClick={() => insert(tag)}
-                    data-testid={`vs-gen-tag-${tag}`}
-                  >
-                    {t(`voiceStudio.nvTag_${tag}` as MsgKey)}
-                  </button>
-                ))}
-              </>
-            )}
           </div>
           {nonverbal && <p className="mt-1 text-[11px] leading-snug text-content-faint">{t("voiceStudio.nvToggleHint")}</p>}
         </Card>

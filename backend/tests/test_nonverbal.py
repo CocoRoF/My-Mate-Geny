@@ -146,13 +146,13 @@ async def test_a_profiles_laugh_is_made_kept_used_and_forgotten(vh):
     v = vh.voices.create("내 목소리", "ko")
     await vh.add_reference(v["id"], sf_bytes(4.0), label="neutral", transcript="안녕하세요 저는 테스트 목소리예요")
     doc = vh.voice_sounds(v["id"])
-    assert doc["made"] is None and doc["own"] == {} and doc["maker"] == "omnivoice"
+    assert doc["made"] == [] and doc["own"] == {} and doc["maker"] == "omnivoice" and doc["makers"] == ["omnivoice"]
     made = await vh.make_sounds(vh.voices.resolve(v["id"]), takes=4, keep=2)
     assert sorted(made["kinds"]) == ["giggle", "laugh"] and len(made["kinds"]["laugh"]) == 2
     doc = vh.voice_sounds(v["id"])
-    assert doc["made"]["kinds"]["laugh"] == ["laugh-1.wav", "laugh-2.wav"] and doc["made"]["model_id"] == "omnivoice"
-    assert vh.made_sound_file(v["id"], "laugh-1.wav").is_file()
-    assert vh.made_sound_file(v["id"], "../../etc/passwd") is None
+    assert doc["made"][0]["kinds"]["laugh"] == ["laugh-1.wav", "laugh-2.wav"] and doc["made"][0]["model_id"] == "omnivoice"
+    assert vh.made_sound_file(v["id"], "laugh-1.wav", doc["made"][0]["id"]).is_file()
+    assert vh.made_sound_file(v["id"], "../../etc/passwd", doc["made"][0]["id"]) is None
     e = await vh.generate(model_id="omnivoice", text="좋아 하하하하 고마워", voice_id=v["id"], mode="clone", seed=1)
     assert e["info"]["spoken"] == "좋아 [laugh] 고마워"
     # their own laugh comes first
@@ -161,7 +161,7 @@ async def test_a_profiles_laugh_is_made_kept_used_and_forgotten(vh):
     assert len(vh.voices.sound_clips(v["id"])["laugh"]) == 2  # (several of a sound: none replaced)
     assert vh.voice_sounds(v["id"])["own"] == {"laugh": 2}
     assert vh.voices.resolve(v["id"])["label"] == "neutral"
-    assert vh.sounds.forget(vh.voices.resolve(v["id"])) and vh.voice_sounds(v["id"])["made"] is None
+    assert vh.sounds.forget(vh.voices.resolve(v["id"])) and vh.voice_sounds(v["id"])["made"] == []
 
 
 async def test_the_first_line_that_laughs_makes_the_voices_laugh_for_the_next(vh):
@@ -181,6 +181,37 @@ async def test_the_first_line_that_laughs_makes_the_voices_laugh_for_the_next(vh
     assert not vh._making and vh.settings_doc()["auto_sounds"] is False
 
 
+async def test_a_line_laughs_with_its_own_models_laugh(vh, monkeypatch):
+    from app.voicehost import system
+    from app.voicehost.sounds import ref_key
+    from tests.test_voicehost import _gpu
+
+    monkeypatch.setattr(system, "gpus", lambda max_age=1.0: [_gpu()])  # (room on a GPU, whatever this machine's has)
+    mark_installed(vh.s, "voxcpm2")
+    base = vh.voices.resolve("builtin:seoa")
+    hers = vh.voices.sound_clips("builtin:seoa")
+    # a model that laughs on its own (VoxCPM2): the first line takes the laugh she came with (made with OmniVoice),
+    # and VoxCPM2's own laugh in her voice is made meanwhile — the next lines have it
+    first = await vh.generate(model_id="voxcpm2", text="자기야 헤헤 왜 그래", voice_id="builtin:seoa", mode="clone", seed=1)
+    assert [(x["kind"], x.get("clip")) for x in first["info"]["sounds"]] == [("giggle", "1")]
+    key = next(k for k in vh._making if ".voxcpm2." in k)
+    await asyncio.wait_for(vh._making[key], 60)
+    made = vh.sounds.made(base, "voxcpm2")
+    assert made and made["model_id"] == "voxcpm2" and made["kinds"]["laugh"]
+    assert vh.sounds.clips(base, hers, model_id="voxcpm2", recorded=False)["laugh"] == made["kinds"]["laugh"]
+    # one that seldom laughs on its own (Qwen3-TTS) keeps hers; the profile lists what each model made
+    assert vh.sounds.clips(base, hers, model_id="qwen3-tts-0.6b-base", recorded=False)["laugh"] == hers["laugh"]
+    doc = vh.voice_sounds("builtin:seoa")
+    assert [m["model_id"] for m in doc["made"]] == ["voxcpm2"] and doc["makers"] == ["omnivoice", "voxcpm2"]
+    assert vh.made_sound_file("builtin:seoa", "laugh-1.wav", doc["made"][0]["id"]).is_file()
+    # a profile's recorded laugh (the person laughing) goes before any model's
+    v = vh.voices.create("녹음한 웃음", "ko")
+    await vh.add_reference(v["id"], sf_bytes(4.0), label="neutral", transcript="녹음한 웃음이 있는 목소리예요")
+    await vh.add_reference(v["id"], sf_bytes(1.2), label="laugh")
+    await vh.generate(model_id="voxcpm2", text="하하하 좋아", voice_id=v["id"], mode="clone")
+    assert not any(k.startswith(ref_key(vh.voices.resolve(v["id"]))) for k in vh._making)
+
+
 async def test_the_sounds_routes(client_vh):
     client, vh = client_vh
     v = client.post("/api/voice/voices", json={"name": "라우트", "language": "ko"}).json()
@@ -188,10 +219,10 @@ async def test_the_sounds_routes(client_vh):
     assert r.status_code == 400 and r.json()["code"] == "no_clip"
     client.post(f"/api/voice/voices/{v['id']}/references", files={"file": ("a.wav", sf_bytes(4.0), "audio/wav")},
                 data={"label": "neutral", "transcript": "라우트 테스트 목소리예요"})
-    assert client.get(f"/api/voice/voices/{v['id']}/sounds").json()["made"] is None
-    doc = client.post(f"/api/voice/voices/{v['id']}/sounds").json()
-    assert doc["made"]["kinds"]["laugh"][0] == "laugh-1.wav"
-    a = client.get(f"/api/voice/voices/{v['id']}/sounds/laugh-1.wav")
+    assert client.get(f"/api/voice/voices/{v['id']}/sounds").json()["made"] == []
+    doc = client.post(f"/api/voice/voices/{v['id']}/sounds", json={"model_id": "omnivoice"}).json()
+    assert doc["made"][0]["kinds"]["laugh"][0] == "laugh-1.wav" and doc["made"][0]["model_id"] == "omnivoice"
+    a = client.get(f"/api/voice/voices/{v['id']}/sounds/laugh-1.wav?of={doc['made'][0]['id']}")
     assert a.status_code == 200 and a.headers["content-type"] == "audio/wav"
     assert client.get(f"/api/voice/voices/{v['id']}/sounds/nope.wav").status_code == 404
     up = client.post(f"/api/voice/voices/{v['id']}/references", files={"file": ("l.wav", sf_bytes(1.5), "audio/wav")},
@@ -202,7 +233,7 @@ async def test_the_sounds_routes(client_vh):
     e = client.post("/api/voice/generate", json={"model_id": "omnivoice", "voice_id": v["id"], "text": "하하하하 좋다",
                                                  "nonverbal": False}).json()
     assert e["info"]["sounds"] == [] and e["params"]["_nonverbal"] is False
-    assert client.delete(f"/api/voice/voices/{v['id']}/sounds").json()["made"] is None
+    assert client.delete(f"/api/voice/voices/{v['id']}/sounds").json()["made"] == []
 
 
 @pytest.fixture()

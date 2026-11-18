@@ -1,15 +1,19 @@
 """A voice's own laughs (docs/local-voice.md "Laughs, sighs and yawns").
 
-No engine here laughs reliably when a line says 헤헤 (OmniVoice's tag laughs in 38% of lines, the others hardly ever),
-but a laugh made on its own, the best of a dozen takes, is a laugh every time. So a voice keeps a few clips of its
-own laugh, and a line that laughs gets one put in where it laughs (nonverbal.parts → :func:`splice`).
+No engine here laughs when a line says 헤헤 — not OmniVoice, VoxCPM2, Qwen3-TTS or CosyVoice3, not with a voice's
+trained adapter either (measured 2026-11-18: the ElevenLabs recordings the built-in voices learned from don't laugh
+there themselves, so there was nothing to learn) — but a laugh made on its own, the best of a dozen takes, is a laugh.
+So a voice keeps a few clips of its own laugh, and a line that laughs gets one put in where it laughs
+(nonverbal.parts → :func:`splice`).
 
-Where a voice's clips come from, the first found:
+A line's laugh, the first found:
 
-* its profile's own sound clips (Voice Studio → 프로필: label 웃음 / 하품 — recorded, uploaded, or made here),
-* a built-in voice's (app/mate/builtin/voices/<key>/sounds/, listed in its voice.json),
-* the ones made for the clip a line is cloned from, the first time a line of it laughs: ``<home>/sounds/<its key>/``
-  (VoiceHost.make_sounds: the installed engine that laughs best, the takes an AudioSet classifier hears laughing).
+* the clips recorded for the profile (Voice Studio → 프로필: label 웃음 / 하품 — the person laughing),
+* the laughs the line's own model made in the line's own voice — with the voice's trained adapter, where it has one —
+  for the models that laugh on their own (``LAUGHS_ALONE``: OmniVoice, VoxCPM2): ``<home>/sounds/<clip key>.<model>…/``,
+  made the first time a line of it laughs on that model (VoiceHost.make_sounds; an AudioSet classifier keeps the takes
+  that laugh),
+* a built-in voice's (app/mate/builtin/voices/<key>/sounds/, made with OmniVoice), then any made for the clip.
 """
 
 from __future__ import annotations
@@ -24,6 +28,13 @@ from typing import Any
 SOUND_LABELS = ("laugh", "yawn")   # a profile's sound clips (its feelings are the clips it is cloned from)
 MADE = ("laugh", "giggle")         # what is made for a voice (a giggle: the strongest short part of a laugh)
 GIGGLE_MAX_S = 1.0
+# the engines whose laugh on its own is kept (measured: OmniVoice's in 67 – 100% of takes, VoxCPM2's in 33 – 67%, as an
+# AudioSet classifier hears them; Qwen3-TTS and CosyVoice3 seldom laugh — their lines take another model's laugh)
+LAUGHS_ALONE = ("omnivoice", "voxcpm")
+
+
+def _safe(x: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in x)[:60]
 
 
 def ref_key(ref: dict[str, Any]) -> str:
@@ -41,32 +52,54 @@ class SoundBank:
     def __init__(self, home: Path) -> None:
         self.root = Path(home) / "sounds"
 
-    def dir_for(self, ref: dict[str, Any]) -> Path:
-        return self.root / ref_key(ref)
+    def dir_for(self, ref: dict[str, Any], model_id: str = "", adapter: str = "") -> Path:
+        """this clip's laughs made by a model (in a trained voice: ``adapter``, its run); no model: the ones made before
+        laughs were kept per model (OmniVoice's, from the clip alone)"""
+        name = ref_key(ref) + (f".{_safe(model_id)}" if model_id else "") + (f".{_safe(adapter)}" if adapter else "")
+        return self.root / name
 
-    def made(self, ref: dict[str, Any]) -> dict[str, Any] | None:
-        """what was made for this clip: {kinds: {kind: [file]}, made_at, model_id, checked} (None: nothing yet)"""
-        d = self.dir_for(ref)
+    def _read(self, d: Path) -> dict[str, Any] | None:
         try:
             meta = json.loads((d / "meta.json").read_text("utf-8"))
         except (OSError, ValueError):
             return None
         kinds = {k: [str(d / f) for f in fs if (d / f).is_file()] for k, fs in (meta.get("kinds") or {}).items()}
-        return {**meta, "kinds": {k: v for k, v in kinds.items() if v}, "dir": str(d)}
+        return {**meta, "kinds": {k: v for k, v in kinds.items() if v}, "dir": str(d), "id": d.name.split(".", 1)[-1]
+                if "." in d.name else ""}
 
-    def clips(self, ref: dict[str, Any] | None, own: dict[str, list[str]] | None = None) -> dict[str, list[str]]:
-        """kind → clip files for a line in this voice: ``own`` (its profile's or built-in voice's:
-        VoiceLibrary.sound_clips) first, then the ones made for the clip it is cloned from"""
-        out = {k: [f for f in fs if Path(f).is_file()] for k, fs in (own or {}).items()}
-        out = {k: fs for k, fs in out.items() if fs}
-        made = self.made(ref) if ref else None
-        for k, files in ((made or {}).get("kinds") or {}).items():
-            out.setdefault(k, files)
+    def made(self, ref: dict[str, Any], model_id: str = "", adapter: str = "") -> dict[str, Any] | None:
+        """what a model made for this clip: {kinds: {kind: [file]}, made_at, model_id, adapter, checked, id} (None:
+        nothing yet)"""
+        return self._read(self.dir_for(ref, model_id, adapter))
+
+    def all_made(self, ref: dict[str, Any]) -> list[dict[str, Any]]:
+        """every model's laughs for this clip, the latest first"""
+        k = ref_key(ref)
+        dirs = [d for d in self.root.glob(f"{k}*") if d.is_dir() and (d.name == k or d.name.startswith(k + "."))
+                and not d.name.endswith(".partial")] if self.root.is_dir() else []
+        out = [m for m in (self._read(d) for d in dirs) if m and m["kinds"]]
+        return sorted(out, key=lambda m: -(m.get("made_at") or 0))
+
+    def clips(self, ref: dict[str, Any] | None, own: dict[str, list[str]] | None = None, *, model_id: str = "",
+              adapter: str = "", recorded: bool = True) -> dict[str, list[str]]:
+        """kind → clip files for a line in this voice on ``model_id`` (with ``adapter``, its trained voice there):
+        the clips recorded for the profile (``own``, ``recorded``) first, then the laughs that model made in that
+        voice, then ``own`` a built-in voice came with (``recorded`` False), then any made for the clip"""
+        own = {k: fs for k, fs in ((k, [f for f in fs if Path(f).is_file()]) for k, fs in (own or {}).items()) if fs}
+        out: dict[str, list[str]] = dict(own) if recorded else {}
+        layers = [self.made(ref, model_id, adapter) if ref and model_id else None]
+        layers.append({"kinds": own} if not recorded else None)
+        layers += self.all_made(ref) if ref else []
+        for m in layers:
+            for k, files in ((m or {}).get("kinds") or {}).items():
+                out.setdefault(k, files)
         return out
 
-    def save(self, ref: dict[str, Any], takes: list[dict[str, Any]], *, model_id: str, checked: bool) -> dict[str, Any]:
-        """the kept takes (worker files: {path, kind, score, seconds}) as this clip's sounds"""
-        d = self.dir_for(ref)
+    def save(self, ref: dict[str, Any], takes: list[dict[str, Any]], *, model_id: str, checked: bool,
+             adapter: str = "") -> dict[str, Any]:
+        """the kept takes (worker files: {path, kind, score, seconds}) as this clip's sounds by that model (and
+        adapter)"""
+        d = self.dir_for(ref, model_id, adapter)
         stage = d.with_name(d.name + ".partial")
         shutil.rmtree(stage, ignore_errors=True)
         stage.mkdir(parents=True)
@@ -79,18 +112,19 @@ class SoundBank:
             kinds[t["kind"]].append(name)
             scores[name] = t.get("score")
         (stage / "meta.json").write_text(json.dumps({
-            "kinds": kinds, "scores": scores, "model_id": model_id, "checked": checked, "made_at": time.time(),
-            "source": str(ref.get("path") or "")}, ensure_ascii=False, indent=1), "utf-8")
+            "kinds": kinds, "scores": scores, "model_id": model_id, "adapter": adapter, "checked": checked,
+            "made_at": time.time(), "source": str(ref.get("path") or "")}, ensure_ascii=False, indent=1), "utf-8")
         shutil.rmtree(d, ignore_errors=True)
         stage.rename(d)
-        return self.made(ref) or {}
+        return self.made(ref, model_id, adapter) or {}
 
     def forget(self, ref: dict[str, Any]) -> bool:
-        d = self.dir_for(ref)
-        if not d.exists():
-            return False
-        shutil.rmtree(d, ignore_errors=True)
-        return True
+        """every model's laughs for this clip"""
+        gone = False
+        for m in self.all_made(ref):
+            shutil.rmtree(m["dir"], ignore_errors=True)
+            gone = True
+        return gone
 
 
 def pick(files: list[str], n: int) -> str:
