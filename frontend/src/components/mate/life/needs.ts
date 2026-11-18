@@ -29,3 +29,11 @@ export const needTone = (v: number): string => ["bg-success", "bg-cyan", "bg-war
 /** a bundled name in the UI's language */
 export const lifeName = (names: LifeNames | undefined, locale: string, fallback = ""): string =>
   (locale === "ko" ? names?.ko || names?.en : names?.en || names?.ko) || fallback;
+
+/** today's sky: its icon and its name */
+export const SKY: Record<string, { icon: IconName; label: MsgKey }> = {
+  clear: { icon: "sun", label: "life.skyClear" },
+  cloudy: { icon: "cloud", label: "life.skyCloudy" },
+  rain: { icon: "cloud-rain", label: "life.skyRain" },
+  snow: { icon: "snowflake", label: "life.skySnow" },
+};

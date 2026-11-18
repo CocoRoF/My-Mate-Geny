@@ -30,6 +30,8 @@ NAMED_RECENT = 3
 #: a plan whose time has come while she is with the user in person: it waits this long, this many times, then is called off
 POSTPONE, POSTPONES = timedelta(minutes=20), 3
 STILL_TALKING = timedelta(minutes=20)
+#: going out to meet, they set off this long before the time (from home, a call or a game online starts on the dot)
+SET_OFF = timedelta(minutes=20)
 #: after an outing, being with a friend does her good (on top of what they did)
 COMPANY = {"affection": -0.12, "fun": -0.05}
 #: a model writes what they remember of an outing in their own words (outings.compose is the fallback): only for mates someone
@@ -252,7 +254,8 @@ class SocialRuntime:
             if start is None or end is None or any(m not in mates for m in plan["who"]) or plan["kind"] not in O.kinds():
                 doc["plans"].remove(plan)
                 continue
-            if plan["status"] == "planned" and now >= start:
+            remote = bool(O.kinds()[plan["kind"]].get("remote"))
+            if plan["status"] == "planned" and now >= start - (timedelta(0) if remote else SET_OFF):
                 if now >= end:  # (their whole time went by while nothing ran: it happened all the same)
                     self._finish(doc, plan, mates, now, tz, changed, final)
                     continue
@@ -500,9 +503,10 @@ class SocialRuntime:
                 + ("\n".join(sparks) + "\n- It stays innocent: nothing sexual, and it never makes you cold to the user.\n" if sparks else "")
                 + "- When the user introduces someone else they know to you, or says you two should meet, call introduce_friend with the name.")
 
-    def lines(self, mate_id: str, query: str = "") -> tuple[list[str], Callable[[], None]]:
+    def lines(self, mate_id: str, query: str = "", *, day_of_her_own: bool = False) -> tuple[list[str], Callable[[], None]]:
         """What she is told with this message: news (what happened with whom, not told yet), her plans, and what she remembers with a
-        friend named in the message. -> (lines, acknowledge: what was told is marked told)."""
+        friend named in the message. -> (lines, acknowledge: what was told is marked told). ``day_of_her_own``: her day says
+        already who she is out with."""
         if not self.store.social_on():
             return [], lambda: None
         now, tz = datetime.now(timezone.utc), self.store.tz()
@@ -523,9 +527,14 @@ class SocialRuntime:
                 out.append(line)
             told.append(e["id"])
         for plan in sorted(doc["plans"], key=lambda p: p["at"]):
-            if mate_id not in plan["who"] or plan["status"] != "planned":
+            if mate_id not in plan["who"]:
                 continue
             o = next(x for x in plan["who"] if x != mate_id)
+            if plan["status"] == "on":
+                if not day_of_her_own:
+                    out.append(f"Right now you are out with {mates[o]['name']} "
+                               f"({O.kinds().get(plan['kind'], {}).get('names', {}).get('en', 'out').lower()}), as you two planned.")
+                continue
             when = (A._t(plan["at"]) or now).astimezone(tz)
             day = ("today" if when.date() == local.date() else "tomorrow" if when.date() == (local + timedelta(days=1)).date()
                    else WEEKDAYS[when.weekday()])
