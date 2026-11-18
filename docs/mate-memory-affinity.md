@@ -50,7 +50,7 @@ the user in control. Three rules hold throughout:
 
 **memora (reference).** `services/relationship.py` keeps two numbers per pair: *earned*
 (cumulative days/turns/facts/posts → stage thresholds, never decreases) and *affinity*
-(0–100, "warmth now"). Real stage = **min(earned stage, warmth band)** (bands 75/50/25),
+(−100 – 100, "warmth now"; below zero, ill feeling). Real stage = **min(earned stage, warmth band)** (bands 75/50/25),
 so neglect hurts but the way back is short. Gains are credited the moment they happen
 (talk +8 on the day's first turn, lively +4 at 10 turns, +2 per new fact capped at +6/day).
 Losses are settled per **finished** day: 2 grace days, then −6 ×1.45 per day, capped at −30.
@@ -380,7 +380,7 @@ Table `mate_relation` (one row per mate, deleted with it):
 |---|---|
 | `mate_id` PK | |
 | `enabled` 1, `paused` 0, `sensitivity` 1.0 (0.5–1.5) | user controls |
-| `affinity` REAL 0–100 | warmth now |
+| `affinity` REAL −100 – 100 | warmth now (below zero: ill feeling) |
 | `started_at`, `turns`, `active_days`, `last_active_day`, `streak_days`, `memories` | **earned** counters (never decrease) |
 | `settled_day` | the last *finished* local day already settled |
 | `state` JSON | today: `{day, turns, talked, lively (how many of the 10th / 25th turns), warm, smiled, gift, memory, hostile, gained}`; `talk_days` (last 30); `gifts` (when, last 200); `awaiting` (dormant, for future proactive messages) |
@@ -407,10 +407,21 @@ reload. Quiet days counted in a stand-in zone therefore never stay.
 
 | Stage | Affinity |
 |---|---|
+| `hostile` 적대감 | −100 – −71 |
+| `resentful` 미워함 | −70 – −46 |
+| `dislike` 싫어함 | −45 – −21 |
+| `cold` 서먹함 | −20 – −1 |
 | `new` 처음 | 0–19 |
-| `familiar` 익숙 | 20–44 |
+| `familiar` 친숙 | 20–44 |
 | `trusted` 신뢰 | 45–69 |
-| `companion` 동반 | 70–100 |
+| `companion` 동반자 | 70–100 |
+
+Zero is nothing between them yet. Below it is ill feeling, and only what they do to her takes it there (rudeness, worse, what she
+minds): staying away never does (quiet days stop at the floor of 10, and leave anything below it alone). It mends slowly: each settled
+day nothing was done to her eases it 1.2% of the way back to zero (`mended`), making up eases it more (`made_up`: 3, at most 6 a day,
+never past zero by itself), and below zero a gain is worth less (`climb`: half of it at −100). Each ill-feeling stage has her own guide
+in her prompt (how she treats them; never cruel, safety first, it can mend), and ill feeling lowers where her happiness settles and
+keeps a little anger (state.py `dislike`). A document from before (version 1, 0–100, four stages) keeps its stage.
 
 The stage is what the affinity says, with hysteresis: a band is entered only 2 points above its floor and left only 3 below it, so the
 stage does not flicker near a boundary. It used to be the lower of this and an earned stage (30 days, 200 talks, 25 memories for `companion`),

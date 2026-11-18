@@ -14,7 +14,7 @@ comes back as MCP image content);
 HRH_MATE_STYLE=auto|ask when she may change her own conversation style
 (``update_conversation_style``; absent = not listed); HRH_MATE_OUTFIT=1 when she may change her clothes
 (``change_outfit``); HRH_MATE_STATE=1 for ``feel``; HRH_MATE_LIFE=1 for ``do_activity``; HRH_MATE_SOCIAL=1 for
-``introduce_friend``; HRH_MATE_GAME=1 for ``play_game``. HRH_MATE_MEMORY=1 adds
+``introduce_friend`` and ``talk_to_mate``; HRH_MATE_GAME=1 for ``play_game``. HRH_MATE_MEMORY=1 adds
 her memory network and studying (``explore_memory`` … ``list_studies``); HRH_MATE_STUDY=1 is a study session's bridge
 instead: only the study tools (``read_page`` … ``finish_study``, app/mate/study.py).
 """
@@ -404,9 +404,9 @@ DO_ACTIVITY = {
 INTRODUCE_FRIEND = {
     "name": "introduce_friend",
     "description": (
-        "The user introduced someone they know to you, or said you two should meet: call it with that person's name, so you know "
-        "each other from now on (and may meet). Only for what the user actually said. Returns Done, that you already know them, or "
-        "that there is nobody by that name you could meet this way."
+        "The user told you about another of their mates (someone who, like you, talks with them in this app): call it with her name "
+        "and what they said, so you know of her from now on. Only for what the user actually said. Returns Noted, or that there is "
+        "nobody by that name among their mates."
     ),
     "inputSchema": {
         "type": "object",
@@ -439,6 +439,24 @@ PLAY_GAME = {
             "reason": {"type": "string", "description": "For reject: why, briefly."},
         },
         "required": ["action"],
+    },
+}
+
+TALK_TO_MATE = {
+    "name": "talk_to_mate",
+    "description": (
+        "Message another of the user's mates (someone who, like you, talks with them in this app): when the user asks you to, or on "
+        "your own when your system prompt says you may. Your first message goes now; the conversation goes on between you two, and "
+        "how it went comes back to you later. The user may read what you two write. Returns Sent, or that you are already talking, "
+        "or that there is nobody by that name."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Her name."},
+            "message": {"type": "string", "description": "Your first message to her, in your own voice, as you would write it."},
+        },
+        "required": ["name", "message"],
     },
 }
 
@@ -518,7 +536,7 @@ def tools() -> list[dict]:
             + ([FEEL] if os.environ.get("HRH_MATE_STATE") == "1" else [])
             + ([CHANGE_OUTFIT] if os.environ.get("HRH_MATE_OUTFIT") == "1" else [])
             + ([DO_ACTIVITY] if os.environ.get("HRH_MATE_LIFE") == "1" else [])
-            + ([INTRODUCE_FRIEND] if os.environ.get("HRH_MATE_SOCIAL") == "1" else [])
+            + ([INTRODUCE_FRIEND, TALK_TO_MATE] if os.environ.get("HRH_MATE_SOCIAL") == "1" else [])
             + ([PLAY_GAME] if os.environ.get("HRH_MATE_GAME") == "1" else [])
             + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else [])
             + (ALARM_TOOLS if os.environ.get("HRH_MATE_ALARM") == "1" else [])

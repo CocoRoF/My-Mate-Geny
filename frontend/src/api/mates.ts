@@ -922,36 +922,46 @@ export const getRelationJournal = (id: string, days = 30) =>
   apiFetch<RelationJournal>(`/api/mates/${enc(id)}/relation/journal?days=${days}`);
 export const getLife = (id: string) => apiFetch<LifeView>(`/api/mates/${enc(id)}/life`);
 
-// ---- her friends among the user's mates (app/mate/social, docs/mate-social.md) ----
+// ---- the other mates in her life (app/mate/social, docs/mate-social.md) ----
 
-export type SocialStage = "awkward" | "acquainted" | "friend" | "close" | "best";
-export type SocialSpark = "none" | "crush" | "mutual" | "theirs";
 export type SocialMood = "great" | "good" | "okay" | "awkward";
 
-export interface SocialTie {
-  /** the other mate */
+/** how she feels about another mate: the same numbers as her relationship with the user (affinity −100 – 100, its stage …) */
+export interface SocialFeels {
+  affinity: number;
+  stage: RelationStage;
+  trust: number;
+  respect: number;
+  romance: number;
+}
+
+export interface SocialThreadInfo {
   id: string;
-  name: string;
-  icon: string;
-  stage: SocialStage;
-  /** how they came to know each other */
-  how: "builtin" | "introduced" | "met";
-  since: string;
-  story: LifeNames;
-  /** how fond she is of them, and they of her (0–100) */
-  fond: number;
-  fond_back: number;
-  /** how close they are (0–100) */
-  close: number;
-  together: number;
-  last: string | null;
-  /** only where sparks are on and fit */
-  spark: SocialSpark;
+  at: string;
+  /** who started it */
+  by: string;
+  /** the user asked her to, or on her own */
+  why: "asked" | "own";
+  status: "on" | "done" | "failed";
+  count: number;
+  /** messages the user hasn't read yet */
+  unseen: number;
+  last: string;
+  last_at: string;
+}
+
+export interface SocialThread {
+  id: string;
+  with: string;
+  by: string;
+  why: "asked" | "own";
+  at: string;
+  status: "on" | "done" | "failed";
+  messages: { by: string; name: string; text: string; at: string }[];
 }
 
 export interface SocialPlan {
   id: string;
-  with: string;
   kind: string;
   names: LifeNames;
   at: string;
@@ -961,37 +971,50 @@ export interface SocialPlan {
 
 export interface SocialEvent {
   id: string;
-  type: "met" | "introduced" | "message" | "outing" | "called_off";
+  type: "outing" | "called_off";
   at: string;
   until?: string | null;
-  with: string;
-  with_name: string;
   kind?: string | null;
   names: LifeNames;
   mood?: SocialMood | null;
+  /** called off: who couldn't make it, and why */
+  by?: string | null;
+  why?: "asleep" | "with_user" | null;
   /** what both of them remember */
   text: LifeNames;
   /** what only she knows of it */
   own: LifeNames;
-  mood_line: LifeNames;
+}
+
+export interface SocialMate {
+  id: string;
+  name: string;
+  icon: string;
+  /** the user told her about them, or they have talked */
+  how: "told" | "talked";
+  since: string | null;
+  /** what the user said about them */
   note: string;
-  /** called off: who couldn't make it, and why */
-  by?: string | null;
-  why?: "asleep" | "with_user" | null;
-  /** she was the first of the two (introduced: the one the user told) */
-  first: boolean;
-  spark: boolean;
+  /** how she feels about them (once they have talked) */
+  feels: SocialFeels | null;
+  feels_back: SocialFeels | null;
+  /** romance could come into it (sparks are on, a man and a woman) */
+  romance_fits: boolean;
+  threads: SocialThreadInfo[];
+  plans: SocialPlan[];
+  events: SocialEvent[];
 }
 
 export interface MateSocial {
   enabled: boolean;
   romance: boolean;
-  ties: SocialTie[];
-  plans: SocialPlan[];
-  events: SocialEvent[];
+  mates: SocialMate[];
 }
 
 export const getSocial = (id: string) => apiFetch<MateSocial>(`/api/mates/${enc(id)}/social`);
+/** opening it: both of them know the user read it */
+export const readSocialThread = (id: string, tid: string) =>
+  apiFetch<SocialThread>(`/api/mates/${enc(id)}/social/threads/${enc(tid)}/seen`, { method: "POST" });
 
 // ---- little games with her (app/mate/games.py, docs/mate-games.md) ----
 

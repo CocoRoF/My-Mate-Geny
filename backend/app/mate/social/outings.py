@@ -1,8 +1,8 @@
-"""What two of the user's mates do together (docs/mate-social.md): they make plans a few hours to a day and a half ahead, in time
+"""What two of the user's mates do together once they are friends (docs/mate-social.md): they make plans a few hours to a day and a half ahead, in time
 both of their days have free, go (each in her own day: social/runtime.py moves them with ``sim.meet``), and afterwards both
 remember it: what they did together the same way, and each a small part only she knows (which book she picked, what she drank),
-so neither knows everything about it. How it went moves the tie (social/ties.py). Between outings they message now and then.
-What they can do is data (builtin/social/outings.json); a built-in mate has her own small parts (details.json). Pure, seeded.
+so neither knows everything about it. How it went moves how each feels about the other (social/bonds.py); they become friends
+first, by talking (social/talk.py). What they can do is data (builtin/social/outings.json); a built-in mate has her own small parts (details.json). Pure, seeded.
 """
 
 from __future__ import annotations
@@ -15,29 +15,20 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.mate import josa as J
-from app.mate.social import ties as T
 
 ROOT = Path(__file__).resolve().parents[1] / "builtin" / "social"
 MOODS = ("great", "good", "okay", "awkward")
-#: how often a pair makes plans: a chance per day from how close and fond they are (awkward: rarely), spread over waking hours;
-#: never within GAP_DAYS of the last time, one outing a day each; just introduced (``ties.boosted``) they mean to meet soon
-PLAN_BASE, PLAN_CLOSE, PLAN_AWKWARD, PLAN_BOOSTED = 0.05, 0.35, 0.03, 0.45
+#: how often two friends make plans: a chance per waking hour from how fond of each other they are (the lower of the two); never
+#: within GAP_DAYS of the last time, one outing a day each; only once both like the other enough (bonds.friends)
+PLAN_BASE, PLAN_FOND = 0.03, 0.3
 PLAN_HOURS = (9, 23)
 GAP_DAYS = 2
 #: plans are for between two hours and a day and a half ahead, starting on the half hour
 AHEAD_MIN, AHEAD_MAX, STEP = timedelta(hours=2), timedelta(hours=36), timedelta(minutes=30)
 #: someone without a day of her own is free in these hours
 FREE_HOURS = (10, 22)
-#: a message now and then (a chance per day, more the closer they are); meeting someone new over time (a chance per day, once both
-#: have been around SETTLE_DAYS)
-MESSAGE_BASE, MESSAGE_CLOSE = 0.08, 0.3
-MEET_DAY, SETTLE_DAYS = 0.06, 3
-#: what each mood does to them: fondness both ways, closeness (an awkward one costs one of them more)
-EFFECTS = {"great": (3.5, 4.0), "good": (2.0, 3.0), "okay": (0.5, 2.0), "awkward": (-3.0, 1.0)}
-MESSAGE_FOND, MESSAGE_CLOSE_UP = 0.4, 0.6
-#: a spark (where it is on and fits): a great outing between fond friends may feed it, one way or both
-SPARK_FROM = (62.0, 40.0)  # (fondness, closeness) it takes
-SPARK_GAIN = (2.0, 6.0)
+#: what how it went does to how each feels about the other (affinity; an awkward one costs one of them more)
+EFFECTS = {"great": 1.2, "good": 0.7, "okay": 0.2, "awkward": -1.5}
 _cache: dict[str, tuple[float, Any]] = {}
 _FILL = re.compile(r"\{(a|b)(?::([^{}]+))?\}")
 
@@ -72,14 +63,6 @@ def _check(doc: dict[str, Any]) -> None:
 
 def kinds() -> dict[str, dict[str, Any]]:
     return {k["id"]: k for k in _load("outings")["kinds"]}
-
-
-def builtin_pairs() -> list[dict[str, Any]]:
-    return list(_load("ties")["pairs"])
-
-
-def met_stories() -> list[dict[str, str]]:
-    return list(_load("ties")["met"])
 
 
 def details(builtin: str | None) -> dict[str, list[dict[str, str]]]:
@@ -173,28 +156,18 @@ def pick_time(rng: random.Random, kind: dict[str, Any], now_local: datetime, fre
     return rng.choice(starts) if starts else None
 
 
-def plan_chance(tie: dict[str, Any], now: datetime) -> float:
-    """A chance per waking hour that they make plans now."""
-    if T.boosted(tie, now):
-        per_day = PLAN_BOOSTED
-    elif T.stage(tie) == "awkward":
-        per_day = PLAN_AWKWARD
-    else:
-        per_day = PLAN_BASE + PLAN_CLOSE * tie["close"] / 100 * sum(tie["fond"].values()) / 200
-    return per_day / (PLAN_HOURS[1] - PLAN_HOURS[0])
-
-
-def message_chance(tie: dict[str, Any]) -> float:
-    return 0.02 if T.stage(tie) == "awkward" else MESSAGE_BASE + MESSAGE_CLOSE * tie["close"] / 100
+def plan_chance(fond: float) -> float:
+    """A chance per waking hour that two friends make plans now (``fond``: the lower of how fond each is of the other)."""
+    return (PLAN_BASE + PLAN_FOND * max(0.0, fond) / 100) / (PLAN_HOURS[1] - PLAN_HOURS[0])
 
 
 # ---- how it went ----
 
-def mood(rng: random.Random, tie: dict[str, Any], stress: tuple[float, float] = (0.0, 0.0)) -> str:
-    """Fond friends mostly have a good time; stress and a cool tie make an awkward one likelier."""
-    fond = sum(tie["fond"].values()) / 200
-    great = 0.15 + 0.4 * fond * (0.5 + tie["close"] / 200)
-    awkward = max(0.03, 0.14 - 0.12 * fond + 0.12 * max(stress))
+def mood(rng: random.Random, fond: float, stress: tuple[float, float] = (0.0, 0.0)) -> str:
+    """Fond friends mostly have a good time; stress and a cool tie make an awkward one likelier (``fond``: the lower of the two)."""
+    f = max(0.0, min(1.0, fond / 100))
+    great = 0.15 + 0.45 * f
+    awkward = max(0.03, 0.16 - 0.14 * f + 0.12 * max(stress))
     okay = 0.22
     r = rng.random()
     if r < awkward:
@@ -204,24 +177,6 @@ def mood(rng: random.Random, tie: dict[str, Any], stress: tuple[float, float] = 
     if r < awkward + great + okay:
         return "okay"
     return "good"
-
-
-def settle(tie: dict[str, Any], rng: random.Random, what: str, at: datetime, *, romance: bool = False) -> dict[str, Any]:
-    """What it does to them; -> {fond, close, spark} as applied."""
-    fond, close = EFFECTS[what]
-    a, b = tie["a"], tie["b"]
-    if what == "awkward":
-        hurt = rng.choice((a, b))  # (one of them minded it more)
-        deltas = {hurt: fond, (b if hurt == a else a): fond / 2}
-    else:
-        deltas = {a: fond * rng.uniform(0.7, 1.2), b: fond * rng.uniform(0.7, 1.2)}
-    spark: dict[str, float] = {}
-    if romance and what == "great" and min(tie["fond"].values()) >= SPARK_FROM[0] and tie["close"] >= SPARK_FROM[1]:
-        for m in (a, b):
-            if rng.random() < 0.55:
-                spark[m] = rng.uniform(*SPARK_GAIN)
-    T.bump(tie, at, f"outing:{what}", fond=deltas, close=close, spark=spark)
-    return {"fond": deltas, "close": close, "spark": spark}
 
 
 def compose(rng: random.Random, kind: dict[str, Any], what: str, a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
@@ -235,11 +190,3 @@ def compose(rng: random.Random, kind: dict[str, Any], what: str, a: dict[str, An
         own[who["id"]] = _both(rng.choice(mine if mine and rng.random() < 0.7 else kind["own"]), a["name"], b["name"])
     return {"text": shared, "own": own, "mood_line": dict(rng.choice(pool["moods"][what]))}
 
-
-def message_text(rng: random.Random, a: dict[str, Any], b: dict[str, Any]) -> dict[str, str]:
-    """A message between them: who wrote first is ``a``."""
-    return _both(rng.choice(_load("outings")["messages"]), a["name"], b["name"])
-
-
-def met_text(rng: random.Random, a: dict[str, Any], b: dict[str, Any]) -> dict[str, str]:
-    return _both(rng.choice(met_stories()), a["name"], b["name"])

@@ -21,5 +21,4 @@ export default {
   outfitNoNote: "설명이 없는 의상이에요.",
   outfitManage: "옷장 편집",
   games: "놀이",
-  tabFriends: "인맥",
 };

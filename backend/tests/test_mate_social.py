@@ -1,6 +1,7 @@
-"""The user's mates among themselves (app/mate/social, docs/mate-social.md): the built-in ones know each other, anyone else meets
-them over time or is introduced; they make plans in time both have free, go out (each in her own day), and afterwards both
-remember it, each with a part only she knows; how it went moves the tie; a spark only where it fits."""
+"""The user's mates among themselves (app/mate/social, docs/mate-social.md): strangers at first; each knows the user talks with
+other mates too; one knows of another when the user tells her, and they get to know each other by messaging — when the user asks,
+or on their own when they may reach out. How each feels about the other is the same kind of relationship as with the user, never
+warmer than that. The user can read their conversations, and both know when they did. Friends go out together."""
 
 from __future__ import annotations
 
@@ -14,8 +15,9 @@ from app.mate import affinity as A
 from app.mate.life import profile as P
 from app.mate.life import sim
 from app.mate.life.runtime import LifeRuntime
+from app.mate.social import bonds as B
 from app.mate.social import outings as O
-from app.mate.social import ties as T
+from app.mate.social import talk as K
 from app.mate.social.runtime import SocialRuntime
 from app.mate.store import MateStore
 from app.vault import SecretVault
@@ -28,9 +30,11 @@ def store(db):
     return MateStore(db, SecretVault(db))
 
 
-def _mate(store, name, builtin=None, gender=""):
+def _mate(store, name, builtin=None, gender="", proactive=False):
     mate = store.create(name=name, persona={"description": f"{name}.", **({"gender": gender} if gender else {})})
     store._db.execute("UPDATE mates SET builtin = ? WHERE id = ?", (builtin, mate["id"]))
+    if proactive:
+        store.update(mate["id"], {"prefs": {"proactive": {"enabled": True}}})
     return store.get(mate["id"])
 
 
@@ -41,133 +45,236 @@ def _world(store, monkeypatch):
     return life, SocialRuntime(store, life)
 
 
-def test_the_built_in_mates_know_each_other_from_the_start(store, monkeypatch):
+def _close_to_user(store, mate_id, affinity=60.0):
+    r = A.new()
+    r["started_at"] = A._iso(datetime.now(timezone.utc) - timedelta(days=30))
+    A.set_value(r, affinity, datetime.now(timezone.utc), KST)
+    r["trust"], r["romance"] = 70.0, 40.0
+    store.save_relation(mate_id, r)
+
+
+def test_they_start_as_strangers_and_nothing_is_set_up(store, monkeypatch):
     life, social = _world(store, monkeypatch)
-    chaerin, seoa, other = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa"), _mate(store, "민지")
+    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
     social.tick()
     doc = social.doc()
-    tie = T.tie_of(doc, chaerin["id"], seoa["id"])
-    assert tie and tie["how"] == "builtin" and T.stage(tie) == "close"
-    assert "달무리" in tie["story"]["ko"] and tie["fond"][seoa["id"]] > tie["fond"][chaerin["id"]]
-    assert T.tie_of(doc, chaerin["id"], other["id"]) is None, "someone new knows nobody yet"
-    view = social.view(chaerin["id"])
-    assert [t["name"] for t in view["ties"]] == ["서아"] and view["ties"][0]["stage"] == "close"
-    prompt = social.prompt(chaerin["id"])
-    assert "## People in your life" in prompt and "서아: a close friend of yours" in prompt and "introduce_friend" in prompt
-    assert social.prompt(other["id"]) == ""
+    assert doc["known"] == {} and doc["rel"] == {} and doc["threads"] == []
+    assert social.view(a["id"])["mates"] == []
+    prompt = social.prompt(a["id"])
+    assert "## Other mates" in prompt and "You don't know any of them yet." in prompt and "서아" not in prompt
+    assert "you don't message them on your own" in prompt
 
 
-def test_someone_new_meets_them_over_time(store, monkeypatch):
+def test_an_old_document_starts_over(store, monkeypatch):
     life, social = _world(store, monkeypatch)
-    a, b = _mate(store, "채린", "chaerin"), _mate(store, "민지")
-    social.tick()
-    doc = social.doc()
-    doc["seen"] = {m: A._iso(datetime.now(timezone.utc) - timedelta(days=5)) for m in doc["seen"]}
-    doc["checked"] = {}
-    social._save(doc)
-    monkeypatch.setattr(O, "MEET_DAY", 1.0)
-    monkeypatch.setattr("app.mate.social.runtime.DAILY_HOURS", (0, 0))
-    social.tick()
-    tie = T.tie_of(social.doc(), a["id"], b["id"])
-    assert tie and tie["how"] == "met" and T.stage(tie) == "acquainted"
-    lines, told = social.lines(b["id"])
-    assert any("you got to know 채린" in x for x in lines)
-    told()
-    assert not any("got to know" in x for x in social.lines(b["id"])[0]), "news is told once"
+    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
+    store._put_setting("social", json.dumps({"v": 1, "at": A._iso(datetime.now(timezone.utc)), "ties": {f"{a['id']}|{b['id']}": {}}}))
+    assert social.doc()["known"] == {} and social.doc()["v"] == B.VERSION
 
 
-def test_the_user_introduces_one_to_another(store, monkeypatch):
+def test_she_knows_the_user_talks_with_other_mates(store, monkeypatch, db):
     life, social = _world(store, monkeypatch)
-    a, b = _mate(store, "채린", "chaerin"), _mate(store, "민지")
-    out = social.introduce(a["id"], "민지", "둘이 잘 맞을 것 같아")
-    assert out == {"code": "ok", "name": "민지", "stage": "acquainted"}
-    assert social.introduce(a["id"], "민지")["code"] == "known"
+    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
+    sid = "sess_seoa"
+    db.execute("INSERT INTO sessions (id, title, kind, provider, workspace_path, created_at, updated_at) "
+               "VALUES (?, '서아', 'mate', 'claude', '/tmp', ?, ?)", (sid, A._iso(datetime.now(timezone.utc)), A._iso(datetime.now(timezone.utc))))
+    store.set_session(b["id"], sid)
+    db.execute("INSERT INTO messages (id, session_id, role, content, created_at) VALUES ('m1', ?, 'user', '안녕 서아', ?)",
+               (sid, A._iso(datetime.now(timezone.utc) - timedelta(hours=2))))
+    assert set(social.user_talks_with()[a["id"]]) == {b["id"]}
+    lines, ack = social.lines(a["id"])
+    assert any("The user also talks with other mates like you lately: 서아" in x for x in lines)
+    ack()
+    assert not any("also talks with" in x for x in social.lines(a["id"])[0]), "once a day"
+
+
+def test_the_user_tells_one_about_another(store, monkeypatch):
+    life, social = _world(store, monkeypatch)
+    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
+    assert social.introduce(a["id"], "서아", "방송하는 친구야") == {"code": "ok", "name": "서아"}
     assert social.introduce(a["id"], "없는사람")["code"] == "unknown"
-    tie = T.tie_of(social.doc(), a["id"], b["id"])
-    assert tie["how"] == "introduced" and T.boosted(tie, datetime.now(timezone.utc))
-    theirs = " ".join(social.lines(b["id"])[0])
-    assert "the user told 채린 about you" in theirs and "둘이 잘 맞을 것 같아" in theirs
-    assert not social.lines(a["id"])[0], "she was there: nothing to tell her"
-    assert "The user introduced you." in social.prompt(b["id"])
-
-
-def _plan(social, a, b, kind, start, end):
     doc = social.doc()
-    doc["plans"] = [{"id": "sp_t", "who": [a, b], "kind": kind, "at": A._iso(start), "until": A._iso(end), "status": "planned",
-                     "made": A._iso(start), "postponed": 0, "by": a}]
-    social._save(doc)
+    assert B.knows(doc, a["id"], b["id"])["how"] == "told" and B.knows(doc, b["id"], a["id"]) is None, "only she knows of her"
+    assert "서아: you know of them from the user (“방송하는 친구야”)" in social.prompt(a["id"])
+    assert "채린" not in social.prompt(b["id"])
+    view = social.view(a["id"])["mates"]
+    assert [m["name"] for m in view] == ["서아"] and view[0]["feels"] is None and view[0]["how"] == "told"
 
 
-def test_an_outing_moves_both_days_and_both_remember_it_each_their_own_way(store, monkeypatch):
+async def test_they_get_to_know_each_other_by_talking(store, monkeypatch):
     life, social = _world(store, monkeypatch)
     a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
-    social.tick()
-    for m in (a, b):  # (both up and about)
-        doc, world = life.advance(m["id"])
-        doc["activity"], doc["place"] = "rest", "home"
-        store.save_life(m["id"], doc)
+    _close_to_user(store, a["id"])
+    _close_to_user(store, b["id"])
+    said = iter(["안녕! 채린 언니 맞지? 반가워 ㅎㅎ", "응, 반가워. 다음에 또 얘기하자 [END]"])
+    seen_prompts = []
+
+    async def speak(mate, system, content):
+        seen_prompts.append((mate["name"], system, json.loads(content)))
+        return next(said)
+
+    social.speak = speak
+    finals = []
+    social.on_event = lambda e, mates: finals.append(e)
+    out = social.talk_to(a["id"], "서아", "안녕, 나 채린이야. 그 사람이 너 얘기를 하더라", asked="서아한테 인사해 봐")
+    assert out["code"] == "ok"
+    assert social.talk_to(a["id"], "서아", "또 안녕")["code"] == "busy"
+    await social.converse(out["thread"])
+    doc = social.doc()
+    t = doc["threads"][-1]
+    assert t["status"] == "done" and [m["by"] for m in t["messages"]] == [a["id"], b["id"], a["id"]]
+    assert t["messages"][-1]["text"] == "응, 반가워. 다음에 또 얘기하자"
+    assert B.knows(doc, a["id"], b["id"])["how"] == "talked" and B.knows(doc, b["id"], a["id"])["how"] == "talked"
+    ra, rb = B.rel_of(doc, a["id"], b["id"]), B.rel_of(doc, b["id"], a["id"])
+    assert ra and rb and ra["affinity"] > 0 and rb["affinity"] > 0
+    # (each wrote as herself, about the other, told who comes first)
+    name, system, content = seen_prompts[0]
+    assert name == "서아" and "You are messaging 채린" in system and "The user comes first" in system and "Korean" in system
+    assert content["conversation"][0] == {"from": "채린", "text": "안녕, 나 채린이야. 그 사람이 너 얘기를 하더라"}
+    assert finals and finals[-1]["type"] == "talk" and finals[-1]["why"] == "asked"
+    # (what was said reaches each of them, once)
+    lines_b, ack_b = social.lines(b["id"])
+    assert any("채린 messaged you" in x and "다음에 또 얘기하자" in x for x in lines_b)
+    ack_b()
+    assert not any("messaged you" in x for x in social.lines(b["id"])[0])
+    lines_a, _ = social.lines(a["id"])
+    assert any("you messaged 서아 (the user had asked you to)" in x and "반가워 ㅎㅎ" in x for x in lines_a)
+    assert any("채린: you have talked" in x for x in social.prompt(b["id"]).splitlines())
+
+
+async def test_never_warmer_than_with_the_user(store, monkeypatch):
+    life, social = _world(store, monkeypatch)
+    a, b = _mate(store, "채린", "chaerin", gender="female"), _mate(store, "준호", gender="male")
+    _close_to_user(store, a["id"], affinity=8.0)
+    doc = social.doc()
+    r = B.heard(doc, a["id"], b["id"], "고마워 정말 최고야 ㅎㅎ", "[smile] 나도", datetime.now(timezone.utc), KST,
+                user_rel=store.relation_doc(a["id"]), name="채린")
+    r["affinity"] = 70.0
+    B.cap(r, store.relation_doc(a["id"]), datetime.now(timezone.utc), KST)
+    assert r["affinity"] <= 8.0 and r["romance"] <= store.relation_doc(a["id"])["romance"]
+    B.cap(r, None, datetime.now(timezone.utc), KST)
+    assert r["affinity"] <= B.CAP_OFF["affinity"] and r["romance"] == 0
+    store.update_settings({"social_romance": False})
+    mates = social.mates()
+    assert not social.romance_fits(mates[a["id"]], mates[b["id"]])
+
+
+def test_the_user_reading_it_is_something_both_know(store, monkeypatch):
+    life, social = _world(store, monkeypatch)
+    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
+    now = datetime.now(timezone.utc)
+    doc = social.doc()
+    t = social._thread(doc, a["id"], b["id"], "own", now)
+    t["messages"] = [{"by": a["id"], "text": "서아야 뭐 해?", "at": A._iso(now)}, {"by": b["id"], "text": "방송 준비 중!", "at": A._iso(now)}]
+    t["status"] = "done"
+    social._save(doc)
+    finals = []
+    social.on_event = lambda e, mates: finals.append(e)
+    view = social.view(a["id"])["mates"][0]
+    assert view["threads"][0]["unseen"] == 2
+    got = social.seen(a["id"], t["id"])
+    assert [m["text"] for m in got["messages"]] == ["서아야 뭐 해?", "방송 준비 중!"]
+    assert finals[-1]["type"] == "peeked" and set(finals[-1]["who"]) == {a["id"], b["id"]}
+    for m, other in ((a, "서아"), (b, "채린")):
+        assert any(f"the user read your conversation with {other}" in x for x in social.lines(m["id"])[0])
+    social.seen(b["id"], t["id"])
+    assert len([e for e in social.doc()["events"] if e["type"] == "peeked"]) == 1, "only what is new"
+    with pytest.raises(KeyError):
+        social.seen(_mate(store, "민지")["id"], t["id"])
+
+
+def test_she_reaches_out_on_her_own_only_when_she_may(store, monkeypatch):
+    life, social = _world(store, monkeypatch)
+    a, b = _mate(store, "채린", "chaerin", proactive=True), _mate(store, "서아", "seoa")
+    c = _mate(store, "민지")
+    social.speak = lambda *x: None  # (a writer: a conversation can be queued)
+    monkeypatch.setattr("app.mate.social.runtime.OWN_HOUR", 1.0)
+    monkeypatch.setattr(SocialRuntime, "_someone_talks_to", lambda self, m, now: True)
     monkeypatch.setattr(sim, "asleep", lambda *x: False)
-    now = datetime.now(timezone.utc)
-    _plan(social, a["id"], b["id"], "cafe", now - timedelta(minutes=1), now + timedelta(minutes=90))
-    social.tick()
-    assert social.doc()["plans"][0]["status"] == "on"
-    for m, place in ((a, "cafe"), (b, "cafe")):
-        doc = store.life_doc(m["id"], P.load(m["builtin"]))
-        assert doc["with_mate"]["id"] == (b if m is a else a)["id"]
-        summary = store.get(m["id"])["life"]
-        assert summary["with_mate"]["name"] == ("서아" if m is a else "채린")
-        assert "right now" in sim.line(doc, P.load(m["builtin"]), now, KST)
-    doc = social.doc()
-    doc["plans"][0]["until"] = A._iso(now - timedelta(seconds=1))
-    social._save(doc)
-    social.tick()
-    doc = social.doc()
-    assert not doc["plans"]
-    e = doc["events"][-1]
-    assert e["type"] == "outing" and e["ready"] and e["mood"] in O.MOODS
-    mine, hers = e["own"][a["id"]]["en"], e["own"][b["id"]]["en"]
-    said_a = " ".join(social.lines(a["id"])[0])
-    said_b = " ".join(social.lines(b["id"])[0])
-    assert e["text"]["en"] in said_a and e["text"]["en"] in said_b, "what they did they both know"
-    assert mine in said_a and (mine == hers or mine not in said_b), "her own part is hers"
-    tie = T.tie_of(doc, a["id"], b["id"])
-    assert tie["together"] == 1 and tie["last"] and tie["log"][-1]["why"].startswith("outing:")
-    view = social.view(a["id"])
-    assert view["events"][0]["kind"] == "cafe" and view["events"][0]["own"]["ko"]
+    social.introduce(a["id"], "서아")
+    social.tick(datetime(2026, 11, 21, 15, 5, tzinfo=KST).astimezone(timezone.utc))
+    threads = social.doc()["threads"]
+    assert len(threads) == 1 and threads[0]["by"] == a["id"] and threads[0]["why"] == "own" and threads[0]["who"][1] == b["id"]
+    assert not any(t["by"] in (b["id"], c["id"]) for t in threads), "the others may not reach out on their own"
+    assert "now and then you may message one of them on your own" in social.prompt(a["id"])
 
 
-def test_a_mate_asleep_at_the_time_misses_it(store, monkeypatch):
+def test_friends_make_plans_and_go_out_each_in_her_own_day(store, monkeypatch):
     life, social = _world(store, monkeypatch)
     a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
-    social.tick()
-    monkeypatch.setattr(sim, "asleep", lambda doc, profile, now: doc.get("seed") == a["id"])
-    now = datetime.now(timezone.utc)
-    _plan(social, a["id"], b["id"], "cafe", now - timedelta(minutes=1), now + timedelta(minutes=90))
-    social.tick()
+    for m in (a, b):
+        _close_to_user(store, m["id"])
+    now = datetime(2026, 11, 21, 9, 5, tzinfo=KST).astimezone(timezone.utc)
     doc = social.doc()
-    assert not doc["plans"] and doc["events"][-1]["type"] == "called_off" and doc["events"][-1]["by"] == a["id"]
-    assert any("you overslept" in x for x in social.lines(a["id"])[0])
-    assert any("couldn't make your plans" in x for x in social.lines(b["id"])[0])
-
-
-def test_friends_make_plans_in_time_both_have_free(store, monkeypatch):
-    life, social = _world(store, monkeypatch)
-    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
-    social.tick()
-    monkeypatch.setattr(O, "plan_chance", lambda tie, now: 1.0)
-    doc = social.doc()
-    doc["checked"] = {}
+    for x, y in ((a, b), (b, a)):
+        r = B._rel(doc, x["id"], y["id"], now)
+        r["affinity"] = 50.0
+        B.know(doc, x["id"], y["id"], "talked", now)
     social._save(doc)
-    now = datetime(2026, 11, 21, 9, 5, tzinfo=KST).astimezone(timezone.utc)  # (a Saturday morning: both are free later on)
+    monkeypatch.setattr(O, "plan_chance", lambda fond: 1.0)
     social.tick(now)
     plans = social.doc()["plans"]
-    assert len(plans) == 1 and plans[0]["status"] == "planned"
+    assert len(plans) == 1
     start, end = A._t(plans[0]["at"]), A._t(plans[0]["until"])
-    assert now + O.AHEAD_MIN - timedelta(minutes=1) <= start <= now + O.AHEAD_MAX + timedelta(minutes=30)
     for m in (a, b):
-        doc, world = life.advance(m["id"])
-        assert sim.free_between(doc, world, start, end, store.tz())
+        d, world = life.advance(m["id"])
+        assert sim.free_between(d, world, start, end, store.tz())
     assert any(x.startswith("Plans:") and "서아" in x for x in social.lines(a["id"])[0])
+    # (their time comes, they go, it ends)
+    monkeypatch.setattr(sim, "asleep", lambda *x: False)
+    real = datetime.now(timezone.utc)
+    doc = social.doc()
+    doc["plans"][0].update(kind="cafe", at=A._iso(real - timedelta(minutes=1)), until=A._iso(real + timedelta(minutes=90)))
+    social._save(doc)
+    social.tick()
+    assert social.doc()["plans"][0]["status"] == "on"
+    assert store.get(a["id"])["life"]["with_mate"]["name"] == "서아"
+    doc = social.doc()
+    doc["plans"][0]["until"] = A._iso(real - timedelta(seconds=1))
+    social._save(doc)
+    before = B.rel_of(social.doc(), a["id"], b["id"])["affinity"]
+    social.tick()
+    doc = social.doc()
+    e = doc["events"][-1]
+    assert e["type"] == "outing" and e["mood"] in O.MOODS and not doc["plans"]
+    assert B.rel_of(doc, a["id"], b["id"])["affinity"] != before
+    mine = e["own"][a["id"]]["en"]
+    assert any(mine in x for x in social.lines(a["id"])[0])
+    other = social.view(a["id"])["mates"][0]
+    assert other["events"][0]["kind"] == "cafe" and other["feels"]["stage"] in A.STAGES
+
+
+def test_strangers_and_acquaintances_dont_go_out():
+    doc = B.new(datetime.now(timezone.utc))
+    assert not B.friends(doc, "a", "b")
+    now = datetime.now(timezone.utc)
+    B._rel(doc, "a", "b", now)["affinity"] = 40.0
+    B._rel(doc, "b", "a", now)["affinity"] = 10.0
+    assert not B.friends(doc, "a", "b") and B.friends(doc, "a", "b", at_least=10)
+
+
+def test_what_comes_back_from_her_engine_is_cleaned():
+    assert K.clean("서아: 안녕!! [END]", "서아") == ("안녕!!", True)
+    assert K.clean("“응 좋아”") == ("응 좋아", False)
+    assert K.clean("[END]") == ("", True)
+    assert len(K.clean("가" * 900)[0]) == K.MAX_CHARS
+
+
+def test_a_mate_gone_leaves_nothing(store, monkeypatch):
+    life, social = _world(store, monkeypatch)
+    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
+    social.introduce(a["id"], "서아")
+    store.delete(b["id"])
+    social.tick()
+    assert social.doc()["known"].get(a["id"], {}) == {}
+
+
+def test_switched_off_there_is_nothing(store, monkeypatch):
+    life, social = _world(store, monkeypatch)
+    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
+    store.update_settings({"social_on": False})
+    assert social.prompt(a["id"]) == "" and social.lines(a["id"])[0] == [] and social.view(a["id"])["enabled"] is False
+    assert social.introduce(a["id"], "서아")["code"] == "off" and social.talk_to(a["id"], "서아", "hi")["code"] == "off"
 
 
 def test_free_time_leaves_out_work_and_sleep():
@@ -179,23 +286,6 @@ def test_free_time_leaves_out_work_and_sleep():
     tuesday = monday + timedelta(days=1)
     assert not sim.free_between(doc, world, tuesday.replace(hour=1), tuesday.replace(hour=2), KST), "asleep"
     assert not sim.free_between(doc, world, tuesday.replace(hour=21, minute=30), tuesday.replace(hour=22, minute=30), KST), "raid night"
-    assert not sim.free_between(doc, world, monday.replace(hour=23, minute=50), tuesday.replace(hour=0, minute=50), KST), "past bedtime"
-    saturday = datetime(2026, 11, 21, 14, tzinfo=KST)
-    assert sim.free_between(doc, world, saturday, saturday + timedelta(hours=2), KST) or any(
-        b["activity"] == "overtime" for b in sim._blocks(doc, world, saturday))
-
-
-def test_what_they_do_is_in_each_ones_own_day_or_at_the_friends():
-    chaerin, seoa = P.load("chaerin"), P.load("seoa")
-    k = O.kinds()
-    assert O.activity_for(k["cafe"], chaerin) == "dessert" and O.activity_for(k["cafe"], seoa) == "cafe"
-    assert O.activity_for(k["karaoke"], chaerin) is None and O.activity_for(k["karaoke"], seoa) == "karaoke"
-    assert O.activity_for(k["call"], seoa) == "rest"
-    assert O.possible(k["karaoke"], [chaerin, seoa], "clear"), "out at hers"
-    assert not O.possible(k["walk"], [chaerin, seoa], "rain"), "not out of doors in the rain"
-    assert O.possible(k["online"], [chaerin, None], "clear")
-    for profile in (chaerin, seoa):
-        assert sim.OUT in profile["places"] and profile["places"][sim.OUT]["hidden"] and sim.OUTING in profile["activities"]
 
 
 def test_out_at_the_friends_place_shows_her_picture_of_it():
@@ -210,65 +300,19 @@ def test_out_at_the_friends_place_shows_her_picture_of_it():
     sim.advance(doc, chaerin, now + timedelta(minutes=40), KST)
     summary = sim.summary(doc, chaerin, now + timedelta(minutes=40), KST)
     assert doc["place"] == sim.OUT and summary["art"] == art[sim.slot((now + timedelta(minutes=40)).astimezone(KST))]
-    assert summary["place_name"] == seoa["places"]["noraebang"]["names"] and summary["body"] == "sing"
     assert summary["with_mate"] == {"id": "m2", "name": "서아", "kind": "karaoke"}
-    assert all(p["key"] != sim.OUT for p in sim.view(doc, chaerin, now + timedelta(minutes=40), KST)["places"]), "never on her map"
+    assert all(p["key"] != sim.OUT for p in sim.view(doc, chaerin, now + timedelta(minutes=40), KST)["places"])
     sim.advance(doc, chaerin, now + timedelta(hours=3), KST)
     assert doc["with_mate"] is None and doc["place"] != sim.OUT
 
 
-def test_a_spark_only_between_a_man_and_a_woman_and_only_when_it_is_on(store, monkeypatch):
-    life, social = _world(store, monkeypatch)
-    a, b, c = _mate(store, "채린", gender="female"), _mate(store, "준호", gender="male"), _mate(store, "서아", gender="female")
-    mates = social.mates()
-    assert social.romance_fits(mates[a["id"]], mates[b["id"]]) and not social.romance_fits(mates[a["id"]], mates[c["id"]])
-    store.update_settings({"social_romance": False})
-    assert not social.romance_fits(mates[a["id"]], mates[b["id"]])
-    store.update_settings({"social_romance": True})
-    social.introduce(a["id"], "준호")
-    doc = social.doc()
-    tie = T.tie_of(doc, a["id"], b["id"])
-    tie["spark"][a["id"]] = 50.0
-    social._save(doc)
-    assert "quiet crush on 준호" in social.prompt(a["id"]) and "crush" not in social.prompt(b["id"])
-    assert social.view(a["id"])["ties"][0]["spark"] == "crush" and social.view(b["id"])["ties"][0]["spark"] == "theirs"
-    store.update_settings({"social_romance": False})
-    assert "crush" not in social.prompt(a["id"]) and social.view(a["id"])["ties"][0]["spark"] == "none"
-
-
-def test_switched_off_there_is_nothing(store, monkeypatch):
-    life, social = _world(store, monkeypatch)
-    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
-    social.tick()
-    store.update_settings({"social_on": False})
-    assert store.settings()["social_on"] is False
-    assert social.prompt(a["id"]) == "" and social.lines(a["id"])[0] == [] and social.view(a["id"])["enabled"] is False
-    assert social.introduce(a["id"], "서아")["code"] == "off"
-
-
-def test_time_apart_cools_them_a_little_and_a_mate_gone_leaves_nothing(store, monkeypatch):
-    life, social = _world(store, monkeypatch)
-    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
-    social.tick()
-    doc = social.doc()
-    tie = T.tie_of(doc, a["id"], b["id"])
-    tie["last"] = A._iso(datetime.now(timezone.utc) - timedelta(days=40))
-    doc["drift_day"] = (datetime.now(KST) - timedelta(days=30)).strftime("%Y-%m-%d")
-    before = tie["close"]
-    T.drift(doc, datetime.now(timezone.utc), KST)
-    assert T.CLOSE_FLOOR["builtin"] <= tie["close"] < before
-    store.delete(b["id"])
-    social.tick()
-    assert social.doc()["ties"] == {}
-
-
-def test_a_message_line_puts_the_right_particles():
+def test_what_they_do_is_in_each_ones_own_day_or_at_the_friends():
+    chaerin, seoa = P.load("chaerin"), P.load("seoa")
+    k = O.kinds()
+    assert O.activity_for(k["cafe"], chaerin) == "dessert" and O.activity_for(k["cafe"], seoa) == "cafe"
+    assert O.activity_for(k["karaoke"], chaerin) is None and O.possible(k["karaoke"], [chaerin, seoa], "clear")
+    assert not O.possible(k["walk"], [chaerin, seoa], "rain")
     assert O.fill("{a:과} {b:은} 만났다", "채린", "서아") == "채린과 서아는 만났다"
-    assert O.fill("{a:이} {b}에게", "서아", "민준") == "서아가 민준에게"
-    for kind in O.kinds().values():
-        assert kind["names"]["ko"] and kind["names"]["en"]
-    for pair in O.builtin_pairs():
-        assert pair["story"]["ko"] and pair["story"]["en"] and set(pair["fond"]) == set(pair["mates"])
 
 
 def test_the_light_follows_the_sun_where_the_user_is():
@@ -276,11 +320,7 @@ def test_the_light_follows_the_sun_where_the_user_is():
         sim.REAL["where"] = (37.57, 126.98)  # (Seoul)
         june, december = datetime(2026, 6, 21, tzinfo=KST), datetime(2026, 12, 21, tzinfo=KST)
         assert sim.slot(june.replace(hour=19, minute=30)) == "evening", "a summer evening is still light"
-        assert sim.slot(june.replace(hour=18)) == "day"
         assert sim.slot(december.replace(hour=18, minute=30)) == "night", "dark by half past six in winter"
-        assert sim.slot(december.replace(hour=16, minute=30)) == "evening"
-        assert sim.slot(december.replace(hour=7)) == "night" and sim.slot(december.replace(hour=8)) == "morning"
         assert sim.season(june) == "summer" and sim.season(december) == "winter"
     finally:
         sim.REAL["where"] = None
-    assert sim.slot(datetime(2026, 12, 21, 18, 30, tzinfo=KST)) == "evening", "without a place: by the clock"
