@@ -28,7 +28,12 @@ Real time in the user's time zone (`store.tz()`), not game time. The simulation 
 five-minute steps from `doc.at` to `now`, seeded by mate and minute, so being away for a week comes out the same whoever asks.
 A background ticker runs it once a minute for mates who have it on, and announces what changed (`mates.changed`, reason `life`).
 
-Slots of the day: morning 5–11, day 11–17, evening 17–20, night 20–5. They choose the background.
+The light of the day chooses the background (morning, day, evening, night), and it follows the sun where the user is
+(`life/sun.py`, NOAA's equations, no network): night until half an hour before sunrise, morning until 11 (or two hours after a late
+sunrise), then the day, and the evening light from 75 minutes before sunset until 40 minutes after it. A Seoul summer evening is
+still light at half past seven; a winter one is dark by six. Where they are is their location, else their time zone's city
+(`world.TZ_WHERE`); without either, the clock (morning 5–11, day 11–17, evening 17–20). Out of doors the season tints the light a
+little (`summary.season`).
 
 ## Needs
 
@@ -157,9 +162,11 @@ so a set redone under the same names shows at once.
 
 ## Keeping it light
 
-The stage sits under a video that changes 24 times a second, so nothing on it may repaint per frame: rain and snow move by transform only
-(the compositor slides a layer painted once), nothing on the stage blurs what is behind it, and the windows are solid. Measured on the same
-stage for four seconds: 404 repaints and about 3.9 s of raster work before, none after. Activity clips are fetched when they come up,
+The stage sits under a video that changes 24 times a second, so nothing on it may repaint per frame. The weather is still: out of
+doors rain is drops on the glass and a cooler light, snow is flakes in the air and a brighter one, each painted once and never moved;
+indoors only the light changes (a grey, wet or snowy day dims or cools the room a little). Nothing on the stage blurs what is behind
+it, and the windows are solid. (Falling rain was a layer the size of the stage slid every frame: gone.) Her status chip shows today's
+sky and the temperature. Activity clips are fetched when they come up,
 not all at once.
 
 Mate settings stay light too: a clip card is a still made with the set (`pipeline.clip_thumb`, the clip's `thumb`), so the library
@@ -179,3 +186,5 @@ days of the year she knows, `builtin/days.json`), `world.py` (the weather, the h
 `components/mate/life/` (the backdrop, her status on the stage, the sections of her day), `components/mate/stage/` (her menu at the top
 right of the stage: Status, Places and Outfits, each a window over her on a desk and a sheet on a phone; how she is doing is in Status); `builtin/assets/<key>/places/` (ten places each at four times of day, and a map: 한채린's, 서아's).
 `prefs.life`: auto (on for a mate who comes with a world of her own), on (anyone else gets `default.json`), off. A memory wipe starts her day again.
+
+Her friends among the user's mates and the outings they share: docs/mate-social.md (`sim.meet`, `with_mate`, the hidden `out` place).
