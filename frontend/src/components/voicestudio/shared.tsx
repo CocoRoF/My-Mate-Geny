@@ -22,6 +22,7 @@ import {
 } from "../../api/voice";
 import { localeOf, useLang, useT, type MsgKey } from "../../i18n";
 import { takeSettingsPageLink } from "../../lib/nav";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 
 export const GiB = 1024 ** 3;
@@ -549,7 +550,7 @@ export function ParamControls({
         return (
           <label key={p.name} className="block" data-testid={testId ? `${testId}-${p.name}` : undefined}>
             <span className="flex items-center gap-1.5 text-[12px] font-medium text-content-dim">
-              <span className="min-w-0 flex-1 truncate" title={p.help}>{p.label}</span>
+              <span className="flex min-w-0 flex-1 items-center"><span className="truncate">{p.label}</span>{p.help && <HelpTip>{p.help}</HelpTip>}</span>
               {p.type !== "bool" && p.type !== "choice" && <span className="tabular-nums text-content">{String(v)}</span>}
               {changed && (
                 <button type="button" className="text-[11px] text-link hover:underline" onClick={(e) => { e.preventDefault(); const n = { ...values }; delete n[p.name]; onChange(n); }}>
@@ -576,7 +577,6 @@ export function ParamControls({
                 />
               )}
             </div>
-            {p.help && <span className="mt-0.5 block text-[11px] leading-snug text-content-faint">{p.help}</span>}
           </label>
         );
       })}
@@ -610,13 +610,14 @@ export function Modal({ title, onClose, children, wide, testId }: { title: React
 }
 
 /** a small card on a studio page */
-export function Card({ title, right, children, testId, className = "" }: { title?: ReactNode; right?: ReactNode; children: ReactNode; testId?: string; className?: string }) {
+/** a page's card; ``help``: what it is, behind a (?) beside its title (not a paragraph under it) */
+export function Card({ title, help, right, children, testId, className = "" }: { title?: ReactNode; help?: ReactNode; right?: ReactNode; children: ReactNode; testId?: string; className?: string }) {
   return (
     <section className={`rounded-xl border border-border bg-surface-2/50 p-3.5 ${className}`} data-testid={testId}>
       {(title || right) && (
         <div className="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
           {/* (the title takes the line's width it needs; on a narrow screen what is beside it goes under it) */}
-          {title && <h3 className="min-w-[min(100%,12rem)] flex-1 text-[13px] font-semibold text-content">{title}</h3>}
+          {title && <h3 className="flex min-w-[min(100%,12rem)] flex-1 items-center text-[13px] font-semibold text-content">{title}{help && <HelpTip>{help}</HelpTip>}</h3>}
           {right && <div className="shrink-0">{right}</div>}
         </div>
       )}

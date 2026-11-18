@@ -100,8 +100,7 @@ function Compare() {
   const letter = (i: number) => String.fromCharCode(65 + i);
   return (
     <NeedTts>
-      <Card title={t("voiceStudio.tlCompare")} testId="vs-compare">
-        <p className="mb-2 text-[12px] leading-snug text-content-dim">{t("voiceStudio.tlCompareHint")}</p>
+      <Card title={t("voiceStudio.tlCompare")} help={t("voiceStudio.tlCompareHint")} testId="vs-compare">
         <textarea className="field min-h-[72px]" value={text} onChange={(e) => setText(e.target.value)} data-testid="vs-compare-text" />
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-[12px] text-content-dim">
@@ -194,8 +193,7 @@ function Seeds() {
   return (
     <NeedTts>
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" data-testid="vs-seeds">
-        <Card title={t("voiceStudio.tlSeeds")}>
-          <p className="mb-2 text-[12px] leading-snug text-content-dim">{t("voiceStudio.tlSeedsHint")}</p>
+        <Card title={t("voiceStudio.tlSeeds")} help={t("voiceStudio.tlSeedsHint")}>
           <textarea className="field min-h-[72px]" value={text} onChange={(e) => setText(e.target.value)} data-testid="vs-seeds-text" />
           <div className="mt-3">
             <LineForm value={line} onChange={setLine} testId="vs-seeds-line" />
@@ -285,8 +283,7 @@ function Analyze() {
     setClip({ kind: "new", blob: file, name: file.name, voice: v, feeling, range, transcript: range ? "" : a?.transcript?.text ?? "" });
   };
   return (
-    <Card title={t("voiceStudio.tlAnalyze")} testId="vs-analyze">
-      <p className="mb-2 text-[12px] leading-snug text-content-dim">{t("voiceStudio.tlAnalyzeHint")}</p>
+    <Card title={t("voiceStudio.tlAnalyze")} help={t("voiceStudio.tlAnalyzeHint")} testId="vs-analyze">
       <div className="flex flex-wrap items-center gap-2">
         <input ref={input} type="file" accept="audio/*,video/*" className="hidden" onChange={(e) => e.target.files?.[0] && void pick(e.target.files[0])} data-testid="vs-analyze-file" />
         <button className="btn-primary !py-1.5 text-[12.5px]" onClick={() => input.current?.click()}>

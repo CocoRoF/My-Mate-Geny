@@ -19,7 +19,6 @@ export default {
   gpuLine: "{name} · {used} / {total} GB in use · driver {driver} · compute {cap}",
   gpuLineApple: "{name} · Metal · {used} / {total} GB of unified memory in use · {driver}",
   hostLine: "RAM {free} GB free of {total} GB · disk for models {disk} GB free",
-  modelsDir: "Models: {path}",
   modelsHint:
     "Download what you need. A model goes on the GPU when it is used and leaves it after {min} minutes idle; a phone call keeps its models loaded until it ends.",
   modelsHintKeep:
@@ -36,6 +35,7 @@ export default {
   feature_tags: "Tags in text",
   feature_transcribe: "Transcription",
   license: "License",
+  nonCommercial: "Non-commercial",
   licenseText: "Read the license",
   modelPage: "Model page",
   files: "Files from",
@@ -69,7 +69,6 @@ export default {
   needDisk: "Needs about {gb} GB of disk",
   notHere: "Not available on this machine",
   builtin: "Built in",
-  rights: "Rights: {x}",
   feeling_neutral: "Neutral",
   feeling_joy: "Joy",
   feeling_sadness: "Sadness",

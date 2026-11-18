@@ -84,7 +84,7 @@ export interface VoiceModel {
   homepage: string;
   sample_rate: number;
   notes: string[];
-  license: { name: string; url: string; summary: string[]; attribution: string; commercial: string };
+  license: { name: string; url: string; summary: string[]; attribution: string; commercial: string; noncommercial?: boolean };
   repos: { id: string; url: string; revision: string }[];
   // what is on this machine
   installed: boolean;

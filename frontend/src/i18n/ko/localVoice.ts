@@ -19,7 +19,6 @@ const ko: Messages<"localVoice"> = {
   gpuLine: "{name} · {total} GB 중 {used} GB 사용 중 · 드라이버 {driver} · compute {cap}",
   gpuLineApple: "{name} · Metal · 통합 메모리 {total} GB 중 {used} GB 사용 중 · {driver}",
   hostLine: "RAM {total} GB 중 {free} GB 여유 · 모델 디스크 {disk} GB 여유",
-  modelsDir: "모델 위치: {path}",
   modelsHint:
     "필요한 것만 내려받으세요. 모델은 쓸 때 GPU에 올라가고 {min}분 동안 안 쓰면 내려가요. 통화하는 동안에는 그 통화의 모델이 계속 올라가 있어요.",
   modelsHintKeep:
@@ -36,6 +35,7 @@ const ko: Messages<"localVoice"> = {
   feature_tags: "문장 안 태그",
   feature_transcribe: "받아쓰기",
   license: "라이선스",
+  nonCommercial: "비상업",
   licenseText: "라이선스 원문",
   modelPage: "모델 페이지",
   files: "받는 곳",
@@ -69,7 +69,6 @@ const ko: Messages<"localVoice"> = {
   needDisk: "디스크 약 {gb} GB 필요",
   notHere: "이 컴퓨터에서는 쓸 수 없어요",
   builtin: "기본 제공",
-  rights: "사용권: {x}",
   feeling_neutral: "기본",
   feeling_joy: "기쁨",
   feeling_sadness: "슬픔",

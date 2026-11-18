@@ -25,6 +25,7 @@ export default {
   none: "None",
   default: "Default",
   details: "Details",
+  help: "Help",
   error: "Error",
   unknown: "Unknown",
   download: "Download",

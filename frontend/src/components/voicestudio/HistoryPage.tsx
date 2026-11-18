@@ -17,6 +17,7 @@ import {
 } from "../../api/voice";
 import { useT, type MsgKey } from "../../i18n";
 import { confirmDialog } from "../ui/ConfirmDialog";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { ErrorLine, ProgressBar } from "../mate/settings/ui";
 import { SaveAsRefModal } from "./clips";
@@ -131,12 +132,11 @@ export default function HistoryPage() {
             </div>
             <div>
               <div className="flex justify-between text-[11px] tabular-nums text-content-faint">
-                <span>{t("voiceStudio.hsBytes", { size: size(u.bytes), max: gb(lim.bytes, 1) })}</span>
+                <span>{t("voiceStudio.hsBytes", { size: size(u.bytes), max: gb(lim.bytes, 1) })}<HelpTip>{t("voiceStudio.hsPruneHint")}</HelpTip></span>
                 <span>{t("voiceStudio.hsBatchBytes", { size: size(u.batch_bytes) })}</span>
               </div>
               <ProgressBar value={Math.min(1, u.bytes / Math.max(1, lim.bytes))} />
             </div>
-            <p className="text-[11px] leading-snug text-content-faint sm:col-span-2">{t("voiceStudio.hsPruneHint")}</p>
           </div>
         )}
       </Card>

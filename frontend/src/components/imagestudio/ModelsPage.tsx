@@ -7,6 +7,7 @@ import { useState } from "react";
 import { cancelImageInstall, installImageModel, putImageSettings, removeImageModel, USES, type ImageModel, type ImageStatus, type ImageUse } from "../../api/image";
 import { useT, type MsgKey } from "../../i18n";
 import { confirmDialog } from "../ui/ConfirmDialog";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { ErrorLine, ProgressBar, Segmented, StatusBadge } from "../mate/settings/ui";
 import { Card, gateText, gb, useImageStudio } from "./shared";
@@ -34,9 +35,9 @@ export default function ModelsPage() {
         <span className="flex-1" />
         <span className="text-[11.5px] text-content-faint">
           {t("imageStudio.mdInstalled", { n: installed.length })} · {t("imageStudio.diskFree", { gb: gb(status.system.disk.models.free, 0) })}
+          <HelpTip>{t("imageStudio.mdHint")}</HelpTip>
         </span>
       </div>
-      <p className="text-[11.5px] leading-snug text-content-faint">{t("imageStudio.mdHint")}</p>
       <div className="space-y-3">
         {shown.map((m) => (
           <ModelCard key={m.id} m={m} status={status} />
@@ -52,13 +53,13 @@ function EngineCard({ status }: { status: ImageStatus }) {
   return (
     <Card
       title={t("imageStudio.mdEngine")}
+      help={t("imageStudio.mdEngineHint")}
       testId="is-engine-card"
       right={<StatusBadge status={e.installed ? "ok" : "off"}>{e.installed ? t("imageStudio.installedShort") : t("imageStudio.notInstalled")}</StatusBadge>}
     >
       <div className="space-y-1.5 text-[12.5px]">
         {!status.gate.ok && <p className="text-warning" data-testid="is-gate-text">{gateText(t, status.gate)}</p>}
         <p className="text-content">{e.version}</p>
-        <p className="text-[11.5px] leading-relaxed text-content-dim">{t("imageStudio.mdEngineHint")}</p>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11.5px]">
           <a className="text-link underline" href="https://github.com/Comfy-Org/ComfyUI" target="_blank" rel="noreferrer">{t("imageStudio.mdEngineLink")}</a>
           <span className="text-content-faint">{t("imageStudio.mdEngineReq", { driver: status.gate.requirements.driver, cap: status.gate.requirements.capability })}</span>
@@ -98,10 +99,18 @@ function ModelCard({ m, status }: { m: ImageModel; status: ImageStatus }) {
   return (
     <div className="rounded-xl border border-border/70 bg-surface-2/40 p-3.5" data-testid={`is-model-${m.id}`} data-installed={m.installed}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[14px] font-semibold text-content">{m.name}</span>
+        <span className="text-[14px] font-semibold text-content">
+          {m.name}
+          {m.notes.length > 0 && (
+            <HelpTip testId={`is-model-notes-${m.id}`}>
+              <ul className="list-disc space-y-1 pl-4">{m.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+            </HelpTip>
+          )}
+        </span>
         {m.uses.map((u) => (
           <span key={u} className="pill border border-border bg-surface-3/60 text-content-faint">{t(`imageStudio.use_${u}` as MsgKey)}</span>
         ))}
+        {m.license.noncommercial && <span className="pill border border-warning/40 bg-warning/10 text-warning" title={m.license.commercial} data-testid={`is-model-nc-${m.id}`}>{t("localVoice.nonCommercial")}</span>}
         {m.installed && <StatusBadge status="ok">{t("imageStudio.installedShort")}</StatusBadge>}
         {defaultFor.length > 0 && m.installed && (
           <span className="pill border border-accent/30 bg-accent-soft text-accent" data-testid={`is-model-default-${m.id}`}>{t("imageStudio.mdDefault")}</span>
@@ -114,11 +123,6 @@ function ModelCard({ m, status }: { m: ImageModel; status: ImageStatus }) {
         <span className="pill border border-border/70 bg-surface-3/40 text-content-dim">{t("imageStudio.mdRam", { gb: m.ram_gb.toFixed(1) })}</span>
         {m.seconds && <span className="pill border border-border/70 bg-surface-3/40 text-content-dim">{m.seconds}</span>}
       </div>
-      {m.notes.length > 0 && (
-        <ul className="mt-1.5 list-disc pl-4 text-[11.5px] text-content-faint">
-          {m.notes.map((n) => <li key={n}>{n}</li>)}
-        </ul>
-      )}
 
       {/* the license: what it says, where it lives, accepted before anything is downloaded */}
       <details className="mt-2 rounded-md border border-border/60 bg-surface-2/50 px-2.5 py-1.5" open={!m.installed && !m.license_accepted} data-testid={`is-model-license-${m.id}`}>

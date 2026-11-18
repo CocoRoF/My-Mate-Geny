@@ -22,6 +22,7 @@ import {
 } from "../../api/voice";
 import { useLang, useT, type MsgKey } from "../../i18n";
 import { confirmDialog } from "../ui/ConfirmDialog";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field, Segmented } from "../mate/settings/ui";
 import { ClipModal, RecorderModal, type ClipSource } from "./clips";
@@ -153,7 +154,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         <Field label={t("localVoice.voiceName")}>
           <input className="field" value={name} onChange={(e) => setName(e.target.value)} autoFocus data-testid="vs-profile-new-name" />
         </Field>
-        <Field label={t("voiceStudio.language")} hint={t("voiceStudio.pfLanguageHint")}>
+        <Field label={t("voiceStudio.language")} help={t("voiceStudio.pfLanguageHint")}>
           <select className="field" value={language} onChange={(e) => setLanguage(e.target.value)}>
             {languages.map((l) => <option key={l} value={l}>{langLabel(l)}</option>)}
           </select>
@@ -175,7 +176,6 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
 function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onPick: (id: string) => void }) {
   const t = useT();
-  const lang = useLang();
   const { reloadVoices, openInGenerate, status, go } = useStudio();
   const languages = useLanguages();
   const [clip, setClip] = useState<ClipSource | null>(null);
@@ -222,6 +222,7 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="text-[15px]">{v.name}</span>
             {v.builtin && <span className="pill border border-accent/30 bg-accent-soft text-accent">{t("localVoice.builtin")}</span>}
+            {v.builtin && <HelpTip>{t("voiceStudio.pfBuiltinHint")}</HelpTip>}
             {(v.tags ?? []).map((tag) => (
               <span key={tag} className="pill border border-border bg-surface-3/50 text-content-dim">#{tag}</span>
             ))}
@@ -258,22 +259,19 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
                 {t("voiceStudio.trTrained")} · {status?.models.find((m) => m.id === id)?.name ?? id}
               </span>
             ))}
+            {loras(v).some(([, state]) => state === "later") && (
+              <HelpTip testId="vs-profile-trained-later">
+                <p>{t("voiceStudio.pfLoraLater")}</p>
+                <button className="text-link hover:underline" onClick={() => go("models")}>{t("voiceStudio.pfToModels")}</button>
+              </HelpTip>
+            )}
           </div>
         )}
         {v.description && <p className="mb-1 text-[12.5px] leading-relaxed text-content-dim">{v.description}</p>}
-        {v.rights && <p className="text-[11.5px] text-content-faint">{t("localVoice.rights", { x: (lang === "ko" && v.rights_ko) || v.rights })}</p>}
-        {v.builtin && <p className="mt-1 text-[11.5px] text-content-faint">{t("voiceStudio.pfBuiltinHint")}</p>}
-        {loras(v).some(([, state]) => state === "later") && (
-          <p className="mt-1.5 text-[11.5px] leading-relaxed text-content-faint" data-testid="vs-profile-trained-later">
-            {t("voiceStudio.pfLoraLater")}{" "}
-            <button className="whitespace-nowrap text-link hover:underline" onClick={() => go("models")}>{t("voiceStudio.pfToModels")}</button>
-          </p>
-        )}
         <ErrorLine text={err} />
       </Card>
 
-      <Card title={t("voiceStudio.pfClipsTitle")} testId="vs-profile-clips">
-        <p className="mb-2 text-[11.5px] leading-snug text-content-faint">{t("voiceStudio.pfClipsHint")}</p>
+      <Card title={t("voiceStudio.pfClipsTitle")} help={<><p>{t("voiceStudio.pfClipsHint")}</p>{!sttReady && own && <p>{t("voiceStudio.pfNoStt")}</p>}</>} testId="vs-profile-clips">
         <div className="grid gap-2 sm:grid-cols-2">
           {FEELINGS.map((f) => (
             <ClipCell
@@ -304,7 +302,6 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
             e.target.value = "";
           }}
         />
-        {!sttReady && own && <p className="mt-2 text-[11.5px] text-content-faint">{t("voiceStudio.pfNoStt")}</p>}
       </Card>
 
       <SoundsCard v={v} own={own} onChange={reloadVoices} />
@@ -496,7 +493,7 @@ function Details({ v }: { v: LocalVoice }) {
         <Field label={t("localVoice.voiceName")}>
           <input className="field" value={form.name} onChange={(e) => patch({ name: e.target.value })} data-testid="vs-profile-name" />
         </Field>
-        <Field label={t("voiceStudio.language")} hint={t("voiceStudio.pfLanguageHint")}>
+        <Field label={t("voiceStudio.language")} help={t("voiceStudio.pfLanguageHint")}>
           <select className="field" value={form.language} onChange={(e) => patch({ language: e.target.value })}>
             {languages.map((l) => <option key={l} value={l}>{langLabel(l)}</option>)}
           </select>
@@ -506,13 +503,13 @@ function Details({ v }: { v: LocalVoice }) {
         <Field label={t("voiceStudio.pfDescription")}>
           <textarea className="field min-h-[56px]" value={form.description} onChange={(e) => patch({ description: e.target.value })} placeholder={t("voiceStudio.pfDescriptionPh")} data-testid="vs-profile-description" />
         </Field>
-        <Field label={t("voiceStudio.pfTags")} hint={t("voiceStudio.pfTagsHint")}>
-          <input className="field" value={tags} onChange={(e) => (setOk(false), setTags(e.target.value))} data-testid="vs-profile-tags" />
+        <Field label={t("voiceStudio.pfTags")}>
+          <input className="field" value={tags} onChange={(e) => (setOk(false), setTags(e.target.value))} placeholder={t("voiceStudio.pfTagsHint")} data-testid="vs-profile-tags" />
         </Field>
-        <Field label={t("voiceStudio.pfInstruct")} hint={t("voiceStudio.pfInstructHint")}>
+        <Field label={t("voiceStudio.pfInstruct")} help={t("voiceStudio.pfInstructHint")}>
           <input className="field" value={form.instruct} onChange={(e) => patch({ instruct: e.target.value })} placeholder={t("localVoice.tryInstructPh")} data-testid="vs-profile-instruct" />
         </Field>
-        <Field label={t("voiceStudio.pfModel")} hint={t("voiceStudio.pfModelHint")}>
+        <Field label={t("voiceStudio.pfModel")} help={t("voiceStudio.pfModelHint")}>
           <select className="field" value={form.default_model} onChange={(e) => patch({ default_model: e.target.value, default_params: {} })} data-testid="vs-profile-model">
             <option value="">{t("voiceStudio.pfModelAny")}</option>
             {tts.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -563,6 +560,12 @@ function BuiltinDetails({ v }: { v: LocalVoice }) {
           <>
             <dt className="text-content-faint">{t("voiceStudio.pfInstruct")}</dt>
             <dd className="text-content">{v.instruct}</dd>
+          </>
+        )}
+        {v.rights && (
+          <>
+            <dt className="text-content-faint">{t("voiceStudio.pfRights")}</dt>
+            <dd className="text-content">{(lang === "ko" && v.rights_ko) || v.rights}</dd>
           </>
         )}
         {v.source && (

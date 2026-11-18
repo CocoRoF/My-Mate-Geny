@@ -19,6 +19,7 @@ import {
 } from "../../api/voice";
 import { useT, type MsgKey } from "../../i18n";
 import { confirmDialog } from "../ui/ConfirmDialog";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { Banner, ErrorLine, ProgressBar, Segmented, StatusBadge } from "../mate/settings/ui";
 import { Card, gb, gateText, ParamControls, useStudio } from "./shared";
@@ -50,9 +51,11 @@ export default function ModelsPage() {
           testId="vs-models-kind"
         />
         <span className="flex-1" />
-        <span className="text-[11.5px] text-content-faint">{t("voiceStudio.mdInstalled", { n: installed.length, gb: gb(disk) })}</span>
+        <span className="text-[11.5px] text-content-faint">
+          {t("voiceStudio.mdInstalled", { n: installed.length, gb: gb(disk) })}
+          <HelpTip>{status.settings.idle_unload_seconds > 0 ? t("localVoice.modelsHint", { min: Math.max(1, Math.round(status.settings.idle_unload_seconds / 60)) }) : t("localVoice.modelsHintKeep")}</HelpTip>
+        </span>
       </div>
-      <p className="text-[11.5px] leading-snug text-content-faint">{status.settings.idle_unload_seconds > 0 ? t("localVoice.modelsHint", { min: Math.max(1, Math.round(status.settings.idle_unload_seconds / 60)) }) : t("localVoice.modelsHintKeep")}</p>
       <div className="space-y-3">
         {shown.map((m) => (
           <ModelCard key={m.id} m={m} status={status} onChange={reloadStatus} />
@@ -83,7 +86,6 @@ function GateCard({ status }: { status: VoiceStatus }) {
           </p>
         )}
         <p className="text-content-faint">{t("localVoice.hostLine", { free: gb(mem.available), total: gb(mem.total, 0), disk: gb(status.system.disk.models.free, 0) })}</p>
-        <p className="break-all font-mono text-[11px] text-content-faint">{t("localVoice.modelsDir", { path: status.settings.models_dir })}</p>
         {g.ok ? (
           <p className="text-success" data-testid="local-voice-gate-ok">{gateText(t, g)}</p>
         ) : (
@@ -136,8 +138,16 @@ function ModelCard({ m, status, onChange }: { m: VoiceModel; status: VoiceStatus
   return (
     <div className="rounded-xl border border-border/70 bg-surface-2/40 p-3.5" data-testid={`local-model-${m.id}`} data-installed={m.installed}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[14px] font-semibold text-content">{m.name}</span>
+        <span className="text-[14px] font-semibold text-content">
+          {m.name}
+          {m.notes.length > 0 && (
+            <HelpTip testId={`local-model-notes-${m.id}`}>
+              <ul className="list-disc space-y-1 pl-4">{m.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+            </HelpTip>
+          )}
+        </span>
         <span className="pill border border-border bg-surface-3/60 text-content-faint">{t(`localVoice.kind_${m.kind}` as MsgKey)}</span>
+        {m.license.noncommercial && <span className="pill border border-warning/40 bg-warning/10 text-warning" title={m.license.commercial} data-testid={`local-model-nc-${m.id}`}>{t("localVoice.nonCommercial")}</span>}
         {m.installed && <StatusBadge status="ok">{t("localVoice.state_done")}</StatusBadge>}
         {res && (
           <StatusBadge status={res.state === "ready" ? "ok" : res.state === "parked" ? "warn" : "checking"} testId={`local-model-res-${m.id}`}>
@@ -161,11 +171,6 @@ function ModelCard({ m, status, onChange }: { m: VoiceModel; status: VoiceStatus
           {t("localVoice.languages")}: {m.languages.filter((l) => l !== "auto").join(", ")}
         </span>
       </div>
-      {m.notes.length > 0 && (
-        <ul className="mt-1.5 list-disc pl-4 text-[11.5px] text-content-faint">
-          {m.notes.map((n) => <li key={n}>{n}</li>)}
-        </ul>
-      )}
 
       {/* the license: what it says, where it lives, accepted before anything is downloaded */}
       <details className="mt-2 rounded-md border border-border/60 bg-surface-2/50 px-2.5 py-1.5" open={!m.installed && !m.license_accepted} data-testid={`local-model-license-${m.id}`}>
@@ -328,7 +333,7 @@ function Defaults({ m }: { m: VoiceModel }) {
   return (
     <div className="mt-3 rounded-lg border border-border/60 bg-surface/40 p-3" data-testid={`vs-model-defaults-${m.id}`}>
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="min-w-0 flex-1 text-[12px] leading-snug text-content-dim">{t("voiceStudio.mdDefaultsHint")}</span>
+        <span className="min-w-0 flex-1 text-[12px] font-medium text-content-dim">{t("voiceStudio.mdDefaults")}<HelpTip>{t("voiceStudio.mdDefaultsHint")}</HelpTip></span>
         {m.params.some((p) => p.advanced) && (
           <label className="flex items-center gap-1.5 text-[11.5px] text-content-dim">
             <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
@@ -355,8 +360,7 @@ function Runtimes({ status }: { status: VoiceStatus }) {
   const t = useT();
   if (!status.runtimes.length) return null;
   return (
-    <Card title={t("voiceStudio.mdRuntimes")} testId="vs-runtimes">
-      <p className="mb-2 text-[11.5px] leading-snug text-content-faint">{t("voiceStudio.mdRuntimesHint", { path: status.settings.runtimes_dir })}</p>
+    <Card title={t("voiceStudio.mdRuntimes")} help={t("voiceStudio.mdRuntimesHint", { path: status.settings.runtimes_dir })} testId="vs-runtimes">
       <ul className="space-y-1 text-[12px]">
         {status.runtimes.map((r) => (
           <li key={r.name} className="flex items-center gap-2">

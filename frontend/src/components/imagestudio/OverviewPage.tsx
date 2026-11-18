@@ -11,7 +11,7 @@ import { ago, Card, duration, gateText, gb, KIND_ICON, LiveLine, Preview, source
 
 export default function OverviewPage() {
   return (
-    <div className="grid gap-3 lg:grid-cols-2" data-testid="is-overview">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2" data-testid="is-overview">
       <EngineCard />
       <QueueCard />
       <AvatarCard />
@@ -44,6 +44,7 @@ function EngineCard() {
   return (
     <Card
       title={t("imageStudio.ovEngine")}
+      help={t("imageStudio.engineHint")}
       testId="is-engine"
       right={
         <StatusBadge status={state === "working" ? "checking" : state === "idle" ? "ok" : "off"} testId="is-engine-state">
@@ -69,7 +70,6 @@ function EngineCard() {
           {e.vram != null ? ` · ${t("imageStudio.engineHolds", { gb: gb(e.vram) })}` : ""}
           {status.system.memory ? ` · ${t("imageStudio.ramFree", { gb: gb(status.system.memory.available) })}` : ""}
         </p>
-        <p className="text-[11.5px] leading-snug text-content-faint">{t("imageStudio.engineHint")}</p>
         {e.running && !e.busy && (
           <button className="btn-soft !py-1 text-[12px]" onClick={() => void stop()} disabled={busy} data-testid="is-engine-stop">
             {busy ? <Icon name="spinner" size={12} spin /> : <Icon name="stop" size={12} />} {t("imageStudio.engineStop")}
@@ -116,8 +116,7 @@ function AvatarCard() {
   if (!status) return null;
   const av = status.avatar;
   return (
-    <Card title={t("imageStudio.ovAvatar")} testId="is-avatar">
-      <p className="mb-2 text-[11.5px] leading-snug text-content-faint">{t("imageStudio.ovAvatarHint")}</p>
+    <Card title={t("imageStudio.ovAvatar")} help={t("imageStudio.ovAvatarHint")} testId="is-avatar">
       <ul className="divide-y divide-border/50 text-[12.5px]">
         {AVATAR_STAGES.map((st) => {
           const s = av.stages[st];

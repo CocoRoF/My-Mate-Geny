@@ -26,6 +26,7 @@ const ko: Messages<"common"> = {
   none: "없음",
   default: "기본값",
   details: "자세히",
+  help: "도움말",
   error: "오류",
   unknown: "알 수 없음",
   download: "다운로드",

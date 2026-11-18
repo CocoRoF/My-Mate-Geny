@@ -155,6 +155,9 @@ the app, and the server process stays light.
 
 ## Image Studio
 
+Its pages say little: what a card, a field or a setting is waits behind a (?) beside its title or label
+(`ui/HelpTip.tsx`; on hover, on a tap, a sheet on a phone), as in Voice Studio.
+
 | Page | What |
 |---|---|
 | 개요 | the engine (running, idle, stopped; the GPU memory it holds; stop now), the job running with its progress and those waiting, what the avatar maker can run here stage by stage (and which model), the latest results |

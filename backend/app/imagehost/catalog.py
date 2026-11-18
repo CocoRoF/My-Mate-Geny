@@ -81,7 +81,8 @@ class ImageModel:
             "uses": list(self.uses), "homepage": self.homepage, "seconds": self.seconds.get(lang),
             "defaults": dict(self.defaults), "notes": _t(self.notes, lang),
             "license": {"name": self.license.name, "url": self.license.url, "summary": _t(self.license.summary, lang),
-                        "attribution": self.license.attribution, "commercial": self.license.commercial.get(lang)},
+                        "attribution": self.license.attribution, "commercial": self.license.commercial.get(lang),
+                        "noncommercial": self.license.noncommercial},
         }
 
 
@@ -110,6 +111,7 @@ _ANIMA_LICENSE = License(
     ),
     attribution="Built on NVIDIA Cosmos.",
     commercial=L("모델은 비상업 전용 · 만든 그림은 상업적 사용 가능", "Model non-commercial only · its pictures may be used commercially"),
+    noncommercial=True,
 )
 _FIRST_LOAD = L("첫 작업은 모델을 디스크에서 읽어 오는 시간이 더해져요 (HDD에서 약 1~2분, NVMe면 훨씬 짧아요).",
                 "The first job adds reading the model from disk (about 1–2 min from a hard disk, far less from NVMe).")

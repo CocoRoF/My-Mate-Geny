@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { AVATAR_STAGES, getImageSettings, putImageSettings, USES, type AvatarStage, type ImageSettings, type ImageUse } from "../../api/image";
 import { useT, type MsgKey } from "../../i18n";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { ErrorLine, ProgressBar, Segmented } from "../mate/settings/ui";
 import { Card, ParamControls, useImageStudio } from "./shared";
@@ -35,9 +36,8 @@ export default function SettingsPage() {
   if (!doc || !status) return err ? <ErrorLine text={err} /> : <ProgressBar indeterminate />;
   const ok = (what: string) => saved === what && <span className="text-[11.5px] text-success"><Icon name="check" size={11} /> {t("imageStudio.saved")}</span>;
   return (
-    <div className="grid gap-3 lg:grid-cols-2" data-testid="is-settings">
-      <Card title={t("imageStudio.setModels")} right={ok("models")} testId="is-set-models">
-        <p className="mb-2 text-[11.5px] leading-snug text-content-faint">{t("imageStudio.setModelsHint")}</p>
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2" data-testid="is-settings">
+      <Card title={t("imageStudio.setModels")} help={t("imageStudio.setModelsHint")} right={ok("models")} testId="is-set-models">
         <div className="space-y-2">
           {USES.map((u) => {
             const have = status.models.filter((m) => m.installed && m.uses.includes(u));
@@ -60,8 +60,7 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      <Card title={t("imageStudio.setAvatar")} right={ok("avatar")} testId="is-set-avatar">
-        <p className="mb-2 text-[11.5px] leading-snug text-content-faint">{t("imageStudio.setAvatarHint")}</p>
+      <Card title={t("imageStudio.setAvatar")} help={t("imageStudio.setAvatarHint")} right={ok("avatar")} testId="is-set-avatar">
         <div className="space-y-1.5">
           {AVATAR_STAGES.map((st) => {
             const s = status.avatar.stages[st];
@@ -102,7 +101,7 @@ export default function SettingsPage() {
           />
           <div data-testid="is-set-voice-room">
             <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 text-content">{t("imageStudio.setVoiceRoom")}</span>
+              <span className="min-w-0 flex-1 text-content">{t("imageStudio.setVoiceRoom")}<HelpTip>{t("imageStudio.setVoiceRoomHint")}</HelpTip></span>
               <select
                 className="field !w-auto !py-1 text-[12.5px]"
                 value={String(doc.values.voice_room_gb)}
@@ -112,7 +111,6 @@ export default function SettingsPage() {
                 {[0, 2, 3, 4, 6].map((g) => <option key={g} value={String(g)}>{g} GB</option>)}
               </select>
             </div>
-            <p className="mt-0.5 text-[11px] leading-snug text-content-faint">{t("imageStudio.setVoiceRoomHint")}</p>
           </div>
           <NumberRow
             label={t("imageStudio.setHistory")}
@@ -126,7 +124,7 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      <Card title={t("imageStudio.setPaths")} testId="is-set-paths">
+      <Card title={t("imageStudio.setPaths")} help={t("imageStudio.setPathsHint")} testId="is-set-paths">
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11.5px]">
           {(Object.keys(doc.paths) as (keyof ImageSettings["paths"])[]).map((k) => (
             <div key={k} className="contents">
@@ -135,7 +133,6 @@ export default function SettingsPage() {
             </div>
           ))}
         </dl>
-        <p className="mt-2 text-[11px] leading-snug text-content-faint">{t("imageStudio.setPathsHint")}</p>
       </Card>
       <ErrorLine text={err} />
     </div>
@@ -170,12 +167,11 @@ function NumberRow({ label, hint, value, unit, min, max, onSave, testId }: { lab
   return (
     <div>
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 text-content">{label}</span>
+        <span className="min-w-0 flex-1 text-content">{label}{hint && <HelpTip>{hint}</HelpTip>}</span>
         <input className="field !w-24 !py-1 text-right text-[12.5px]" value={v} onChange={(e) => setV(e.target.value.replace(/[^0-9]/g, ""))} data-testid={testId} />
         {unit && <span className="text-content-faint">{unit}</span>}
         <button className="btn-soft !px-2 !py-1 text-[12px]" disabled={!valid || n === value} onClick={() => void onSave(n)}>{t("imageStudio.save")}</button>
       </div>
-      <p className="mt-0.5 text-[11px] leading-snug text-content-faint">{hint}</p>
     </div>
   );
 }

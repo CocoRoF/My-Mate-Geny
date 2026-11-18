@@ -47,6 +47,7 @@ import UpdateCard, { useUpdateState } from "../downloads/UpdateCard";
 import MateTab from "./MateTab";
 import { Location, TimeZone, YourBirthday, YourIcon, YourName } from "./PersonalFields";
 import UserIcon from "../ui/UserIcon";
+import HelpTip from "../ui/HelpTip";
 import Icon, { type IconName } from "../ui/Icon";
 import PageLoading from "../ui/Loading";
 import MobileTopBar from "../layout/MobileTopBar";
@@ -892,6 +893,8 @@ export default function SettingsView() {
   const known = asked && tabs.some((x) => x.id === asked) ? asked : null;
   const shown: SettingsTab | null = known ?? (wide ? tabs[0].id : null);
   const meta = tabs.find((x) => x.id === shown);
+  // (the studios: their pages say little; what they are waits behind a (?) beside the title)
+  const studio = shown === "voice-studio" || shown === "image-studio";
 
   // a part of the tab to show (`/?view=downloads` → Updates & Download, at Download): once it is drawn
   useEffect(() => {
@@ -1000,12 +1003,12 @@ export default function SettingsView() {
                 <div className="mb-5">
                   <div className="flex items-center gap-2.5">
                     <Icon name={meta.icon} size={20} className="text-accent" />
-                    <h2 className="text-lg font-semibold">{t(meta.label)}</h2>
+                    <h2 className="text-lg font-semibold">{t(meta.label)}{studio && meta.hint && <HelpTip>{t(meta.hint)}</HelpTip>}</h2>
                   </div>
-                  {meta.hint && <p className="mt-1 text-sm text-content-dim">{t(local&&shown==="updates"?"settings.localUpdatesHint":local&&shown==="account"?"settings.localAccountHint":meta.hint)}</p>}
+                  {!studio && meta.hint && <p className="mt-1 text-sm text-content-dim">{t(local&&shown==="updates"?"settings.localUpdatesHint":local&&shown==="account"?"settings.localAccountHint":meta.hint)}</p>}
                 </div>
               )}
-              {!wide && meta.hint && <p className="mb-4 text-[13px] text-content-dim">{t(local&&shown==="updates"?"settings.localUpdatesHint":local&&shown==="account"?"settings.localAccountHint":meta.hint)}</p>}
+              {!wide && !studio && meta.hint && <p className="mb-4 text-[13px] text-content-dim">{t(local&&shown==="updates"?"settings.localUpdatesHint":local&&shown==="account"?"settings.localAccountHint":meta.hint)}</p>}
               <Suspense fallback={<PageLoading />}>
                 <TabContent id={shown} />
               </Suspense>

@@ -56,7 +56,6 @@ export default function OverviewPage() {
         <Host o={o} />
       </div>
       <ErrorLine text={err} />
-      <p className="text-[11px] text-content-faint">{t("voiceStudio.ovRefresh")}</p>
     </div>
   );
 }
@@ -288,7 +287,7 @@ function Queue({ q }: { q: Overview["queue"] }) {
   const t = useT();
   const r = q.running;
   return (
-    <Card title={t("voiceStudio.ovQueue")} testId="vs-queue">
+    <Card title={t("voiceStudio.ovQueue")} help={t("voiceStudio.ovQueueHint")} testId="vs-queue">
       {r ? (
         <div className="rounded-lg border border-accent/30 bg-accent-soft/40 px-2.5 py-2 text-[12.5px]" data-testid="vs-queue-running">
           <div className="flex items-center gap-1.5">
@@ -313,7 +312,6 @@ function Queue({ q }: { q: Overview["queue"] }) {
           ))}
         </ul>
       )}
-      <p className="mt-2 text-[11px] leading-snug text-content-faint">{t("voiceStudio.ovQueueHint")}</p>
     </Card>
   );
 }
@@ -451,21 +449,22 @@ function Host({ o }: { o: Overview }) {
   const t = useT();
   const m = o.host.memory;
   return (
-    <Card title={t("voiceStudio.ovHost")} testId="vs-host">
+    <Card
+      title={t("voiceStudio.ovHost")}
+      help={t("voiceStudio.ovPolicy", {
+        budget: Math.round(o.settings.vram_budget_fraction * 100),
+        idle: o.settings.idle_unload_seconds
+          ? t("voiceStudio.ovIdleAfter", { n: Math.max(1, Math.round(o.settings.idle_unload_seconds / 60)) })
+          : t("voiceStudio.ovIdleNever"),
+      })}
+      testId="vs-host"
+    >
       <div className="grid grid-cols-2 gap-2">
         <Tile label={t("voiceStudio.ovRam")} value={`${gb(m.total - m.available)} / ${gb(m.total, 0)} GB`} sub={m.limited ? t("voiceStudio.ovRamLimited") : undefined} />
         <Tile label={t("voiceStudio.ovCpu")} value={String(o.host.cpu.count)} sub={o.host.cpu.name} />
         <Tile label={t("voiceStudio.ovDiskModels")} value={`${gb(o.host.disk.models.free, 0)} GB`} sub={t("voiceStudio.ovFreeOf", { total: gb(o.host.disk.models.total, 0) })} />
         <Tile label={t("voiceStudio.ovHistoryStore")} value={size(o.history.bytes)} sub={t("voiceStudio.ovHistoryCount", { n: o.history.count })} />
       </div>
-      <p className="mt-2 text-[11px] leading-snug text-content-faint">
-        {t("voiceStudio.ovPolicy", {
-          budget: Math.round(o.settings.vram_budget_fraction * 100),
-          idle: o.settings.idle_unload_seconds
-            ? t("voiceStudio.ovIdleAfter", { n: Math.max(1, Math.round(o.settings.idle_unload_seconds / 60)) })
-            : t("voiceStudio.ovIdleNever"),
-        })}
-      </p>
     </Card>
   );
 }

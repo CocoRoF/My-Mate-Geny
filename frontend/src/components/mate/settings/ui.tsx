@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Icon, { type IconName } from "../../ui/Icon";
+import HelpTip from "../../ui/HelpTip";
 import { useT } from "../../../i18n";
 import { usePhone, useTouchFirst } from "../../../lib/device";
 
@@ -19,11 +20,12 @@ export function Section({ title, hint, children, right, testId }: { title: React
   );
 }
 
-export function Field({ label, hint, children, as = "label" }: { label: ReactNode; hint?: ReactNode; children: ReactNode; as?: "label" | "div" }) {
+/** a labelled control; ``help``: its explanation behind a (?) beside the label (``hint``: a line under it) */
+export function Field({ label, hint, help, children, as = "label" }: { label: ReactNode; hint?: ReactNode; help?: ReactNode; children: ReactNode; as?: "label" | "div" }) {
   const Tag = as;
   return (
     <Tag className="block">
-      <span className="text-[12px] font-medium text-content-dim">{label}</span>
+      <span className="text-[12px] font-medium text-content-dim">{label}{help && <HelpTip>{help}</HelpTip>}</span>
       <div className="mt-1">{children}</div>
       {hint && <span className="mt-1 block text-[11px] leading-relaxed text-content-faint">{hint}</span>}
     </Tag>

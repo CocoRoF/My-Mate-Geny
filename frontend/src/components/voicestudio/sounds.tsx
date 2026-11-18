@@ -82,8 +82,11 @@ export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; 
   const none = !v.sounds.length && !made.length;
   const makers = doc?.makers ?? [];
   return (
-    <Card title={t("voiceStudio.sdTitle")} testId="vs-profile-sounds">
-      <p className="mb-2 text-[11.5px] leading-snug text-content-faint">{t("voiceStudio.sdHint")}</p>
+    <Card
+      title={t("voiceStudio.sdTitle")}
+      help={<><p>{t("voiceStudio.sdHint")}</p>{doc?.auto && doc.maker && <p>{t("voiceStudio.sdAutoNote")}</p>}{own && <p>{t("voiceStudio.sdAddHint")}</p>}<p>{t("voiceStudio.sdYawnNote")}</p></>}
+      testId="vs-profile-sounds"
+    >
 
       {v.sounds.length > 0 && (
         <div className="mb-2">
@@ -132,7 +135,7 @@ export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; 
 
       {none && !doc?.making && (
         <p className="mb-2 text-[12px] text-content-dim" data-testid="vs-sound-none">
-          {doc?.auto && doc.maker ? t("voiceStudio.sdNoneAuto") : t("voiceStudio.sdNone")}
+          {t("voiceStudio.sdNone")}
         </p>
       )}
 
@@ -179,8 +182,6 @@ export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; 
           </>
         )}
       </div>
-      {own && <p className="mt-1.5 text-[11px] leading-snug text-content-faint">{t("voiceStudio.sdAddHint")}</p>}
-      <p className="mt-1 text-[11px] leading-snug text-content-faint">{t("voiceStudio.sdYawnNote")}</p>
       <ErrorLine text={err} />
       <input
         ref={file}

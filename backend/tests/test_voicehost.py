@@ -109,7 +109,7 @@ async def test_without_a_gpu_nothing_installs_or_loads(db, tmp_path, monkeypatch
         omni = next(m for m in st["models"] if m["id"] == "omnivoice")
         assert "Boson" in omni["license"]["name"] and "CC-BY-NC" in omni["license"]["name"] and omni["license"]["attribution"]
         assert any("비상업" in s for s in omni["license"]["summary"]) and omni["repos"][0]["url"].startswith("https://")
-        assert "불가" in omni["license"]["commercial"]  # (its weights are non-commercial)
+        assert "불가" in omni["license"]["commercial"] and omni["license"]["noncommercial"]  # (its weights are non-commercial)
     finally:
         await h.stop()
 

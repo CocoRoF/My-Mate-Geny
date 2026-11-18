@@ -185,7 +185,6 @@ export function LineForm({
               </label>
             )}
             <ParamControls params={model.params} values={value.params} onChange={(params) => set({ params })} showAdvanced={advanced} testId={`${testId}-param`} />
-            <p className="mt-2 text-[11px] text-content-faint">{t("voiceStudio.gnParamsHint")}</p>
           </div>
         </details>
       )}

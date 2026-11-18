@@ -19,6 +19,7 @@ import {
   type VoiceRef,
 } from "../../api/voice";
 import { useT, type MsgKey } from "../../i18n";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field } from "../mate/settings/ui";
 import { FeelingDot, Modal, readableAudio, secs, usePeaks, usePlayer, useStudio, Waveform, useLangLabel } from "./shared";
@@ -103,8 +104,7 @@ export function RecorderModal({ onDone, onClose }: { onDone: (blob: Blob, name: 
   const loud = level > 0.98;
   return (
     <Modal title={t("voiceStudio.recTitle")} onClose={onClose} testId="vs-recorder">
-      <p className="text-[12px] leading-relaxed text-content-dim">{t("voiceStudio.recHint")}</p>
-      <div className="mt-3 flex items-center gap-3">
+      <div className="flex items-center gap-3">
         {state === "recording" ? (
           <button className="btn-primary !bg-danger !py-1.5 text-[12.5px]" onClick={stop} data-testid="vs-rec-stop">
             <Icon name="stop" size={12} /> {t("voiceStudio.recStop")}
@@ -120,6 +120,7 @@ export function RecorderModal({ onDone, onClose }: { onDone: (blob: Blob, name: 
         <span className="w-16 text-right text-[12px] tabular-nums text-content-dim">
           {elapsed.toFixed(1)} / {MAX_RECORD}s
         </span>
+        <HelpTip>{t("voiceStudio.recHint")}</HelpTip>
       </div>
       {state === "recording" && loud && <p className="mt-1.5 text-[11.5px] text-danger">{t("voiceStudio.recTooLoud")}</p>}
       {state === "recording" && elapsed > 3 && level < 0.02 && <p className="mt-1.5 text-[11.5px] text-warning">{t("voiceStudio.recQuiet")}</p>}
@@ -339,7 +340,6 @@ export function ClipModal({ src, onSaved, onClose, languages }: { src: ClipSourc
               <FeelingDot feeling={feeling} /> {t("voiceStudio.clipReplaces", { feeling: t(`localVoice.feeling_${feeling}` as MsgKey) })}
             </p>
           )}
-          {src.kind === "trim" && <p className="text-[11.5px] text-content-faint">{t("voiceStudio.clipTrimHint")}</p>}
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-3">
             <button className="btn-ghost !py-1.5 text-[12.5px]" onClick={onClose}>{t("voiceStudio.cancel")}</button>
             <button className="btn-primary !py-1.5 text-[12.5px]" onClick={() => void save()} disabled={busy || !range || len < 0.5} data-testid="vs-clip-save">
@@ -383,7 +383,6 @@ export function SaveAsRefModal({ entry, onClose }: { entry: HistoryEntry; onClos
   };
   return (
     <Modal title={t("voiceStudio.sarTitle")} onClose={onClose} testId="vs-save-ref">
-      <p className="mb-2 text-[12px] leading-relaxed text-content-dim">{t("voiceStudio.sarHint")}</p>
       <div className="space-y-2">
         <Field label={t("voiceStudio.sarProfile")}>
           <select className="field" value={vid} onChange={(e) => setVid(e.target.value)} data-testid="vs-save-ref-profile">

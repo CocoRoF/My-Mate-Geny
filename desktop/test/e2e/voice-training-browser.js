@@ -142,7 +142,7 @@ async function main() {
     await until("the page knows", async () => !(await page.locator('[data-testid="vs-train-needs-model"]').count()), 15000);
     await page.selectOption('[data-testid="vs-train-voice"]', "__new");
     await page.fill('[data-testid="vs-train-name"]', NAME);
-    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.click('[data-testid="vs-train-drop"] button')]);
+    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.click('[data-testid="vs-train-pick"]')]);
     await chooser.setFiles(rec);
     await page.waitForSelector('[data-testid="vs-train-list"] li');
     assert.match(await page.innerText('[data-testid="vs-train-list"]'), /인터뷰 녹음\.wav/, "the picked file is listed");

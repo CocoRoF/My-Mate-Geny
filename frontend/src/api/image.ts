@@ -36,7 +36,7 @@ export interface ImageModel {
   seconds: string;
   defaults: Record<string, unknown>;
   notes: string[];
-  license: { name: string; url: string; summary: string[]; attribution: string; commercial: string };
+  license: { name: string; url: string; summary: string[]; attribution: string; commercial: string; noncommercial?: boolean };
   // (the server's install state)
   installed: boolean;
   weights: boolean;
