@@ -27,8 +27,11 @@ export default function ScreenSharePicker({
   onSelect,
   onStop,
   onClose,
+  window: own = false,
 }: {
   mate?: Mate;
+  /** the desktop app's own picker window (the avatar toolbar's screen button): the dialog fills it, no scrim */
+  window?: boolean;
   /** what is shared now (its name; "" while it reconnects) — shown with onStop */
   current?: string;
   /** share this source: resolves once sharing is on (the parent closes the picker); a failure is shown here */
@@ -156,12 +159,12 @@ export default function ScreenSharePicker({
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] animate-fade-in"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      className={own ? "fixed inset-0 flex bg-surface-2" : "fixed inset-0 z-50 grid place-items-center bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] animate-fade-in"}
+      onMouseDown={(e) => !own && e.target === e.currentTarget && onClose()}
       data-testid="share-picker"
     >
       <div
-        className="flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface-2 shadow-float"
+        className={own ? "flex min-h-0 w-full flex-col overflow-hidden bg-surface-2" : "flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface-2 shadow-float"}
         role="dialog"
         aria-label={t("composer.shareScreen")}
       >
