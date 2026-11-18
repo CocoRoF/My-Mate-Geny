@@ -113,6 +113,10 @@ async def test_picked_up_it_is_done_and_her_hello_knows_why(db, tmp_path, monkey
     svc, store, mates, calls, line = _stack(db, tmp_path, monkeypatch, clock=clock)
     mate = store.create(name="Haru", persona={"language": "ko"}, llm={"model": "m1"})
     mates.conversation(mate["id"])
+    # (her turn after the call is recorded, not run: a real one starts an engine that outlives the test — on CI its
+    # process was still there at teardown, which then hung)
+    turns: list = []
+    monkeypatch.setattr(svc, "start_turn", lambda sid, text, **kw: turns.append(kw.get("meta")))
     try:
         _window(mates, "phone-1", "android")
         a = calls.alarms.book.add(mate["id"], calls.alarms.book.now(), "회의 준비")
@@ -125,6 +129,8 @@ async def test_picked_up_it_is_done_and_her_hello_knows_why(db, tmp_path, monkey
         assert "alarm they set with you" in line.prompts[0] and "회의 준비" in line.prompts[0]
         await calls.receive(call, {"type": "hangup"})
         await _wait(lambda: calls.alarms.book.get(a["id"])["status"] == "done")
+        await _wait(lambda: bool(turns))  # (and she takes the call in as a turn of her own, its card the message)
+        assert turns[0]["kind"] == "call"
     finally:
         await calls.stop()
         await svc.shutdown()
