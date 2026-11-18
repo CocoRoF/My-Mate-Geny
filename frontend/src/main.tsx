@@ -24,10 +24,11 @@ watchKeyboard(); // the on-screen keyboard: <html data-keyboard>, --app-h (lib/k
 // Full-page surfaces without the console:
 //   /?surface=avatar-lab                          avatar renderer lab (lazy chunk)
 //   /?surface=mate-overlay|mate-quick|mate-chat   the desktop app's Mate windows (docs/mate.md §6)
+//   /?surface=mate-share                          the desktop app's screen-share picker window (the avatar toolbar)
 const surface = new URLSearchParams(window.location.search).get("surface");
 const AvatarLab = lazy(() => import("./mate/AvatarLab"));
 const MateSurface = lazy(() => import("./components/mate/surfaces/MateSurfaces"));
-const mateSurface = surface === "mate-overlay" || surface === "mate-quick" || surface === "mate-chat" ? surface : null;
+const mateSurface = surface === "mate-overlay" || surface === "mate-quick" || surface === "mate-chat" || surface === "mate-share" ? surface : null;
 
 if (mateSurface === "mate-overlay" || mateSurface === "mate-quick") document.documentElement.classList.add("mate-transparent");
 if (mateSurface === "mate-quick") document.documentElement.classList.add("mate-quick-page");
@@ -36,7 +37,7 @@ if (mateSurface && /^desktop-/.test(window.hrhNative?.platform ?? "")) document.
 if (mateSurface === "mate-overlay") disableLoginRedirect(); // a see-through window never turns into the login page
 // (the window title follows the language: set once the messages are loaded, below)
 const setSurfaceTitle = () => {
-  if (mateSurface) document.title = mateSurface === "mate-chat" ? tr("nav.mateWindowTitle") : tr("nav.mateShortTitle");
+  if (mateSurface) document.title = mateSurface === "mate-chat" ? tr("nav.mateWindowTitle") : mateSurface === "mate-share" ? tr("composer.shareScreen") : tr("nav.mateShortTitle");
 };
 
 // The root boundary: a render error or a chunk that failed to load shows a Reload screen instead of a black window.

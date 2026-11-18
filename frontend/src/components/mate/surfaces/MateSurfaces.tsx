@@ -7,10 +7,14 @@ import { toast } from "../../../lib/toast";
  *   ?surface=mate-quick&mate=<id>    a one-line card (draggable, fixed width, grows downwards): Enter sends, then it
  *                                    closes (the reply shows by the avatar); a draft keeps it open (✕ closes)
  *   ?surface=mate-chat&mate=<id>     a compact conversation window
+ *   ?surface=mate-share&mate=<id>    the screen-share picker on its own (the avatar toolbar's screen button): a pick
+ *                                    turns sharing on for her conversation and the window closes
  * They all attach to the same mate session (useMateConversation), so every window stays in sync.
  */
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { DEFAULT_OUTFIT, type Mate } from "../../../api/mates";
+import { DEFAULT_OUTFIT, openConversation, type Mate } from "../../../api/mates";
+import { beginSharing } from "../../../mate/localScreen";
+import ScreenSharePicker from "../ScreenSharePicker";
 import { useSessionSync } from "../../../hooks/useSessionSync";
 import { useConfigStore } from "../../../stores/configStore";
 import { useMateStore } from "../../../stores/mateStore";
@@ -34,7 +38,7 @@ import { useLang, useT } from "../../../i18n";
 
 const RelationPanel = lazy(() => import("../RelationPanel"));
 
-type Kind = "mate-overlay" | "mate-quick" | "mate-chat";
+type Kind = "mate-overlay" | "mate-quick" | "mate-chat" | "mate-share";
 
 /** the mate this window shows: ?mate=, then the desktop's choice, then the default */
 function useSurfaceMate(onCommand?: (cmd: DesktopCommand) => void): { mate: Mate | null; loaded: boolean; desk: DesktopMateState | null } {
@@ -80,7 +84,38 @@ export default function MateSurface({ kind }: { kind: Kind }) {
   useSessionSync({ sessions: false });
   if (kind === "mate-overlay") return <Overlay />;
   if (kind === "mate-quick") return <Quick />;
+  if (kind === "mate-share") return <ShareWindow />;
   return <ChatWindow />;
+}
+
+// ── screen-share picker window ──────────────────────────────────────────
+
+/** the picker by itself (no chat window behind it): her conversation's session, a pick, sharing on, closed */
+function ShareWindow() {
+  const { mate } = useSurfaceMate();
+  const [sid, setSid] = useState<string | null>(null);
+  useEffect(() => {
+    if (!mate) return;
+    if (mate.session_id) return setSid(mate.session_id);
+    let alive = true;
+    void openConversation(mate.id).then((c) => alive && setSid(c.session_id), () => {});
+    return () => {
+      alive = false;
+    };
+  }, [mate?.id, mate?.session_id]);
+  const close = () => window.close();
+  if (!mate || !sid) return <div className="h-full bg-surface-2" data-testid="surface-loading" />;
+  return (
+    <ScreenSharePicker
+      window
+      mate={mate}
+      onSelect={async (source) => {
+        await beginSharing(sid, mate.name, source, false, mate.id);
+        close();
+      }}
+      onClose={close}
+    />
+  );
 }
 
 // ── overlay ─────────────────────────────────────────────────────────────

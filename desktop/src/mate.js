@@ -933,13 +933,57 @@ function openChat() {
 }
 
 function setCaptureSharing(on,busy,status) { screenSharing=!!on;screenBusy=!!busy;screenStatus=status||"off";barState(); }
+
+// ── the screen-share picker window (the avatar toolbar's screen button) ──
+// The picker by itself, centred on the avatar's screen: no chat window comes up with it. A pick turns sharing on for
+// her conversation and the page closes the window; Esc / ✕ close it too.
+let share = null;
+const SHARE = { w: 560, h: 620 };
+
+function createShare() {
+  const m = alive(avatar) ? avatar.getBounds() : null;
+  const a = (m ? screen.getDisplayMatching(m) : screen.getPrimaryDisplay()).workArea;
+  const w = Math.min(SHARE.w, a.width - 2 * MARGIN), h = Math.min(SHARE.h, a.height - 2 * MARGIN);
+  share = new BrowserWindow({
+    width: w,
+    height: h,
+    x: Math.round(a.x + (a.width - w) / 2),
+    y: Math.round(a.y + (a.height - h) / 2),
+    show: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    backgroundColor: theme.backgroundFor(nativeTheme.shouldUseDarkColors),
+    title: t("titleMate"),
+    icon: ICON,
+    autoHideMenuBar: true,
+    webPreferences: webPrefs("mate-share"),
+  });
+  const win = share;
+  win.setAlwaysOnTop(true, "floating");
+  guard(win, "share");
+  win.on("closed", () => {
+    if (share === win) share = null;
+  });
+  win.webContents.once("did-finish-load", () => {
+    if (!alive(win)) return;
+    if (mac) app.focus({ steal: true });
+    win.show();
+    win.focus();
+  });
+  loadSurface(win, "share");
+}
+
 function openScreenSharing() {
-  screenPicker=true;
-  openChat();
-  if (!alive(chat)) return;
-  const send = () => { if(alive(chat)) {command(chat,{type:"screen.open"});} };
-  if(chat.webContents.isLoading())chat.webContents.once("did-finish-load",()=>setTimeout(send,400));
-  else send();
+  if (quitting) return;
+  if (!connected()) return deps.openConsole();
+  if (alive(share)) {
+    share.show();
+    share.focus();
+    return;
+  }
+  createShare();
 }
 
 function hideChat() {
@@ -962,6 +1006,7 @@ function reloadSurfaces() {
   loadSurface(avatar, "overlay");
   loadSurface(quick, "quick");
   loadSurface(chat, "chat");
+  if (alive(share)) share.close(); // (a picker for the mate or server before: opened again when wanted)
 }
 
 /** Signed out / switching servers: the Mate windows of the old server go
@@ -977,9 +1022,10 @@ function disconnect() {
     avatar.destroy();
   }
   avatar = null;
-  for (const w of [quick, chat]) if (alive(w)) w.destroy();
+  for (const w of [quick, chat, share]) if (alive(w)) w.destroy();
   quick = null;
   chat = null;
+  share = null;
   broadcast();
 }
 
