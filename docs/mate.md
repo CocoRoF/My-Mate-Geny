@@ -325,8 +325,30 @@ threshold 0.015 / scale 1.8 as in Geny). Video motion has no audio-event subscri
   activity; audio start/end/cancel/mute is never its input, directly or through the displayed speaking mood.
   Activity and reactions only preload the next clip. **The video's own ended event is the sole transition
   clock**, always at 1×. The controller repeats loop clips at natural boundaries instead of changing a
-  media loop flag in response to events. No force-finish, acceleration or mid-clip seek exists. Pause/resume
-  and reused slots restore 1×. Photo/Live2D mouth animation still follows the voice bridge.
+  media loop flag in response to events. No force-finish, acceleration or mid-clip seek exists (but a following
+  window joining the leader's clip, below). Pause/resume and reused slots restore 1×. Photo/Live2D mouth animation
+  still follows the voice bridge.
+  **A player that stops moving is made again** (`player.ts` `StallWatch`, `onStall`): its WebGL context lost (a GPU
+  process reset — on Windows, opening Settings → 아바타·의상 started a second avatar and the stage stood still on its
+  last frame until it was remounted), a clip that fails to decode, or no new frame for `STALL_MS` = 3 s while it
+  should play (12 s while a clip it asked for loads): nudged once (played again), then made anew — at most 3 times a
+  minute; one that can't be made yet (no WebGL while the GPU restarts) is tried again every 1.5 s, six times. Live2D
+  and LivLiv bodies are remade the same way when their context is lost (`MateAvatar` `useRemakeOnLostContext`).
+- **In step across windows** (`src/mate/avatarSync.ts`, `voiceBridge.ts`): the console's stage, the desktop
+  avatar overlay and the mate chat window show one mate at once and move together. The window elected for her
+  voice (`voiceOwner`: the overlay while it is on screen, else the Mate surface last used; useMateConversation
+  `leads`) leads; the others follow it over BroadcastChannels:
+  - her mouth — the window that plays her voice (the conversation that speaks, a call: `claimVoice`) tells start /
+    level / marks / end ("hrh-mate-lips"); a window showing her (`showsMate`, LiveMateAvatar) that speaks nothing
+    plays it along (`remote:` ids; a voice gone quiet without its end stops after 1.2 s), so its mood is `talking`
+    and Live2D / photo / LivLiv mouths move;
+  - her reactions — only the leader decides a reply's faces and her mood now and then (`showReact`) and tells
+    them ("hrh-mate-avatar"); a follower shows what it is told; a tap anywhere is told and shown everywhere;
+  - her clips (video) — the leader tells each clip when it really starts (`onStart`, its load waited for); a
+    follower plays the same one as far into it as the leader is (`alignTo`, reckoned again once loaded): at the
+    end of its own clip (it waits up to 2.5 s on her home frame for the leader's next), or at once with a short
+    dissolve when the leader went another way. No leader heard for 90 s: its own clips, as a body alone.
+  Measured (two pages, software GL): the same clip on screen in both except ≤ 0.3 s at most changes (≤ 1.4 s at a few).
 - **Clip choice** (`src/mate/avatar/shared.ts`, used by the video body *and*
   the clip editor's trigger preview, so the preview is exactly the stage):
   disabled clips never count. A mood plays a random clip of its kind

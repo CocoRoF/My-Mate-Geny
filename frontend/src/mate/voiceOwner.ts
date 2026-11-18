@@ -237,6 +237,12 @@ function better(a: Omit<Peer, "seen" | "hidden">, b: Omit<Peer, "seen" | "hidden
   return a.id > b.id;
 }
 
+/** another window of this device takes part in the election for `mateId` (shows her and may speak for her) */
+export function othersFor(mateId: string): boolean {
+  for (const p of peers.values()) if (p.mateId === mateId && p.rank > 0) return true;
+  return false;
+}
+
 /** the highest sentence index of `turn` started by any window of this device (-1: none) */
 export const startedUpTo = (turn: string) => started.get(turn) ?? -1;
 

@@ -661,6 +661,7 @@ export default function MateView() {
               mood={conv.mood}
               videoMood={conv.videoMood}
               react={conv.react}
+              lead={conv.leads}
               caption={conv.caption}
               size={compact ? "sm" : "lg"}
               layout={split ? "split" : "stacked"}

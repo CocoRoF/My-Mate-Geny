@@ -13,11 +13,20 @@
  * or restarted from a half-blended picture); a prepare() during a crossfade is queued, not dropped; and a slot whose
  * frame can't be read for a moment (seeking) keeps its last frame instead of snapping the fade to the end for one
  * frame and back.
+ *
+ * A player that stops moving says so (`onStall`; the video body makes a new one, as a remount would): its clip no longer
+ * advances while it should play (a decoder that hung — seen on Windows with a second avatar on the page, the stage
+ * standing still until it was remade —, a clip that never loads), its WebGL context is lost (a GPU reset), or a clip
+ * fails to decode. Before that it is nudged once (played again; a clip still loading is asked for again).
  */
 
 export interface ClipPlayer {
   onEnded: (() => void) | null;
   onFirstFrame: (() => void) | null;
+  /** it stopped moving and a nudge didn't help: make a new player */
+  onStall: (() => void) | null;
+  /** a clip asked for by show() is on screen now (it may have loaded a while: this is when it really starts) */
+  onStart: ((src: string) => void) | null;
   prepare(src: string): void;
   show(src: string, opts?: ShowOptions): void;
   setPaused(paused: boolean): void;
@@ -41,6 +50,61 @@ export interface ShowOptions {
   loop?: boolean;
   /** crossfade from the clip on screen (ms); 0 = switch on the next frame */
   fadeMs?: number;
+  /** another window started this clip at this moment (Date.now()): it starts as far into it as that window is now —
+   *  reckoned again when it is loaded (mate/avatarSync.ts) */
+  alignTo?: number;
+}
+
+/** no new frame for this long while a clip should play: nudged, then (twice as long) a stall */
+export const STALL_MS = 3000;
+/** …while a clip it was asked for is still loading (the network may be slow) */
+export const STALL_LOADING_MS = 12000;
+
+/** Watches a player's clock: the time of the clip on screen must move while it should play. */
+export class StallWatch {
+  private t = -1;
+  private at = 0;
+  private nudged = false;
+  private nudge: () => void;
+  private stall: () => void;
+  constructor(nudge: () => void, stall: () => void) {
+    this.nudge = nudge;
+    this.stall = stall;
+  }
+  /** `active`: it should be moving now (alive, not paused, not resting at a clip's end with nothing asked for) */
+  check(now: number, time: number, active: boolean, loading: boolean): void {
+    if (!active || time !== this.t) {
+      this.t = time;
+      this.at = now;
+      this.nudged = false;
+      return;
+    }
+    const limit = loading ? STALL_LOADING_MS : STALL_MS;
+    if (!this.nudged && now - this.at > limit) {
+      this.nudged = true;
+      this.nudge();
+    } else if (now - this.at > limit * 2) {
+      this.at = now;
+      this.nudged = false;
+      this.stall();
+    }
+  }
+}
+
+/** where a clip starts: its beginning, or as far into it as the window it follows is (s) */
+const offsetOf = (alignTo: number | undefined) => (alignTo ? Math.max(0, (Date.now() - alignTo) / 1000) : 0);
+
+/** a clip's start position, applied to a video before it plays */
+function seekTo(video: HTMLVideoElement, alignTo: number | undefined): void {
+  const at = offsetOf(alignTo);
+  if (video.currentTime !== at) video.currentTime = at;
+}
+
+/** loaded at last: where the window it follows is now (its load took a while) — only forward, only when it matters */
+function realign(video: HTMLVideoElement, alignTo: number | undefined): void {
+  if (!alignTo) return;
+  const at = offsetOf(alignTo);
+  if (at - video.currentTime > 0.25 && (!video.duration || at < video.duration)) video.currentTime = at;
 }
 
 type Slot = { video: HTMLVideoElement; tex: WebGLTexture; src: string; ready: boolean };
@@ -63,6 +127,18 @@ export class StackedPlayer implements ClipPlayer {
   onEnded: (() => void) | null = null;
   /** the first frame is drawn (the still under the canvas may go) */
   onFirstFrame: (() => void) | null = null;
+  onStall: (() => void) | null = null;
+  onStart: ((src: string) => void) | null = null;
+  private watch = new StallWatch(
+    () => {
+      // (once: the clip on screen played again; a clip still loading asked for again)
+      const now = this.slots[this.cur].video;
+      if (!this.paused && now.paused && !now.ended) void now.play().catch(() => {});
+      const spare = this.slots[1 - this.cur];
+      if (this.pending && spare.src) spare.video.load();
+    },
+    () => this.alive && this.onStall?.(),
+  );
   private drawn = false;
   /** the frame last drawn (a video gives ~24 new frames a second: the other animation frames draw nothing) */
   private last: { slot: Slot | null; t: number } = { slot: null, t: -1 };
@@ -88,6 +164,11 @@ export class StackedPlayer implements ClipPlayer {
     const gl = canvas.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false });
     if (!gl) throw new Error("no webgl"); // i18n-ignore (a technical reason, shown inside a translated message)
     this.gl = gl;
+    // (a GPU reset or a driver taking the context back: this player draws no more — a new one does)
+    canvas.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      if (this.alive) this.onStall?.();
+    });
     const prog = gl.createProgram()!;
     for (const [type, src] of [
       [gl.VERTEX_SHADER, VS],
@@ -135,6 +216,10 @@ export class StackedPlayer implements ClipPlayer {
       s.video.addEventListener("loadeddata", () => {
         s.ready = true;
       });
+      // (a clip that can't be decoded — on screen, or the one asked for)
+      s.video.addEventListener("error", () => {
+        if (this.alive && (i === this.cur || this.pending) && s.src) this.onStall?.();
+      });
     }
     this.loop();
   }
@@ -173,7 +258,9 @@ export class StackedPlayer implements ClipPlayer {
       now.video.loop = loop;
       now.video.defaultPlaybackRate = 1;
       now.video.playbackRate = 1;
+      const again = now.video.ended;
       if (now.video.paused && !this.paused) void now.video.play().catch(() => {});
+      if (again) this.onStart?.(src);
       return;
     }
     const next = 1 - this.cur;
@@ -188,7 +275,7 @@ export class StackedPlayer implements ClipPlayer {
     spare.video.loop = loop;
     // a clip played before (or a preloaded one) starts again from its first frame: that is a seek, which never fires
     // loadeddata again, so the wait below ends on whichever comes first of loaded, can play and seeked
-    if (spare.video.currentTime !== 0) spare.video.currentTime = 0;
+    seekTo(spare.video, opts.alignTo);
     const token = ++this.waiting;
     const stop = () => {
       for (const ev of WAIT) spare.video.removeEventListener(ev, go);
@@ -199,6 +286,7 @@ export class StackedPlayer implements ClipPlayer {
       stop();
       this.waiting++;
       this.pending = false;
+      realign(spare.video, opts.alignTo);
       if (!this.paused) void spare.video.play().catch(() => {});
       if (fadeMs > 0 && this.drawn) {
         this.fade = { from: this.cur, start: performance.now(), ms: fadeMs };
@@ -206,6 +294,7 @@ export class StackedPlayer implements ClipPlayer {
         this.slots[this.cur].video.pause();
       }
       this.cur = next;
+      this.onStart?.(src);
       // the likely next clip, asked for while this one loaded, now goes into the new spare slot (after a crossfade,
       // when the slot fading out is free)
       if (this.queued && !this.fade) {
@@ -231,6 +320,7 @@ export class StackedPlayer implements ClipPlayer {
 
   dispose(): void {
     this.alive = false;
+    this.onStall = null;
     cancelAnimationFrame(this.raf);
     for (const s of this.slots) {
       s.video.pause();
@@ -253,10 +343,15 @@ export class StackedPlayer implements ClipPlayer {
   private loop = (): void => {
     if (!this.alive) return;
     this.raf = requestAnimationFrame(this.loop);
-    if (this.paused) return;
+    if (this.paused) {
+      this.watch.check(performance.now(), -1, false, false); // (paused on purpose: the watch starts again after)
+      return;
+    }
     const gl = this.gl;
     const now = this.slots[this.cur];
     const v = now.video;
+    // (moving while it should: playing, or a clip it was asked for loading — not resting at a clip's end)
+    this.watch.check(performance.now(), v.currentTime, !document.hidden && (this.pending || !v.ended), this.pending || !this.drawn);
     if (v.videoWidth && (this.canvas.width !== v.videoWidth || this.canvas.height !== v.videoHeight / 2)) {
       this.canvas.width = v.videoWidth;
       this.canvas.height = Math.round(v.videoHeight / 2);
@@ -317,6 +412,18 @@ export class StackedPlayer implements ClipPlayer {
 export class PlainPlayer implements ClipPlayer {
   onEnded: (() => void) | null = null;
   onFirstFrame: (() => void) | null = null;
+  onStall: (() => void) | null = null;
+  onStart: ((src: string) => void) | null = null;
+  private watchTimer: ReturnType<typeof setInterval>;
+  private watch = new StallWatch(
+    () => {
+      const now = this.slots[this.cur].video;
+      if (!this.paused && now.paused && !now.ended) void now.play().catch(() => {});
+      const spare = this.slots[1 - this.cur];
+      if (this.pending && spare.src) spare.video.load();
+    },
+    () => this.alive && this.onStall?.(),
+  );
   private slots: { video: HTMLVideoElement; src: string }[];
   private cur = 0;
   private paused = false;
@@ -340,11 +447,19 @@ export class PlainPlayer implements ClipPlayer {
       return { video, src: "" };
     };
     this.slots = [make(), make()];
-    this.slots.forEach((s, i) =>
+    this.slots.forEach((s, i) => {
       s.video.addEventListener("ended", () => {
         if (i === this.cur && !s.video.loop) this.onEnded?.();
-      }),
-    );
+      });
+      s.video.addEventListener("error", () => {
+        if (this.alive && (i === this.cur || this.pending) && s.src) this.onStall?.();
+      });
+    });
+    this.watchTimer = setInterval(() => {
+      if (!this.alive || this.paused) return this.watch.check(performance.now(), -1, false, false);
+      const v = this.slots[this.cur].video;
+      this.watch.check(performance.now(), v.currentTime, !document.hidden && (this.pending || !v.ended), this.pending || !this.drawn);
+    }, 500);
   }
 
   /** the old clip is still visible under a fading-in one until then (its slot must not be reloaded) */
@@ -385,7 +500,9 @@ export class PlainPlayer implements ClipPlayer {
       now.video.loop = loop;
       now.video.defaultPlaybackRate = 1;
       now.video.playbackRate = 1;
+      const again = now.video.ended;
       if (now.video.paused && !this.paused) void now.video.play().catch(() => {});
+      if (again) this.onStart?.(src);
       return;
     }
     const next = 1 - this.cur;
@@ -397,7 +514,7 @@ export class PlainPlayer implements ClipPlayer {
     spare.video.loop = loop;
     spare.video.defaultPlaybackRate = 1;
     spare.video.playbackRate = 1;
-    if (spare.video.currentTime !== 0) spare.video.currentTime = 0;
+    seekTo(spare.video, opts.alignTo);
     const token = ++this.waiting;
     const stop = () => {
       for (const ev of WAIT) spare.video.removeEventListener(ev, go);
@@ -408,6 +525,7 @@ export class PlainPlayer implements ClipPlayer {
       stop();
       this.waiting++;
       this.pending = false;
+      realign(spare.video, opts.alignTo);
       if (!this.paused) void spare.video.play().catch(() => {});
       const old = this.slots[this.cur];
       const fade = fadeMs > 0 && this.drawn;
@@ -426,6 +544,7 @@ export class PlainPlayer implements ClipPlayer {
         setTimeout(hideOld, fadeMs);
       } else requestAnimationFrame(hideOld);
       this.cur = next;
+      this.onStart?.(src);
       if (!this.drawn) {
         this.drawn = true;
         this.onFirstFrame?.();
@@ -453,6 +572,8 @@ export class PlainPlayer implements ClipPlayer {
 
   dispose(): void {
     this.alive = false;
+    this.onStall = null;
+    clearInterval(this.watchTimer);
     if (this.deferTimer) clearTimeout(this.deferTimer);
     for (const s of this.slots) {
       s.video.pause();

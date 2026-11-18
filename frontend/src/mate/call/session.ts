@@ -22,6 +22,7 @@ import { wsUrl } from "../../api/client";
 import { tr } from "../../i18n";
 import { devicePreferences, devicePreferencesLoaded } from "../../stores/devicePreferences";
 import { MateAudioQueue, type AudioQueueItem } from "../audioQueue";
+import { claimVoice } from "../voiceBridge";
 import { setCallRoute } from "../stt/capture";
 import { voiceEmotionAt } from "../emotion";
 import { SentenceStream, type Sentence } from "../sentences";
@@ -126,6 +127,8 @@ export class CallSession {
   private micSilent = false;
   private offApp: (() => void) | null = null;
   private diagLater: Record<string, unknown>[] = [];
+  /** her voice on the call is hers in every window of this computer (the overlay's mouth moves with it) */
+  private releaseVoice: (() => void) | null = null;
 
   constructor(call: CallInfo, mate: Mate, plan: CallPlan, ev: SessionEvents, opts: { muted: boolean; speaker: boolean }) {
     this.call = call;
@@ -161,6 +164,7 @@ export class CallSession {
     this.volume = devicePreferencesLoaded() ? devicePreferences().volume : 1;
     this.applyVolume();
     q.onItemStart = (item) => this.onSound(item);
+    this.releaseVoice = claimVoice(mate.id);
     q.onIdle = () => {
       this.voiceEndedAt = Date.now();
       this.ev.speaking(false);
@@ -566,6 +570,8 @@ export class CallSession {
     this.rerouteTimers = [];
     setCallRoute(null);
     this.queue.dispose();
+    this.releaseVoice?.();
+    this.releaseVoice = null;
     if (reason !== "elsewhere") this.tones.play("hangup", Math.min(1, this.volume));
     const ws = this.ws;
     this.ws = null;

@@ -10,8 +10,9 @@
  *
  * Photo/Live2D mouths follow the voice bridge. Video receives conversation activity separately from audio.
  */
-import { lazy, memo, Suspense, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useLiveAvatar } from "../livePreview";
+import { showsMate } from "../voiceBridge";
 import type { Avatar, BodyMood, MateAvatarProps } from "../types";
 import { DEFAULT_OUTFIT, type MateState, type OutfitCard } from "../../api/mates";
 import { restsOn, stateLook } from "../stateLook";
@@ -36,6 +37,42 @@ const canVideo = () => (videoOk ??= !reducedMotion() && StackedPlayer.supported(
 const canPlainVideo = () => !reducedMotion();
 const noSubscribe = () => () => {};
 
+/** a WebGL body made again after its context is lost, this long after (the GPU process starting up again) */
+const LOST_REMAKE_MS = 800;
+const LOST_REMAKES_PER_MIN = 5;
+
+/**
+ * A Live2D or LivLiv body whose WebGL context the GPU took back — a GPU process reset (seen on Windows when another
+ * avatar started on the page) — stands still on its last frame until it is made again: it is, as a remount would
+ * (the video body does the same inside: VideoBody's player). The container hears it (the event doesn't bubble: capture);
+ * a canvas already gone (its body unmounting) is not a loss.
+ */
+function useRemakeOnLostContext(): [(el: HTMLDivElement | null) => void, number] {
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const [gen, setGen] = useState(0);
+  useEffect(() => {
+    if (!box) return;
+    const times: number[] = [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const lost = (e: Event) => {
+      const canvas = e.target as HTMLCanvasElement | null;
+      if (!canvas?.isConnected) return;
+      const now = Date.now();
+      while (times.length && now - times[0] > 60_000) times.shift();
+      if (times.length >= LOST_REMAKES_PER_MIN) return;
+      times.push(now);
+      clearTimeout(timer);
+      timer = setTimeout(() => setGen((g) => g + 1), LOST_REMAKE_MS);
+    };
+    box.addEventListener("webglcontextlost", lost, true);
+    return () => {
+      box.removeEventListener("webglcontextlost", lost, true);
+      clearTimeout(timer);
+    };
+  }, [box]);
+  return [setBox, gen];
+}
+
 export interface MateAvatarExtraProps {
   /** drawn this far past its box (the console's stage: to the stage's edges, not its padding — view.ts Bleed) */
   bleed?: Bleed;
@@ -54,6 +91,8 @@ export interface MateAvatarExtraProps {
   /** what the body fits in the box, for a pan / zoom kept against her figure (view.ts useAvatarView's setFigure).
    *  Live2D says once its model is in; null: not known (the initial) */
   onFigure?: (figure: FigureShape | null) => void;
+  /** in step with her other windows of this computer (mate/avatarSync.ts): whose body, and whether this window leads */
+  sync?: { mateId: string; lead: boolean };
 }
 
 export const MateAvatar = memo(function MateAvatar({
@@ -75,11 +114,13 @@ export const MateAvatar = memo(function MateAvatar({
   doing,
   onFigure,
   bleed,
+  sync,
 }: MateAvatarProps & MateAvatarExtraProps) {
   const webgl = useSyncExternalStore(noSubscribe, canVideo, () => false);
   const plainOk = useSyncExternalStore(noSubscribe, canPlainVideo, () => false);
   /** the video player could not start: show the stills instead */
   const [videoFailed, setVideoFailed] = useState(false);
+  const [lostBox, remade] = useRemakeOnLostContext();
   // (a video body plays her mood as much as she feels it; the others rest on it once she feels it enough)
   const look = restsOn(felt, lookLevel);
   const cls = `mate-avatar mate-avatar-${size}${bleed ? " mate-avatar-bleed" : ""}${className ? " " + className : ""}`;
@@ -93,10 +134,10 @@ export const MateAvatar = memo(function MateAvatar({
 
   if (avatar.kind === "live2d") {
     return (
-      <div className={cls} style={{ aspectRatio: "3 / 4" }} data-mate-kind="live2d">
+      <div ref={lostBox} className={cls} style={{ aspectRatio: "3 / 4" }} data-mate-kind="live2d">
         <Suspense fallback={null}>
           <Live2DBody
-            key={`l|${avatar.live2d.model}`}
+            key={`l|${avatar.live2d.model}|${remade}`}
             live2d={avatar.live2d}
             mood={mood}
             look={look}
@@ -118,10 +159,10 @@ export const MateAvatar = memo(function MateAvatar({
   if (avatar.kind === "livliv") {
     const c = avatar.livliv.canvas;
     return (
-      <div className={cls} style={{ aspectRatio: c && c[0] > 0 && c[1] > 0 ? `${c[0]} / ${c[1]}` : "2 / 3" }} data-mate-kind="livliv">
+      <div ref={lostBox} className={cls} style={{ aspectRatio: c && c[0] > 0 && c[1] > 0 ? `${c[0]} / ${c[1]}` : "2 / 3" }} data-mate-kind="livliv">
         <Suspense fallback={null}>
           <LivLivBody
-            key={`lv|${avatar.livliv.model}`}
+            key={`lv|${avatar.livliv.model}|${remade}`}
             livliv={avatar.livliv}
             mood={mood}
             look={look}
@@ -168,6 +209,7 @@ export const MateAvatar = memo(function MateAvatar({
             poster={home}
             name={name}
             onFail={() => setVideoFailed(true)}
+            sync={sync}
           />
         ) : home ? (
           <PhotoBody key={`p|${home}`} stills={rig.stills} emotionStills={rig.emotion_stills} home={home} mood={mood} react={react} look={look} name={name} />
@@ -208,13 +250,19 @@ function Initial({ name }: { name: string }) {
 export function LiveMateAvatar({
   mate,
   className,
+  lead,
   ...rest
 }: Omit<MateAvatarProps, "avatar" | "name"> &
-  MateAvatarExtraProps & {
+  Omit<MateAvatarExtraProps, "sync"> & {
+    /** this window leads her body on this computer (useMateConversation `leads`): the others follow it */
+    lead?: boolean;
     videoMood: BodyMood;
     mate: { id: string; name: string; avatar: Avatar; state?: MateState; relation?: { avatar_mood?: boolean }; outfits?: { worn: string; items: OutfitCard[] }; life?: { enabled: boolean; body?: string; asleep?: boolean } };
   }) {
   const avatar = useLiveAvatar(mate) ?? mate.avatar;
+  // (her voice from any window of this computer moves this one's mouth: voiceBridge)
+  useEffect(() => showsMate(mate.id), [mate.id]);
+  const sync = useMemo(() => (lead === undefined ? undefined : { mateId: mate.id, lead }), [mate.id, lead]);
   const { shown, phase } = useOutfitFade(mate.outfits?.worn ?? DEFAULT_OUTFIT, avatar);
   const fading = phase === "idle" ? "" : `mate-outfit-${phase}`;
   const base = mate.outfits?.items.find((c) => c.id === DEFAULT_OUTFIT);
@@ -229,7 +277,7 @@ export function LiveMateAvatar({
   // (awake in bed because of a message: she is herself. The body names only what she is doing right now)
   const life = mate.life;
   const doing = life?.enabled ? (life.body === "sleep" && !life.asleep ? undefined : life.body || undefined) : undefined;
-  return <MateAvatar avatar={shown} name={mate.name} look={stateLook(mate)} lookLevel={mate.state?.level ?? 0} frameTo={frameTo} doing={doing} className={[className, fading].filter(Boolean).join(" ") || undefined} {...rest} />;
+  return <MateAvatar avatar={shown} name={mate.name} look={stateLook(mate)} lookLevel={mate.state?.level ?? 0} frameTo={frameTo} doing={doing} className={[className, fading].filter(Boolean).join(" ") || undefined} sync={sync} {...rest} />;
 }
 
 export default MateAvatar;

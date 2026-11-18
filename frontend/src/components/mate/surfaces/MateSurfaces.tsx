@@ -168,7 +168,7 @@ function Overlay() {
         style={interactive ? { cursor: dragging ? "grabbing" : "grab", touchAction: "none" } : undefined}
         data-testid="mate-avatar-area"
       >
-        <LiveMateAvatar key={mate.id} mate={mate} mood={conv.mood} videoMood={conv.videoMood} react={conv.react} onTap={() => conv.poke("greet")} view={view} onFigure={setFigure} />
+        <LiveMateAvatar key={mate.id} mate={mate} mood={conv.mood} videoMood={conv.videoMood} react={conv.react} onTap={() => conv.poke("greet")} view={view} onFigure={setFigure} lead={conv.leads} />
       </div>
       {interactive && !moveMode && !isHome(view) && (
         <button

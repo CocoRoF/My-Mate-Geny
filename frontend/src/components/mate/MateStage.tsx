@@ -140,6 +140,7 @@ export default function MateStage({
   menu,
   window: overlay,
   layout,
+  lead,
 }: {
   mate: Mate;
   mood: BodyMood;
@@ -158,6 +159,8 @@ export default function MateStage({
   window?: ReactNode;
   /** the view's layout (side by side, stacked): another one is another shape of stage, and she is fitted whole again */
   layout?: string;
+  /** this window leads her body on this computer (the conversation's `leads`: mate/avatarSync.ts) */
+  lead?: boolean;
 }) {
   const t = useT();
   const life = mate.life?.enabled && mate.life.art ? mate.life : null;
@@ -204,7 +207,7 @@ export default function MateStage({
         data-view={`${view.x.toFixed(4)},${view.y.toFixed(4)},${view.z.toFixed(4)}`}
       >
         {/* keyed by the mate: switching mates never shows (or keeps playing) the previous mate's body */}
-        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} view={view} onFigure={setFigure} bleed={bleed} />
+        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} view={view} onFigure={setFigure} bleed={bleed} lead={lead} />
         {!isHome(view) && (
           <button
             className="absolute bottom-2 right-2 z-10 grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2/90 text-content-dim opacity-0 shadow-float transition hover:text-content focus-visible:opacity-100 group-hover/stage:opacity-100 touch:opacity-100"

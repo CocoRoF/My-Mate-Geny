@@ -33,8 +33,9 @@ import { SentenceStream } from "./sentences";
 import { withoutCode } from "./markdown";
 import type { BodyMood, MateReact } from "./types";
 import { currentSurface, useDesktopMate, type DesktopMateState } from "./desktop";
-import { useVoiceSpeaking } from "./voiceBridge";
-import { announceStarted, clientMsgId, deviceId, deviceOf, hushDevice, noteSaid, onHush, RANK_OVERLAY, RANK_SURFACE, RANK_SURFACE_HIDDEN, setLocalVoicing, startedUpTo, useVoiceElection } from "./voiceOwner";
+import { claimVoice, useVoiceSpeaking } from "./voiceBridge";
+import { announceStarted, clientMsgId, deviceId, deviceOf, hushDevice, noteSaid, onHush, othersFor, RANK_OVERLAY, RANK_SURFACE, RANK_SURFACE_HIDDEN, setLocalVoicing, startedUpTo, useVoiceElection } from "./voiceOwner";
+import { onReact, tellReact } from "./avatarSync";
 import { onPhone, useAppActive } from "../lib/appState";
 
 /** the page's mate conversation (one mate at a time per page) */
@@ -135,6 +136,8 @@ export interface MateConversation {
   caption: Caption | null;
   voiceError: string | null;
   speaks: boolean; // this page is the one reading aloud
+  /** this page leads her face on this computer (mate/avatarSync.ts): the others show what it shows */
+  leads: boolean;
   /** the volume the voice plays at now (0..3): the saved one, or a settings slider's live preview */
   volume: number;
   /** a new turn (text and/or files) */
@@ -212,6 +215,29 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const speaks = owner && voiceEnabled;
   const speaksRef = useRef(speaks);
   speaksRef.current = speaks;
+  // her voice, when this page plays it, is hers in every window (voiceBridge: her mouth moves there too)
+  useEffect(() => (speaks && mateId ? claimVoice(mateId) : undefined), [speaks, mateId]);
+  // In step (mate/avatarSync.ts): the page elected for her voice leads her face — what it shows, every window of this
+  // computer shows. One that isn't a candidate leads only while nobody else shows her.
+  const leads = owner || (rank <= 0 && !!mateId && !othersFor(mateId));
+  const leadsRef = useRef(leads);
+  leadsRef.current = leads;
+  const mateIdRef = useRef(mateId);
+  mateIdRef.current = mateId;
+  /** a face she shows of her own (a reply's feeling, her mood now and then): decided here only when this page leads */
+  const showReact = useCallback((name: string) => {
+    if (!leadsRef.current) return;
+    setReact({ name, at: Date.now() });
+    if (mateIdRef.current) tellReact(mateIdRef.current, name);
+  }, []);
+  // (what another window decided, or a tap there)
+  useEffect(
+    () =>
+      onReact((mid, name) => {
+        if (mid === mateIdRef.current) setReact({ name, at: Date.now() });
+      }),
+    [],
+  );
   /** the device the latest user message came from (mate/voiceOwner: a reply is read on the device that asked) */
   const lastSender = useRef<string | null>(null);
   const turnOrigin = useRef<string | null>(null);
@@ -467,7 +493,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
         // (she didn't answer: nothing is read aloud or captioned, her face says it)
         if (!f.quiet && !f.reacted) {
           f.reacted++;
-          setReact({ name: "angry", at: Date.now() });
+          showReact("angry");
         }
         f.finished = true;
         return;
@@ -476,7 +502,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       if (e && !f.quiet && reactsAt(emotionLevel.current, e.intensity, f.reacted)) {
         f.reacted++;
         // (a blank face is how she feels; a tag that says something stands for itself)
-        setReact({ name: (e.emotion === "neutral" && lookRef.current) || e.emotion, at: Date.now() });
+        showReact((e.emotion === "neutral" && lookRef.current) || e.emotion);
       }
       const done = t.complete;
       if (f.finished) return;
@@ -723,7 +749,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   // a tap: she answers it the way she feels, and it counts as something the user did
   const poke = useCallback(
     (name: string) => {
+      // (a tap is the user's, in whichever window: every window shows her answer)
       setReact({ name: lookRef.current ?? name, at: Date.now() });
+      if (mateId) tellReact(mateId, lookRef.current ?? name);
       if (mateId) void pokeMate(mateId).catch(() => {});
     },
     [mateId],
@@ -764,13 +792,13 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const lookEvery = (mate?.state?.level ?? 0) >= STATE_STRONG ? STATE_LOOK_STRONG_EVERY_MS : STATE_LOOK_EVERY_MS;
   useEffect(() => {
     if (!look || videoMood !== "idle") return;
-    const first = setTimeout(() => setReact({ name: look, at: Date.now() }), 4000);
-    const every = setInterval(() => setReact({ name: look, at: Date.now() }), lookEvery);
+    const first = setTimeout(() => showReact(look), 4000);
+    const every = setInterval(() => showReact(look), lookEvery);
     return () => {
       clearTimeout(first);
       clearInterval(every);
     };
-  }, [look, lookEvery, videoMood]);
+  }, [look, lookEvery, videoMood, showReact]);
 
   return {
     sessionId,
@@ -784,6 +812,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     caption,
     voiceError,
     speaks,
+    leads,
     volume,
     send,
     steer,

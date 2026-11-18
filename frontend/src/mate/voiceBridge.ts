@@ -7,6 +7,12 @@
  * Ported from ailism-mate `mateVoice.ts`. The level is the RMS of the analyser's frequency bins (0..1), exactly what
  * Geny's AudioManager feeds its lip-sync, so the Live2D body can keep Geny's mapping (smoothing 0.3, threshold 0.015,
  * scale 1.8). Speech usually sits around 0.1–0.4.
+ *
+ * Her mouth moves in every window that shows her (docs/mate.md §2 "In step"): the voice plays in one window of this
+ * computer (mate/voiceOwner: the desktop overlay, the console, a call), and that window says what its voice does over a
+ * BroadcastChannel ("hrh-mate-lips": start, level, marks, end — and whose voice it is: `claimVoice`). A window that shows
+ * her (`showsMate`, from LiveMateAvatar) and speaks nothing itself plays the same along (ids `remote:…`; a voice that
+ * goes quiet without its end — the window closed — ends after REMOTE_QUIET_MS).
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
 
@@ -36,10 +42,15 @@ function emit(e: VoiceEvent) {
 
 /** something started speaking (a new id replaces whatever was speaking) */
 export function start(id: string): void {
-  if (speaking && speaking !== id) emit({ type: "end", id: speaking });
+  if (speaking && speaking !== id) {
+    const was = speaking;
+    emit({ type: "end", id: was });
+    tell({ type: "end", id: was });
+  }
   speaking = id;
   current = 0;
   emit({ type: "start", id });
+  tell({ type: "start", id });
 }
 
 /** the loudness now, 0..1 (ignored while nothing speaks) */
@@ -47,11 +58,14 @@ export function level(v: number): void {
   if (!speaking) return;
   current = Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
   emit({ type: "level", level: current });
+  tell({ type: "level", level: current });
 }
 
 /** optional per-character timing of what is being said (seconds from start) */
 export function marks(m: VoiceMark[]): void {
-  if (speaking) emit({ type: "marks", marks: m });
+  if (!speaking) return;
+  emit({ type: "marks", marks: m });
+  tell({ type: "marks", marks: m });
 }
 
 /** speaking stopped. With an id, only that speaker is ended (a late `ended` of an old clip cannot cut a newer one). */
@@ -61,6 +75,84 @@ export function end(id?: string): void {
   speaking = null;
   current = 0;
   emit({ type: "end", id: was });
+  tell({ type: "end", id: was });
+}
+
+// ── her mouth in every window of this computer ──
+
+/** a voice heard from another window that went quiet without its end (closed, crashed) ends after this */
+export const REMOTE_QUIET_MS = 1200;
+const REMOTE = "remote:";
+
+const lips: BroadcastChannel | null = (() => {
+  try {
+    return typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("hrh-mate-lips") : null;
+  } catch {
+    return null;
+  }
+})();
+/** whose voice this window plays (the newest claim: the conversation that speaks, a call) */
+const claims: { token: number; mateId: string }[] = [];
+let claimSeq = 0;
+/** the mates whose avatar this window shows (how many avatars of each) */
+const shown = new Map<string, number>();
+let remoteSeen = 0;
+
+/** this window plays `mateId`'s voice from now (released by the returned function): the other windows hear it */
+export function claimVoice(mateId: string): () => void {
+  const token = ++claimSeq;
+  claims.push({ token, mateId });
+  return () => {
+    const i = claims.findIndex((c) => c.token === token);
+    if (i >= 0) claims.splice(i, 1);
+  };
+}
+
+/** an avatar of `mateId` is on this window (released by the returned function): it moves with her voice anywhere */
+export function showsMate(mateId: string): () => void {
+  shown.set(mateId, (shown.get(mateId) ?? 0) + 1);
+  return () => {
+    const n = (shown.get(mateId) ?? 1) - 1;
+    if (n > 0) shown.set(mateId, n);
+    else shown.delete(mateId);
+  };
+}
+
+/** what this window's own voice does, to the others (a voice it only plays along is not told again) */
+function tell(e: VoiceEvent): void {
+  const claim = claims[claims.length - 1];
+  if (!lips || !claim) return;
+  const id = "id" in e ? e.id : speaking;
+  if (!id || id.startsWith(REMOTE)) return;
+  try {
+    lips.postMessage({ mateId: claim.mateId, id, e });
+  } catch {
+    /* closed */
+  }
+}
+
+if (lips) {
+  lips.onmessage = (m: MessageEvent) => {
+    const d = m.data as { mateId?: string; id?: string; e?: VoiceEvent } | null;
+    if (!d || typeof d.mateId !== "string" || typeof d.id !== "string" || !d.e || !shown.has(d.mateId)) return;
+    // (this window's own voice comes first: another's is only played along while it says nothing)
+    if (speaking && !speaking.startsWith(REMOTE)) return;
+    const id = REMOTE + d.id;
+    const e = d.e;
+    remoteSeen = Date.now();
+    if (e.type === "end") return end(id);
+    // (a window that came in mid-sentence joins at the next level)
+    if (speaking !== id && e.type !== "start") start(id);
+    if (e.type === "start") start(id);
+    else if (e.type === "level") level(e.level);
+    else if (e.type === "marks") marks(e.marks);
+  };
+  const quiet = setInterval(() => {
+    if (speaking?.startsWith(REMOTE) && Date.now() - remoteSeen > REMOTE_QUIET_MS) end(speaking);
+  }, 400);
+  // (Node — the tests — must not stay up for them)
+  (quiet as unknown as { unref?: () => void }).unref?.();
+  (lips as unknown as { unref?: () => void }).unref?.();
 }
 
 export function subscribe(fn: Listener): () => void {
