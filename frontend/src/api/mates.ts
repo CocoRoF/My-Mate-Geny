@@ -747,6 +747,8 @@ export interface VoiceSettings {
   /** an OpenAI / Google key comes from Settings → Providers (a vendor account with an API key), not one of its own */
   openai_key_shared?: boolean;
   google_key_shared?: boolean;
+  /** 스스로 인터넷 검색: every mate may search the web herself in a conversation (an older server: absent) */
+  web_search?: boolean;
 }
 
 export interface UserLocation {
@@ -772,6 +774,7 @@ export type VoiceSettingsPatch = Partial<{
   omnivoice_url: string;
   whisper_url: string;
   http_tts_url: string;
+  web_search: boolean;
 }>;
 
 export interface VoiceOption {

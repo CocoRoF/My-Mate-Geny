@@ -457,6 +457,13 @@ ALARM_TOOLS = [
     },
 ]
 
+# 메이트 공통 설정 → 스스로 인터넷 검색, for an engine without a web search of its own (HRH_MATE_SEARCH=1)
+SEARCH_WEB = {"name": "search_web", "description": (
+    "Search the web (Wikipedia + DuckDuckGo) → titles, links, snippets: for what you don't know or what may have "
+    "changed (news, weather, a release, a price, a schedule), or when the user asks you to look something up. Never "
+    "put the user's personal details in a query."),
+    "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}
+
 _SLOW = {"see_screen": 150}  # (waits for the user's answer + the capture; the backend always answers sooner)
 
 
@@ -469,7 +476,8 @@ def tools() -> list[dict]:
             + ([CHANGE_OUTFIT] if os.environ.get("HRH_MATE_OUTFIT") == "1" else [])
             + ([DO_ACTIVITY] if os.environ.get("HRH_MATE_LIFE") == "1" else [])
             + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else [])
-            + (ALARM_TOOLS if os.environ.get("HRH_MATE_ALARM") == "1" else []))
+            + (ALARM_TOOLS if os.environ.get("HRH_MATE_ALARM") == "1" else [])
+            + ([SEARCH_WEB] if os.environ.get("HRH_MATE_SEARCH") == "1" else []))
 
 
 def _call(name: str, args: dict) -> dict:

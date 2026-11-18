@@ -147,6 +147,7 @@ def test_configure_engine_seals_a_codex_mate(db, tmp_path, monkeypatch):
                       cli_session_id=None)
     mates.configure_engine(session, req)
     assert req.sealed and req.tools == [] and req.extra_dirs == [] and req.mode == "agent"
+    assert req.web_search  # (스스로 인터넷 검색, on by default: Codex's own search, live)
     assert req.model == "gpt-6.1-sol" and req.effort == "low"
     assert req.engine_home and Path(req.engine_home).parent.name == m["id"]
     assert open(req.system_prompt_file).read().startswith("You are Sol")
@@ -168,7 +169,8 @@ def test_configure_engine_seals_a_codex_mate(db, tmp_path, monkeypatch):
     assert oct((home / "config.toml").stat().st_mode & 0o777) == "0o600"
     assert f'model_instructions_file = "{req.system_prompt_file}"' in cfg
     assert 'approval_policy = "never"' in cfg and 'sandbox_mode = "read-only"' in cfg
-    assert 'web_search = "disabled"' in cfg and "project_doc_max_bytes = 0" in cfg
+    # (스스로 인터넷 검색 is on by default: Codex's own search, live — tests/test_mate_web_search.py)
+    assert 'web_search = "live"' in cfg and "project_doc_max_bytes = 0" in cfg
     for f in ("shell_tool", "unified_exec", "view_image", "image_generation", "memories", "plugins", "hooks",
               "multi_agent", "apps"):
         assert f"\n{f} = false\n" in cfg
@@ -181,7 +183,8 @@ def test_configure_engine_seals_a_codex_mate(db, tmp_path, monkeypatch):
     sealed = json.loads((home / "sealed-models.json").read_text())["models"][0]
     assert sealed["slug"] == "gpt-6.1-sol" and sealed["apply_patch_tool_type"] is None
     assert "tool_mode" not in sealed and "multi_agent_version" not in sealed
-    assert sealed["experimental_supported_tools"] == [] and sealed["supports_search_tool"] is False
+    # (its search tool stays: 스스로 인터넷 검색 is on — off, it goes: tests/test_mate_web_search.py)
+    assert sealed["experimental_supported_tools"] == [] and sealed.get("supports_search_tool", True) is not False
     assert f'model_catalog_json = "{home / "sealed-models.json"}"' in cfg
 
     # a pooled account's CODEX_HOME: its auth.json instead; signed out -> no stale link

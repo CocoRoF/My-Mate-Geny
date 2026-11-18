@@ -6,7 +6,8 @@
  * Live2D runtime, the built-in mates.
  */
 import { useEffect, useState } from "react";
-import { listBuiltins, type BuiltinInfo } from "../../api/mates";
+import { getVoiceSettings, listBuiltins, putVoiceSettings, type BuiltinInfo } from "../../api/mates";
+import HelpTip from "../ui/HelpTip";
 import { useMateStore } from "../../stores/mateStore";
 import { patchDevicePreferences, useDevicePreferences } from "../../stores/devicePreferences";
 import { openSettings } from "../../stores/uiStore";
@@ -51,6 +52,42 @@ function SpeakFirst() {
         label={t("settings.speakFirstOn")}
         testId="proactive-enabled"
       />
+    </Section>
+  );
+}
+
+/** 스스로 인터넷 검색: every mate may search the web herself in a conversation (her engine's own search, else the
+ * server's) — for every mate, every device (saved on the server) */
+function WebSearch() {
+  const t = useT();
+  const [on, setOn] = useState<boolean | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let alive = true;
+    getVoiceSettings().then(
+      (s) => alive && setOn(s.web_search ?? null),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (on === null) return null; // (an older server: nothing to switch)
+  const set = async (x: boolean) => {
+    setErr("");
+    setOn(x);
+    try {
+      const s = await putVoiceSettings({ web_search: x });
+      setOn(s.web_search ?? x);
+    } catch (e) {
+      setOn(!x);
+      setErr((e as Error).message);
+    }
+  };
+  return (
+    <Section title={<>{t("settings.webSearchTitle")}<HelpTip>{t("settings.webSearchHelp")}</HelpTip></>} testId="settings-mate-web">
+      <Toggle on={on} onChange={(x) => void set(x)} label={t("settings.webSearchOn")} testId="mate-web-search" />
+      <ErrorLine text={err} />
     </Section>
   );
 }
@@ -187,6 +224,7 @@ export default function MateTab() {
       <DesktopPanel />
       <DeviceSound />
       <SpeakFirst />
+      <WebSearch />
       {onAndroid() && <PhoneCalls />}
       {canShareScreen() && (
         <div data-testid="settings-screen">

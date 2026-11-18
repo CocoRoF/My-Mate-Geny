@@ -414,8 +414,18 @@ def settings_block(persona: dict[str, Any] | None, prefs: dict[str, Any] | None)
     return out
 
 
+# 메이트 공통 설정 → 스스로 인터넷 검색 (on): a web search of her own, in the conversation
+_WEB_RULES = """## Searching the web
+You can search the web yourself (your web search tool, else search_web). Use it when the conversation needs what you \
+don't know or what may have changed — today's news, weather, a release, a price, a schedule, a fact you aren't sure of \
+— or when the user asks you to look something up. Search first, then answer in your own words as yourself, briefly, \
+saying where it came from when it matters; don't paste lists of links. Not for what you know well, small talk or \
+feelings. Never put the user's personal details in a query (their name, the people around them, their own projects, \
+workplace or where they live): searches go to public search engines. To learn a whole subject for later, study_topic \
+is still the way."""
+
 def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None, *,
-                relation: bool = False, stage: str | None = None, life: str = "") -> str:
+                relation: bool = False, stage: str | None = None, life: str = "", web: bool = False) -> str:
     """Everything except the memories: who she is (persona), how she talks (style), the story and how close they are in it
     (``stage``, while the relationship is on), the contract."""
     p, s = _style_inputs(persona, prefs)
@@ -447,6 +457,8 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
     if outfit:
         lines.append(_OUTFIT_RULES)
     lines.append(_SCREEN_RULES)
+    if web:
+        lines.append(_WEB_RULES)
     lines.append(_CONTEXT_RULES)
     if p.get("instructions"):
         lines.append("## Standing instructions from the user\n" + p["instructions"].strip())
@@ -467,10 +479,10 @@ def memory_block(memories: list[dict[str, Any]], more: int = 0) -> str:
 
 def system_prompt(name: str, persona: dict[str, Any], memories: list[dict[str, Any]],
                   prefs: dict[str, Any] | None = None, more: int = 0, *, relation: bool = False,
-                  stage: str | None = None, life: str = "") -> str:
+                  stage: str | None = None, life: str = "", web: bool = False) -> str:
     """``memories``: the core; ``more``: how many others the mate has (recalled per turn); ``relation``: the
     relationship is on (its guide is in the prompt; where things stand comes per turn)."""
-    return base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life) + "\n\n" + memory_block(memories, more)
+    return base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life, web=web) + "\n\n" + memory_block(memories, more)
 
 
 _CHANGE_OPS = {"added": "added", "edited": "changed", "done": "marked done", "archived": "archived",
@@ -511,7 +523,7 @@ def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str,
 
 
 def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[str, Any] | None = None, *,
-               relation: bool = False, stage: str | None = None, life: str = "") -> str:
+               relation: bool = False, stage: str | None = None, life: str = "", web: bool = False) -> str:
     """Engine fingerprint part: the persona/style/contract text and the
     user's own memory edits — not what the mate remembered itself
     mid-conversation (already in its context), so ``remember`` never restarts
@@ -521,7 +533,7 @@ def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[
     compacted or long history can't outweigh); the engine resumes the same
     conversation with it at the next message, told what changed. So does a new stage: what she is to them belongs in
     the system prompt too."""
-    raw = base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life) + f"\n#memory-rev:{memory_rev}"
+    raw = base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life, web=web) + f"\n#memory-rev:{memory_rev}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
