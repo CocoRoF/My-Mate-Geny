@@ -40,6 +40,7 @@ from app.mate import wardrobe as W
 from app.mate.life import diary, sim
 from app.mate.life.runtime import LifeRuntime
 from app.mate import games as GM
+from app.mate.josa import particle as josa_particle
 from app.mate import oneshot
 from app.mate.social.runtime import SocialRuntime
 from app.mate.capture import CaptureBroker, CaptureError, pictures, screen_labels
@@ -1025,7 +1026,10 @@ class MateService:
         if e["type"] == "peeked":
             for m in e["who"]:
                 o = next((x for x in e["who"] if x != m), "")
-                reason = f"they read my messages with {mates.get(o, {}).get('name') or 'another mate'}"
+                other = mates.get(o, {}).get("name") or ""
+                # (her reason in her own words' language: the status window shows it as why she feels it)
+                reason = (f"{other}{josa_particle(other, '와')} 나눈 메시지를 들켜서" if (mates.get(m, {}).get("language") or "ko") == "ko"
+                          else f"my messages with {other} were read")
                 self._state_event(m, lambda doc, who, now, tz, reason=reason: S.report(doc, who, "shy", "slight", reason, now, tz))
             return
         share = e["type"] == "called_off" or (e["type"] == "outing" and e.get("mood") in ("great", "awkward"))
