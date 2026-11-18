@@ -3,7 +3,8 @@
  *   Local execution (the desktop app)  Geny Net: a pairing code (one phone, 5 minutes) → the phone asks, both screens
  *                                      show the same six digits, the user allows it here; then the paired devices
  *                                      (rename / remove: its connections end at once) and how they reach this computer
- *                                      (same network directly, from anywhere through a relay — end-to-end encrypted).
+ *                                      (same network directly; from the internet through the router's forwarded port —
+ *                                      UPnP / NAT-PMP; else through a relay — end-to-end encrypted every way).
  *   Over Geny Net itself               which computer this phone is linked to (and unlinking it, in the app).
  *   Server execution                   a sign-in code: this server's address + a one-time code for this account.
  */
@@ -114,6 +115,15 @@ function CodeShown({ uri, left, onClose, onAgain, caption }: { uri: string; left
 
 // ---- local execution: Geny Net --------------------------------------------------------------------------------------
 
+const WAN_STATE: Record<NonNullable<NetStatus["wan"]>["state"], { key: MsgKey; tone: "ok" | "warn" | "off" }> = {
+  open: { key: "net.upnpOpen", tone: "ok" },
+  trying: { key: "net.upnpTrying", tone: "warn" },
+  unavailable: { key: "net.upnpUnavailable", tone: "warn" },
+  off: { key: "net.off", tone: "off" },
+};
+
+const VIA: Record<string, MsgKey> = { lan: "net.viaLan", wan: "net.viaWan", relay: "net.viaRelay" };
+
 const RELAY_STATE: Record<NonNullable<NetStatus["relay"]>, { key: MsgKey; tone: "ok" | "warn" | "off" }> = {
   online: { key: "net.relayOnline", tone: "ok" },
   connecting: { key: "net.relayConnecting", tone: "warn" },
@@ -146,7 +156,7 @@ function DeviceRow({ d, onChanged }: { d: NetDevice; onChanged: () => void }) {
       setErr((e as Error).message);
     }
   };
-  const seen = d.last_seen ? `${t(d.last_via === "relay" ? "net.viaRelay" : "net.viaLan")} · ${relTime(d.last_seen * 1000)}` : t("net.never");
+  const seen = d.last_seen ? `${t(VIA[d.last_via ?? "lan"] ?? "net.viaLan")} · ${relTime(d.last_seen * 1000)}` : t("net.never");
   return (
     <li className="flex items-center gap-3 rounded-xl border border-border bg-surface-2/50 px-3.5 py-2.5" data-testid={`net-device-${d.id}`}>
       <span className="relative shrink-0 text-content-dim">
@@ -205,6 +215,8 @@ function Ways({ st, onChanged }: { st: NetStatus; onChanged: (s: NetStatus) => v
     }
   };
   const relay = RELAY_STATE[st.relay ?? "off"];
+  const wan = st.wan ?? { state: "off" as const, endpoint: "", method: "", error: "", reach: null };
+  const wanState = WAN_STATE[st.on ? wan.state : "off"];
   const where = st.on && st.lan_on && st.lan?.length ? st.lan.map((a) => `${a}:${st.port}`).join(" · ") : "";
   return (
     <Card title={t("net.waysTitle")} testId="net-ways">
@@ -216,6 +228,24 @@ function Ways({ st, onChanged }: { st: NetStatus; onChanged: (s: NetStatus) => v
           <HelpTip>{t("net.lanHelp")}</HelpTip>
         </div>
         {where && <div className="font-mono sm:pl-12 text-[11.5px] text-content-faint" data-testid="net-lan-where">{where}</div>}
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <Toggle on={!!st.upnp_on} disabled={busy || !st.lan_on} onChange={(v) => void put({ upnp: v })} label={t("net.upnp")} testId="net-upnp" />
+          </div>
+          {st.upnp_on && st.on && (
+            <span title={wan.state === "unavailable" ? wan.error : undefined}>
+              <Pill tone={wanState.tone} testId="net-upnp-state">{t(wanState.key)}</Pill>
+            </span>
+          )}
+          <HelpTip>{t("net.upnpHelp")}</HelpTip>
+        </div>
+        {st.upnp_on && st.on && wan.endpoint && (
+          <div className="flex flex-wrap items-center gap-2 font-mono text-[11.5px] text-content-faint sm:pl-12" data-testid="net-wan-where">
+            {wan.endpoint}
+            {wan.reach === true && <span className="font-sans text-success">· {t("net.reachOk")}</span>}
+            {wan.reach === false && <span className="font-sans text-warning">· {t("net.reachNo")}</span>}
+          </div>
+        )}
         <div className="flex items-start gap-3">
           <div className="flex-1">
             <Toggle on={!!st.relay_on} disabled={busy} onChange={(v) => void put({ relay: v })} label={t("net.relay")} testId="net-relay" />
@@ -388,7 +418,7 @@ function LinkedHere({ st }: { st: NetStatus }) {
       <div className="flex flex-wrap items-center gap-3">
         <Icon name="laptop" size={18} className="text-accent" />
         <span className="min-w-0 flex-1 text-[13px] text-content">{t("net.here", { name: st.name ?? "" })}</span>
-        <Pill tone="ok">{t(st.here?.via === "relay" ? "net.viaRelay" : "net.viaLan")}</Pill>
+        <Pill tone="ok">{t(VIA[st.here?.via ?? "lan"] ?? "net.viaLan")}</Pill>
       </div>
       {canForget && (
         <button className="btn-ghost border border-border !py-1.5 text-[12.5px] text-danger" onClick={() => void forget()} data-testid="net-forget">

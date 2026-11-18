@@ -4,13 +4,15 @@ Settings → **디바이스 인증** (Device sign-in) shows a QR code. The My Ma
 from its connect screen (**Connect with QR code**). What happens next depends on where the console runs.
 
 * **Server execution**: the code signs the phone in to this server with the account that is signed in now
-  (§ 6).
+  (§ 7).
 * **Local execution** (the desktop app): the code pairs the phone with this computer. From then on the phone reaches
   the computer's own backend:
   * directly on the same network;
-  * from anywhere else through a relay.
+  * from the internet, directly through a port the computer's own router forwards to it (UPnP / NAT-PMP, § 4), with
+    no server in between;
+  * only when neither works, through a relay (§ 5).
 
-  Either way the traffic is end-to-end encrypted. There is no VPN app to install, no account with anyone, and no port
+  Every way, the traffic is end-to-end encrypted. There is no VPN app to install, no account with anyone, and no port
   to open on the router. When the computer is off or the app is closed, the phone can't reach it, and the app says so.
 
 It plays the role a mesh VPN (Tailscale and the like) would, but it is built into the two apps:
@@ -41,7 +43,15 @@ phone (Android app)                                        desktop app (local ba
 * The listener's certificate is `<node id>.geny.net`, valid for 825 days. The node issues it under its own CA, and
   the name is never looked up in DNS.
 
-**Listener.** The listener speaks TLS 1.3, or TLS 1.2 with forward-secret AEAD suites only (Android 7–9).
+**Listener.** The listener speaks TLS 1.3, or TLS 1.2 with forward-secret AEAD suites only (Android 7–9). It may be
+on the internet (§ 4), so:
+
+* It takes plain TCP first, and refuses an address that keeps failing before any TLS work: 10 failures in 10 minutes
+  block that address for 30 minutes. A failure is a bad handshake, a certificate that isn't a listed phone's, or no
+  certificate when nothing is being paired. Loopback (the relay's pipes) is never blocked; the relay limits its own
+  callers.
+* A connection without a certificate is answered only while something is being paired: a code on screen, or a phone
+  waiting for its answer.
 
 * It listens on the LAN, and on loopback only when "directly on the same network" is off.
 * It keeps the same port across starts.
@@ -57,10 +67,12 @@ phone (Android app)                                        desktop app (local ba
   know, such as another program on this machine.
 * uvicorn runs with `proxy_headers=False` (local_main.py), so the client address is always the socket's own.
 
-**Relay.** A relay joins a phone that is away from home to its computer (`app/net/relay.py`). Both connect out to it,
-and it forwards bytes it can't read. See § 4.
+**Router.** The node asks its own router to forward a port to the listener (`app/net/portmap.py`). See § 4.
 
-**Phone.** `GenyNet.java` + `Relay.java` + `GenyNetPlugin.java`. See § 5.
+**Relay.** A relay joins a phone that is away from home to its computer when nothing direct works
+(`app/net/relay.py`). Both connect out to it, and it forwards bytes it can't read. See § 5.
+
+**Phone.** `GenyNet.java` + `Relay.java` + `GenyNetPlugin.java`. See § 6.
 
 ## 2. What a paired phone can do
 
@@ -124,9 +136,37 @@ What would an attacker need?
 |---|---|
 | sees the QR code | must also beat the owner's phone to it, and then still needs the owner to press *Allow* on a request whose name and digits don't match the phone in hand |
 | controls the network or the relay | can't read anything, and can't pose as the computer (the pin) or as the phone (its certificate) |
-| holds a removed phone | its connections end at once (§ 7); its certificate is refused from then on |
+| holds a removed phone | its connections end at once (§ 8); its certificate is refused from then on |
 
-## 4. The relay
+## 4. From the internet, directly (the router)
+
+With *Open a port on the router automatically* on (the default; it needs *Directly on the same network*), the node
+asks its own router to forward one TCP port to the listener. It needs no library:
+
+* **UPnP IGD** (most home routers): SSDP discovery, the device description, then the SOAP calls `AddPortMapping`,
+  `GetExternalIPAddress` and `DeletePortMapping`.
+  * A one-hour lease is renewed at the half. A router that only keeps permanent mappings gets lease 0, removed when
+    Geny Net stops.
+  * A port that is taken outside gets another.
+* **NAT-PMP** (RFC 6886) when UPnP isn't there. It asks the usual router addresses next to this machine (`a.b.c.1`
+  / `.254`).
+* Only private addresses are ever contacted: an answer on the LAN can't point the node anywhere else.
+* The external port is the listener's own when it's free, and is kept across starts.
+
+The router's public address and port (`ip:port`) go into the QR code (`w=`).
+
+* The relay, when it is on, tries that port from outside — at the address the node came from, never anywhere else —
+  and says whether it works. Settings shows it as *reachable from outside*.
+* A paired phone asks for the computer's current addresses over the link itself (`GET /api/net/where`), so a home
+  address that changed is followed. If that fails, it asks the relay (`where` also carries a checked `wan`).
+
+It can't work in these cases, and the relay is used then:
+
+* the router has UPnP / NAT-PMP off;
+* the router isn't on a public address itself, because of a second router in front or the provider's carrier-grade
+  NAT. The node sees this (the router's "external" address isn't public) and shows *Not possible*.
+
+## 5. The relay
 
 Any My Mate Geny server started with `NET_RELAY=1` is a relay. The project's own relay is
 `https://agent.hrletsgo.me`; Settings → 디바이스 인증 → *Relay address* changes it. Its routes:
@@ -144,9 +184,21 @@ What the relay knows:
 * the private addresses a node reported;
 * how many bytes went by.
 
-It can't read anything: inside each pipe is the TLS between the phone and the computer (§ 3). Limits:
+It can't read anything: inside each pipe is the TLS between the phone and the computer (§ 3).
 
-* 32 sessions per node;
+What it costs, measured on an i5-12400F (2026-11-18) with this code:
+
+| | cost |
+|---|---|
+| a node holding its line | ~100 KiB, next to no CPU (200 nodes: 0.15 % of a core) |
+| bytes piped | ~30 ms of CPU per MiB (frame size makes no difference), so one core pipes ~30 MiB/s |
+
+The relay runs inside the server's app, so what it pipes is capped:
+
+* in all: `NET_RELAY_MIB_S`, default 8 MiB/s, about a quarter of a core;
+* per session: 4 MiB/s;
+* 256 sessions in all, 32 per node;
+* a session nothing went through for 15 minutes is closed;
 * 240 connects per minute per client IP;
 * 1 MiB per frame;
 * a node that connects again replaces its old line.
@@ -154,7 +206,7 @@ It can't read anything: inside each pipe is the TLS between the phone and the co
 The node holds its line with pings every 25 s, so a quiet line stays up through Cloudflare. It reconnects with backoff
 from 1 s up to 60 s.
 
-## 5. The phone
+## 6. The phone
 
 **The proxy.** The app runs a loopback proxy, `http://127.0.0.1:<port>`.
 
@@ -172,19 +224,23 @@ from 1 s up to 60 s.
 
 Anything else gets 403, so other apps on the phone can't use the link.
 
-**Connections.** Each local connection becomes one TLS connection to the computer:
+**Connections.** Each local connection becomes one TLS connection to the computer, tried in this order:
 
-* The phone tries the LAN first. All the addresses race, with a 1.2 s timeout.
-* If the LAN didn't work in the last 30 s, it goes straight to the relay. The relay's WebSocket (OkHttp) is bridged to
-  a loopback socket pair, and Java's TLS runs over it.
+1. **The LAN.** All the addresses race, with a 1.2 s timeout.
+2. **The router's `ip:port`**, from the internet, with a 2.5 s timeout.
+3. **The relay.** Its WebSocket (OkHttp) is bridged to a loopback socket pair, and Java's TLS runs over it.
+
+A way that failed in the last 30 s is skipped.
+
 * When the computer can't be reached, the connection closes without an answer, and the app shows its offline screen.
-* After a relayed connection, the phone asks the relay where the computer is now (at most every 5 minutes), for the
-  next direct try.
+* After a connection, at most every 5 minutes, the phone asks where the computer is now: over the link
+  (`/api/net/where`), else of the relay.
+* If the page closes only its sending half, the answer still comes back (for up to 30 s).
 
 **Codes from outside the app.** A `geny://` code opened from outside the app (scanned with the camera app, or a link)
 asks first: it would leave the server the app is on. In the app, *Connect with QR code* follows the code it scanned.
 
-## 6. Server execution: a sign-in code
+## 7. Server execution: a sign-in code
 
 `POST /api/net/login-code {origin}` → `geny://login?v=1&u=<server>&c=<code>`.
 
@@ -194,7 +250,7 @@ asks first: it would leave the server the app is on. In the app, *Connect with Q
   (docs/auth.md), and stays signed in to that account.
 * Closing the code cancels it (`/api/net/login-code/cancel`).
 
-## 7. Devices
+## 8. Devices
 
 The device list shows each phone's name, when it was last seen and over which way (LAN or relay), and whether it is
 connected now.
@@ -207,11 +263,12 @@ connected now.
 * On the phone, *Disconnect this phone* removes the phone's own pairing and key. The computer keeps listing the phone
   until it is removed there.
 
-## 8. Settings
+## 9. Settings
 
 | setting | default |
 |---|---|
 | *Directly on the same network* | on. Off: the listener is on loopback only, and the relay is the only way in |
+| *Open a port on the router automatically* | on (needs the one above) |
 | *From anywhere (relay)* | on |
 | *Relay address* | `https://agent.hrletsgo.me` |
 
@@ -220,7 +277,7 @@ The settings are stored in `net_settings`, and devices in `net_devices`, both in
 On Windows or macOS, the first LAN listen may bring up the firewall's question. If it is denied, the relay still
 works.
 
-## 9. Tests
+## 10. Tests
 
 * `backend/tests/test_net.py` runs the backend for real: uvicorn on its two sockets, the TLS listener, and the relay
   routes on the same app. A Python TLS client acts as the phone. It covers:
@@ -233,4 +290,11 @@ works.
   * a full request through the relay, with TLS over the WebSocket;
   * a node id claimed with someone else's key;
   * the server sign-in code.
+* `backend/tests/test_net_portmap.py` uses a fake router on loopback (UPnP description + SOAP, NAT-PMP) and covers:
+  * mapping with a taken port and with permanent-only leases, and unmapping;
+  * *Not possible* behind the provider's NAT;
+  * a node offering its router's address in the QR code;
+  * the relay trying the port from outside;
+  * a session's bytes capped;
+  * an address that keeps failing refused.
 * `mobile/test/connect.test.js` covers the connect page's code parsing.

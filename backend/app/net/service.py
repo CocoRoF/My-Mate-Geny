@@ -7,6 +7,9 @@ on the same network directly, from anywhere through a relay — and from nothing
 * **The ingress** — the backend's second, loopback-only socket (local_main.py): each TLS connection is piped into it,
   and the connection's local port is recorded first (``self.peers``), so the ASGI layer (app/net/ingress.py) knows
   which device a request came from — and refuses any connection to the ingress it didn't make.
+* **The router** (app/net/portmap.py) — the node asks its own router to forward a port to the listener (UPnP IGD,
+  else NAT-PMP) and learns the router's public address: a phone away from home connects straight to it, no server
+  in between. The relay is for when that can't work.
 * **The relay** (app/net/relay.py) — the node keeps a WebSocket open to it (outbound only: nothing to open on the
   router) and proves its id with its CA key; a device away from home connects to the relay, the relay asks the node
   to accept, and the node pipes that WebSocket into its own listener: the TLS runs end to end, the relay forwards
@@ -45,6 +48,12 @@ MAX_OFFERS = 3
 MAX_PENDING = 5
 MAX_DEVICES = 32
 MAX_PAIRING_CONNECTIONS = 8  # (at once, without a certificate: someone on the network can't hold the listener)
+HANDSHAKE_S = 10
+# an address that keeps failing (a bad handshake, a certificate that isn't a device's, no certificate when nothing is
+# being paired): refused for a while — the listener may be on the internet (the router's forwarded port)
+FAILS_WINDOW_S = 600
+FAILS_MAX = 10
+BLOCK_S = 1800
 PAIR_PATHS = ("/api/net/pair/request", "/api/net/pair/result")
 DEFAULT_RELAY = "https://agent.hrletsgo.me"  # (the project's own relay: Settings → 디바이스 인증 changes it)
 
@@ -157,8 +166,8 @@ class NetStore:
 class Peer:
     scope: str                        # "device" | "pair"
     device_id: str = ""
-    via: str = ""                     # "lan" | "relay"
-    addr: str = ""                    # the device's address on the LAN (a relayed one has none here)
+    via: str = ""                     # "lan" | "wan" (the internet, by the router's forwarded port) | "relay"
+    addr: str = ""                    # the device's address as it connected (a relayed one has none here)
 
 
 class NetService:
@@ -178,6 +187,12 @@ class NetService:
         self.peers: dict[tuple[str, int], Peer] = {}
         self._conns: dict[str, set[asyncio.Task]] = {}   # device id → its live pipes (closed when it's revoked)
         self._pairing = 0
+        self._fails: dict[str, list[float]] = {}
+        self._blocked: dict[str, float] = {}
+        self._tls: ssl.SSLContext | None = None
+        self.portmap = None               # PortMapper (portmap.py), while the router forwards a port
+        self.reach: bool | None = None    # the relay could reach that port from outside (None: not checked)
+        self.portmap_options: dict[str, Any] = {}  # (tests: a fake router's addresses)
         self._server: asyncio.base_events.Server | None = None
         self.port = 0
         self.relay = None                 # RelayLink (relay_client.py), while the relay is on
@@ -202,6 +217,16 @@ class NetService:
     def lan_on(self) -> bool:
         return bool(self.store.setting("lan", True))
 
+    @property
+    def upnp_on(self) -> bool:
+        """the router asked to forward a port (needs the listener on the LAN)"""
+        return bool(self.store.setting("upnp", True)) and self.lan_on
+
+    @property
+    def wan(self) -> str:
+        """``ip:port`` the internet reaches this node at (the router's forwarded port), or "" """
+        return self.portmap.endpoint if self.portmap is not None else ""
+
     # -- lifecycle ---------------------------------------------------------------------------------------------------
     async def start_if_used(self) -> None:
         """at the backend's start: on if any device is paired (nothing listens on a machine that never paired one)"""
@@ -213,6 +238,8 @@ class NetService:
             return
         self._started = True
         await self._listen()
+        if self.upnp_on:
+            self._portmap_up()
         if self.relay_on:
             await self._relay_up()
         self.on_change()
@@ -222,6 +249,10 @@ class NetService:
         if self.relay is not None:
             await self.relay.close()
             self.relay = None
+        if self.portmap is not None:
+            await self.portmap.close()  # (the router's forwarded port goes with it)
+            self.portmap = None
+        self.reach = None
         if self._server is not None:
             self._server.close()
             with contextlib.suppress(Exception):
@@ -242,6 +273,8 @@ class NetService:
             self.store.put_setting("relay_url", url or DEFAULT_RELAY)
         if "lan" in patch:
             self.store.put_setting("lan", bool(patch["lan"]))
+        if "upnp" in patch:
+            self.store.put_setting("upnp", bool(patch["upnp"]))
         if self._started:  # (applied now)
             await self.stop()
             await self.start()
@@ -262,11 +295,11 @@ class NetService:
         """the TLS listener: the LAN (0.0.0.0) when same-network connections are on, else loopback (the relay's way in)"""
         host = "0.0.0.0" if self.lan_on else "127.0.0.1"
         want = int(self.store.setting("port", 0) or 0)
-        ctx = self._tls_context()
+        self._tls = self._tls_context()
         for port in ([want] if want else []) + [0]:
             try:
-                self._server = await asyncio.start_server(self._accept, host, port, ssl=ctx,
-                                                          ssl_handshake_timeout=15)
+                # (plain TCP first: an address that keeps failing is refused before any TLS work — _accept_raw)
+                self._server = await asyncio.start_server(self._accept_raw, host, port)
                 break
             except OSError:
                 continue
@@ -275,6 +308,21 @@ class NetService:
         self.store.put_setting("port", self.port)
         log.info("Geny Net listening on %s:%d (node %s)", host, self.port, self.identity.id)
 
+    def _portmap_up(self) -> None:
+        from .portmap import PortMapper
+
+        def changed() -> None:
+            pm = self.portmap
+            if pm is not None and pm.mapping is not None and pm.state == "open":
+                self.store.put_setting("wan_port", pm.mapping.external_port)
+            self.reach = None
+            if self.relay is not None:
+                self.relay.tell_public()  # (the relay checks the port from outside: status "reach")
+            self.on_change()
+
+        self.portmap = PortMapper(self.port, lan_addresses, changed, **self.portmap_options)
+        self.portmap.start(int(self.store.setting("wan_port", 0) or 0))
+
     async def _relay_up(self) -> None:
         from .relay_client import RelayLink
 
@@ -282,9 +330,59 @@ class NetService:
         self.relay.start()
 
     # -- a connection -----------------------------------------------------------------------------------------------
+    def _fail(self, ip: str) -> None:
+        if not ip or _loopback(ip):
+            return  # (the relay's pipes come in by loopback: the relay limits its own callers)
+        now = time.time()
+        q = [t for t in self._fails.get(ip, []) if now - t < FAILS_WINDOW_S] + [now]
+        self._fails[ip] = q
+        if len(q) >= FAILS_MAX:
+            self._blocked[ip] = now + BLOCK_S
+            self._fails.pop(ip, None)
+            log.info("Geny Net: %s refused for %d min (repeated failures)", ip, BLOCK_S // 60)
+        if len(self._fails) > 4096:  # (forget the oldest)
+            for k in list(self._fails)[:2048]:
+                self._fails.pop(k, None)
+
+    def _is_blocked(self, ip: str) -> bool:
+        until = self._blocked.get(ip)
+        if until is None:
+            return False
+        if until < time.time():
+            self._blocked.pop(ip, None)
+            return False
+        return True
+
+    def _pairing_open(self) -> bool:
+        """something is being paired: a code on screen, or a phone waiting for (or about to collect) its answer"""
+        if self._live_offers():
+            return True
+        now = time.time()
+        return any(now - r.created < REQUEST_TTL_S + 60 for r in self.requests.values())
+
+    async def _accept_raw(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        ip = str((writer.get_extra_info("peername") or ("",))[0])
+        if self._is_blocked(ip) or self._tls is None:
+            writer.close()
+            return
+        try:
+            await asyncio.wait_for(writer.start_tls(self._tls), HANDSHAKE_S)
+        except Exception:  # noqa: BLE001 - not TLS, not our client, too slow
+            self._fail(ip)
+            with contextlib.suppress(Exception):
+                writer.close()
+            return
+        await self._accept(reader, writer)
+
     async def _accept(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = self._who(writer)
-        if peer is None or (peer.scope == "pair" and self._pairing >= MAX_PAIRING_CONNECTIONS):
+        if peer is not None and peer.scope == "pair" and not self._pairing_open():
+            peer = None  # (no certificate and nothing to pair: there is nothing here for it)
+        if peer is None:
+            self._fail(str((writer.get_extra_info("peername") or ("",))[0]))
+            writer.close()
+            return
+        if peer.scope == "pair" and self._pairing >= MAX_PAIRING_CONNECTIONS:
             writer.close()
             return
         task = asyncio.current_task()
@@ -305,8 +403,12 @@ class NetService:
         sslobj = writer.get_extra_info("ssl_object")
         sock_peer = writer.get_extra_info("peername") or ("", 0)
         # (a relayed connection comes in through loopback, from this process: relay_client.py marks its ports)
-        via = "relay" if self.relay is not None and self.relay.is_ours(tuple(sock_peer[:2])) else "lan"
-        addr = str(sock_peer[0]) if via == "lan" and not _loopback(str(sock_peer[0])) else ""
+        ip = str(sock_peer[0])
+        if self.relay is not None and self.relay.is_ours(tuple(sock_peer[:2])):
+            via = "relay"
+        else:
+            via = "lan" if _private(ip) else "wan"
+        addr = ip if via != "relay" and not _loopback(ip) else ""
         der = sslobj.getpeercert(binary_form=True) if sslobj is not None else None
         if not der:
             return Peer("pair", via=via, addr=addr)
@@ -335,6 +437,10 @@ class NetService:
             if self.peers.get(key) is peer:
                 del self.peers[key]
 
+    def where(self) -> dict[str, Any]:
+        """how a paired phone may reach this node now (it asks over the link: the router's address can change)"""
+        return {"lan": lan_addresses() if self.lan_on else [], "port": self.port if self.lan_on else 0, "wan": self.wan}
+
     def peer_of(self, client: tuple[str, int] | None) -> Peer | None:
         return self.peers.get(tuple(client)) if client else None  # type: ignore[arg-type]
 
@@ -354,6 +460,8 @@ class NetService:
         if self.lan_on and self.port:
             params["h"] = ",".join(lan_addresses())
             params["p"] = str(self.port)
+        if self.wan:
+            params["w"] = self.wan
         if self.relay_on:
             params["r"] = self.relay_url
         return {"id": o.id, "expires": o.expires, "uri": "geny://link?" + urlencode(params, quote_via=quote)}
@@ -467,6 +575,10 @@ class NetService:
             "port": self.port, "lan": lan_addresses() if on and self.lan_on else [],
             "lan_on": self.lan_on, "relay_on": self.relay_on, "relay_url": self.relay_url,
             "relay": self.relay.state if self.relay is not None else "off",
+            "upnp_on": self.upnp_on,
+            "wan": {"state": self.portmap.state if self.portmap is not None else "off", "endpoint": self.wan,
+                    "method": self.portmap.mapping.method if self.portmap is not None and self.portmap.mapping else "",
+                    "error": self.portmap.error if self.portmap is not None else "", "reach": self.reach},
             "devices": [{k: d[k] for k in ("id", "name", "platform", "created_at", "last_seen", "last_via")}
                         | {"online": bool(self._conns.get(d["id"]))} for d in self.store.devices()],
             "pending": self.pending(),
@@ -483,6 +595,14 @@ def _b64u(b: bytes) -> str:
     import base64
 
     return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def _private(host: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+    except ValueError:
+        return False
 
 
 def _loopback(host: str) -> bool:

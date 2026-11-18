@@ -65,9 +65,11 @@ import org.json.JSONObject;
  *   phone makes its own key in the Android Keystore (it never leaves the phone), proves it read the code
  *   (HMAC of the secret over its public key), both screens show the same six digits, the user allows it on the
  *   computer, and the computer issues the phone a certificate for that key.
- * - Every connection is TLS to the computer (pinned to its CA, the phone's certificate in the handshake): over the LAN
- *   straight to its listener, or through the relay — a WebSocket the relay pipes to the computer's own line to it;
- *   the TLS runs end to end, the relay forwards bytes it can't read (Relay below).
+ * - Every connection is TLS to the computer (pinned to its CA, the phone's certificate in the handshake), tried in this
+ *   order: over the LAN straight to its listener; from the internet straight to the port the computer's router forwards
+ *   to it (UPnP / NAT-PMP, backend app/net/portmap.py) — no server in between; else through the relay — a WebSocket the
+ *   relay pipes to the computer's own line to it, the TLS end to end, bytes it can't read (Relay.java). A way that
+ *   failed is skipped for a while; where the computer is now is asked over the link itself (its address can change).
  * - The WebView, the background checks and the call line all talk to a proxy on this phone's loopback
  *   (``http://127.0.0.1:<port>``: a secure context — the microphone works — with no certificate to install): each
  *   connection to it is let through only with the app's own key (the ``geny_net`` cookie the app sets for the WebView,
@@ -89,6 +91,7 @@ final class GenyNet {
     private static final String K_ALIAS = "alias";
     private static final String K_HOSTS = "hosts";
     private static final String K_PORT = "port";
+    private static final String K_WAN = "wan";
     private static final String K_RELAY = "relay";
     private static final String K_PROXY_PORT = "proxyPort";
     private static final String K_KEY = "key";
@@ -96,12 +99,14 @@ final class GenyNet {
     private static final String K_INCOMING = "incoming";
 
     private static final int LAN_TIMEOUT_MS = 1200;
-    private static final long LAN_RETRY_MS = 30_000;   // a LAN attempt that failed: straight to the relay for this long
+    private static final int WAN_TIMEOUT_MS = 2500;
+    private static final long LAN_RETRY_MS = 30_000;   // a way that failed is skipped for this long
     private static final long WHERE_EVERY_MS = 5 * 60_000L;
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static volatile SSLContext linked = null; // (one context: its TLS sessions resume)
     private static volatile long lanFailedAt = 0;
+    private static volatile long wanFailedAt = 0;
     private static volatile long whereAt = 0;
     private static Proxy proxy = null;
     private static Pairing pairing = null;
@@ -164,15 +169,17 @@ final class GenyNet {
         final String name;
         final List<String> hosts;
         final int port;
+        final String wan; // "ip:port": the computer's router, from the internet (null: none)
         final String relay;
         final byte[] secret; // (the QR code's: pairing only)
 
-        Node(String id, String fp, String name, List<String> hosts, int port, String relay, byte[] secret) {
+        Node(String id, String fp, String name, List<String> hosts, int port, String wan, String relay, byte[] secret) {
             this.id = id;
             this.fp = fp;
             this.name = name;
             this.hosts = hosts;
             this.port = port;
+            this.wan = wan;
             this.relay = relay;
             this.secret = secret;
         }
@@ -181,7 +188,7 @@ final class GenyNet {
             return id + ".geny.net";
         }
 
-        /** geny://link?v=1&n=…&f=…&k=…&d=…[&h=a,b&p=…][&r=…] */
+        /** geny://link?v=1&n=…&f=…&k=…&d=…[&h=a,b&p=…][&w=ip:port][&r=…] */
         static Node parse(String uri) {
             Uri u = Uri.parse(uri);
             if (!"geny".equals(u.getScheme()) || !"link".equals(u.getHost())) throw new IllegalArgumentException("Not a Geny Net code");
@@ -202,7 +209,7 @@ final class GenyNet {
             }
             String relay = GenyServerPlugin.cleanBase(u.getQueryParameter("r"));
             String name = u.getQueryParameter("d");
-            return new Node(id, fp, name == null ? "" : name, hosts, port, relay, unb64u(k));
+            return new Node(id, fp, name == null ? "" : name, hosts, port, endpoint(u.getQueryParameter("w")), relay, unb64u(k));
         }
 
         static Node saved(Context c) {
@@ -210,8 +217,15 @@ final class GenyNet {
             String hosts = p.getString(K_HOSTS, "");
             List<String> list = hosts.isEmpty() ? new ArrayList<>() : new ArrayList<>(Arrays.asList(hosts.split(",")));
             return new Node(p.getString(K_NODE, ""), p.getString(K_FP, ""), p.getString(K_NAME, ""), list,
-                    p.getInt(K_PORT, 0), p.getString(K_RELAY, null), null);
+                    p.getInt(K_PORT, 0), endpoint(p.getString(K_WAN, null)), p.getString(K_RELAY, null), null);
         }
+    }
+
+    /** "1.2.3.4:5678", or null */
+    static String endpoint(String s) {
+        if (s == null || !s.matches("[0-9]{1,3}(\\.[0-9]{1,3}){3}:[0-9]{1,5}")) return null;
+        int port = Integer.parseInt(s.substring(s.indexOf(':') + 1));
+        return port > 0 && port < 65536 ? s : null;
     }
 
     // ── TLS: the computer pinned, the phone's key from the Keystore ──
@@ -361,17 +375,32 @@ final class GenyNet {
         return s;
     }
 
-    /** a TLS connection to the computer: the LAN first (unless it failed a moment ago), then the relay */
+    /** a TLS connection to the computer: the LAN, then its router from the internet (each unless it failed a moment
+     *  ago), then the relay */
     static SSLSocket connect(Context c, Node n, SSLContext ctx) throws IOException {
         IOException last = null;
-        boolean lanFresh = System.currentTimeMillis() - lanFailedAt > LAN_RETRY_MS;
+        long now = System.currentTimeMillis();
+        boolean lanFresh = now - lanFailedAt > LAN_RETRY_MS;
+        boolean wanFresh = now - wanFailedAt > LAN_RETRY_MS;
         if (n.port > 0 && !n.hosts.isEmpty() && lanFresh) {
             try {
                 SSLSocket s = tls(ctx, lan(n), n);
                 note(c, "lan");
+                if (c != null && paired(c)) refreshWhere(c, n);
                 return s;
             } catch (IOException e) {
                 lanFailedAt = System.currentTimeMillis();
+                last = e;
+            }
+        }
+        if (n.wan != null && wanFresh) {
+            try {
+                SSLSocket s = tls(ctx, wan(n.wan), n);
+                note(c, "wan");
+                if (c != null && paired(c)) refreshWhere(c, n);
+                return s;
+            } catch (IOException e) {
+                wanFailedAt = System.currentTimeMillis();
                 last = e;
             }
         }
@@ -395,7 +424,30 @@ final class GenyNet {
                 last = e;
             }
         }
+        if (n.wan != null && !wanFresh) {
+            try { // (…and the router)
+                SSLSocket s = tls(ctx, wan(n.wan), n);
+                wanFailedAt = 0;
+                note(c, "wan");
+                return s;
+            } catch (IOException e) {
+                last = e;
+            }
+        }
         throw last != null ? last : new IOException("no way to reach the computer");
+    }
+
+    private static Socket wan(String endpoint) throws IOException {
+        int i = endpoint.lastIndexOf(':');
+        Socket s = new Socket();
+        try {
+            s.setTcpNoDelay(true);
+            s.connect(new InetSocketAddress(endpoint.substring(0, i), Integer.parseInt(endpoint.substring(i + 1))), WAN_TIMEOUT_MS);
+            return s;
+        } catch (IOException e) {
+            closeQuietly(s);
+            throw e;
+        }
     }
 
     static SSLSocket connectLinked(Context c) throws IOException {
@@ -450,16 +502,27 @@ final class GenyNet {
         }
     }
 
-    /** where the computer says it is on its own network now (the relay knows): for the next direct try */
+    /** where the computer is now — its LAN addresses, its router's public ip:port — for the next direct try: asked
+     *  over the link itself (GET /api/net/where), else of the relay */
     private static void refreshWhere(Context c, Node n) {
         long now = System.currentTimeMillis();
         if (now - whereAt < WHERE_EVERY_MS) return;
         whereAt = now;
         Context app = c.getApplicationContext();
         new Thread(() -> {
+            JSONObject j = null;
             try {
-                JSONObject j = Relay.where(n.relay, n.id);
-                if (j == null || !j.optBoolean("online")) return;
+                Resp r = request(connectLinked(app), n, "GET", "/api/net/where", null);
+                if (r.status == 200) j = r.json;
+            } catch (Exception e) {
+                Log.i(TAG, "where (link): " + e.getMessage());
+            }
+            try {
+                if (j == null && n.relay != null) {
+                    JSONObject w = Relay.where(n.relay, n.id);
+                    if (w != null && w.optBoolean("online")) j = w;
+                }
+                if (j == null) return;
                 List<String> hosts = new ArrayList<>();
                 if (j.optJSONArray("lan") != null) {
                     for (int i = 0; i < j.getJSONArray("lan").length(); i++) {
@@ -467,7 +530,11 @@ final class GenyNet {
                         if (h.matches("[0-9.]{7,15}")) hosts.add(h);
                     }
                 }
-                prefs(app).edit().putString(K_HOSTS, String.join(",", hosts)).putInt(K_PORT, j.optInt("port", 0)).apply();
+                String wan = endpoint(j.optString("wan", ""));
+                SharedPreferences.Editor e = prefs(app).edit().putString(K_HOSTS, String.join(",", hosts)).putInt(K_PORT, j.optInt("port", 0));
+                if (wan != null) e.putString(K_WAN, wan);
+                else e.remove(K_WAN);
+                e.apply();
                 synchronized (GenyNet.class) {
                     linked = null; // (the next connection reads the new addresses; the key and pin are the same)
                 }
@@ -513,7 +580,7 @@ final class GenyNet {
         body.put("platform", "android");
         Resp r;
         try {
-            r = request(connect(null, n, context(n, null)), n, "/api/net/pair/request", body);
+            r = request(connect(null, n, context(n, null)), n, "POST", "/api/net/pair/request", body);
         } catch (IOException e) {
             dropKey(alias);
             throw new PairException("unreachable", "Can't reach " + (n.name.isEmpty() ? "the computer" : n.name) + ": " + e.getMessage());
@@ -548,7 +615,7 @@ final class GenyNet {
         if (pg == null) return "expired";
         JSONObject body = new JSONObject();
         body.put("request", pg.request);
-        Resp r = request(connect(null, pg.node, context(pg.node, null)), pg.node, "/api/net/pair/result", body);
+        Resp r = request(connect(null, pg.node, context(pg.node, null)), pg.node, "POST", "/api/net/pair/result", body);
         String state = r.status == 200 ? r.json.optString("state", "expired") : "expired";
         if ("approved".equals(state)) {
             SharedPreferences p = prefs(c);
@@ -563,6 +630,7 @@ final class GenyNet {
                     .putString(K_ALIAS, pg.alias)
                     .putString(K_HOSTS, String.join(",", pg.node.hosts))
                     .putInt(K_PORT, pg.node.port)
+                    .putString(K_WAN, pg.node.wan)
                     .putString(K_RELAY, pg.node.relay)
                     .putString(K_KEY, b64u(random(32)))
                     .remove(K_VIA)
@@ -667,11 +735,11 @@ final class GenyNet {
         }
     }
 
-    private static Resp request(SSLSocket s, Node n, String path, JSONObject body) throws IOException {
+    private static Resp request(SSLSocket s, Node n, String method, String path, JSONObject body) throws IOException {
         try {
             s.setSoTimeout(45_000);
-            byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
-            String head = "POST " + path + " HTTP/1.1\r\nHost: " + n.host() + "\r\nContent-Type: application/json\r\nContent-Length: "
+            byte[] data = body == null ? new byte[0] : body.toString().getBytes(StandardCharsets.UTF_8);
+            String head = method + " " + path + " HTTP/1.1\r\nHost: " + n.host() + "\r\nContent-Type: application/json\r\nContent-Length: "
                     + data.length + "\r\nConnection: close\r\n\r\n";
             OutputStream o = s.getOutputStream();
             o.write(head.getBytes(StandardCharsets.US_ASCII));

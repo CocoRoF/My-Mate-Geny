@@ -9,7 +9,7 @@ request on that socket:
 * ``scope "device"`` (a paired device): signed in as the owner — the session cookie is put on the request here, so the
   device never holds one (its only credential is the key in its keystore) — except for what is this machine's alone:
   ``/api/internal`` and ``/api/local`` (loopback-only calls), and the device list and pairing (``/api/net``, but the
-  status), so a device can't add another.
+  status and where to reach this node), so a device can't add another.
 
 Requests on the backend's own socket can't reach the pairing calls at all.
 """
@@ -27,7 +27,7 @@ LINK_COOKIE = "geny_net"  # (the phone's own proxy key, app GenyNet.java: it nev
 _DROP_HEADERS = {b"cookie", b"authorization", b"x-forwarded-for", b"x-forwarded-proto", b"x-forwarded-host",
                  b"x-real-ip", b"cf-connecting-ip", b"forwarded"}
 _DEVICE_DENY = ("/api/internal/", "/api/local/", "/api/net/")
-_DEVICE_ALLOW = {("GET", "/api/net/status")}
+_DEVICE_ALLOW = {("GET", "/api/net/status"), ("GET", "/api/net/where")}
 RELAY_CLIENT = "100.64.0.1"  # (a relayed device's address as the app sees it: not loopback, not a LAN one)
 
 
