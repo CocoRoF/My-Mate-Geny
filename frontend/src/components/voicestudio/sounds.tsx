@@ -1,12 +1,14 @@
 /**
- * Voice Studio → 프로필 → 웃음·하품: the laughs put into a line of this voice where it laughs (헤헤, ㅋㅋ, 하하) — no
- * model laughs inside a line, trained or not — its own clips (recorded or uploaded: label laugh / yawn), a built-in
- * voice's, and the ones each model made in its voice (the best of 16 takes, as an AudioSet classifier hears them; a line
- * takes its own model's first: backend app/voicehost/sounds.py, docs/local-voice.md "Laughs, sighs and yawns").
+ * Voice Studio → 프로필 → 의성어: the voice's own sounds put into a line where it makes them (헤헤, 하암~, 후우…, 헉) —
+ * no model laughs inside a line, trained or not — its own clips (recorded or uploaded, of any kind: SOUND_LABELS), a
+ * built-in voice's, and the laughs each model made in its voice (the best of 16 takes, as an AudioSet classifier hears
+ * them; a line takes its own model's first: backend app/voicehost/sounds.py, docs/local-voice.md "Laughs, sighs and
+ * yawns").
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addVoiceReference,
+  SOUND_LABELS,
   deleteVoiceReference,
   forgetVoiceSounds,
   getVoiceSounds,
@@ -30,6 +32,7 @@ export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; 
   const [busy, setBusy] = useState<string | null>(null); // (the model a laugh is being made with)
   const [err, setErr] = useState<string | null>(null);
   const [recordFor, setRecordFor] = useState<SoundLabel | null>(null);
+  const [addKind, setAddKind] = useState<SoundLabel>("laugh");
   const file = useRef<HTMLInputElement>(null);
   const fileFor = useRef<SoundLabel>("laugh");
   const load = useCallback(() => {
@@ -153,25 +156,26 @@ export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; 
         {own && (
           <>
             <span className="flex-1" />
-            {(["laugh", "yawn"] as SoundLabel[]).map((label) => (
-              <span key={label} className="flex items-center gap-0.5 rounded-lg border border-border/70 px-1.5 py-0.5 text-[11.5px] text-content-dim">
-                {t(label === "laugh" ? "voiceStudio.sdAddLaugh" : "voiceStudio.sdAddYawn")}
-                <button className="btn-ghost !p-1" onClick={() => setRecordFor(label)} title={t("voiceStudio.pfRecord")} data-testid={`vs-sound-record-${label}`}>
-                  <Icon name="mic" size={12} />
-                </button>
-                <button
-                  className="btn-ghost !p-1"
-                  onClick={() => {
-                    fileFor.current = label;
-                    file.current?.click();
-                  }}
-                  title={t("voiceStudio.pfUpload")}
-                  data-testid={`vs-sound-upload-${label}`}
-                >
-                  <Icon name="upload" size={12} />
-                </button>
-              </span>
-            ))}
+            <span className="flex items-center gap-1 rounded-lg border border-border/70 px-1.5 py-0.5 text-[11.5px] text-content-dim" data-testid="vs-sound-add">
+              {t("voiceStudio.sdAdd")}
+              <select className="field !w-auto !py-0.5 !pl-1.5 !pr-6 text-[11.5px]" value={addKind} onChange={(e) => setAddKind(e.target.value as SoundLabel)} data-testid="vs-sound-kind">
+                {SOUND_LABELS.map((k) => <option key={k} value={k}>{t(`voiceStudio.nvKind_${k}` as MsgKey)}</option>)}
+              </select>
+              <button className="btn-ghost !p-1" onClick={() => setRecordFor(addKind)} title={t("voiceStudio.pfRecord")} data-testid="vs-sound-record">
+                <Icon name="mic" size={12} />
+              </button>
+              <button
+                className="btn-ghost !p-1"
+                onClick={() => {
+                  fileFor.current = addKind;
+                  file.current?.click();
+                }}
+                title={t("voiceStudio.pfUpload")}
+                data-testid="vs-sound-upload"
+              >
+                <Icon name="upload" size={12} />
+              </button>
+            </span>
           </>
         )}
       </div>

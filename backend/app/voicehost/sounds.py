@@ -8,7 +8,7 @@ So a voice keeps a few clips of its own laugh, and a line that laughs gets one p
 
 A line's laugh, the first found:
 
-* the clips recorded for the profile (Voice Studio → 프로필: label 웃음 / 하품 — the person laughing),
+* the clips recorded for the profile (Voice Studio → 프로필 → 의성어: its laugh, sigh, yawn … — the person laughing),
 * the laughs the line's own model made in the line's own voice — with the voice's trained adapter, where it has one —
   for the models that laugh on their own (``LAUGHS_ALONE``: OmniVoice, VoxCPM2): ``<home>/sounds/<clip key>.<model>…/``,
   made the first time a line of it laughs on that model (VoiceHost.make_sounds; an AudioSet classifier keeps the takes
@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-SOUND_LABELS = ("laugh", "yawn")   # a profile's sound clips (its feelings are the clips it is cloned from)
+SOUND_LABELS = ("laugh", "sigh", "yawn", "gasp", "sob")  # a profile's 의성어 clips (voices.SOUNDS)
 MADE = ("laugh", "giggle")         # what is made for a voice (a giggle: the strongest short part of a laugh)
 GIGGLE_MAX_S = 1.0
 # the engines whose laugh on its own is kept (measured: OmniVoice's in 67 – 100% of takes, VoxCPM2's in 33 – 67%, as an

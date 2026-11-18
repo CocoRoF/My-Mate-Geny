@@ -212,6 +212,19 @@ async def test_a_line_laughs_with_its_own_models_laugh(vh, monkeypatch):
     assert not any(k.startswith(ref_key(vh.voices.resolve(v["id"]))) for k in vh._making)
 
 
+async def test_any_sound_the_voice_has_a_clip_of_goes_in(vh):
+    v = vh.voices.create("한숨 목소리", "ko")
+    await vh.add_reference(v["id"], sf_bytes(4.0), label="neutral", transcript="한숨을 잘 쉬는 목소리예요")
+    plain = await vh.generate(model_id="omnivoice", text="후우... 오늘 힘들었다", voice_id=v["id"], mode="clone", seed=1)
+    assert plain["info"]["spoken"].startswith("[sigh] 후우")  # (no clip of it: the engine's own sigh)
+    await vh.add_reference(v["id"], sf_bytes(1.0), label="sigh")  # (의성어: any kind, several of each)
+    assert vh.voices.sound_clips(v["id"]).keys() == {"sigh"}
+    e = await vh.generate(model_id="omnivoice", text="후우... 오늘 힘들었다", voice_id=v["id"], mode="clone", seed=1)
+    assert e["info"]["spoken"] == "[sigh] 오늘 힘들었다"
+    assert [(x["kind"], x.get("clip")) for x in e["info"]["sounds"]] == [("sigh", "1")]
+    assert vh.voice_sounds(v["id"])["own"] == {"sigh": 1}
+
+
 async def test_the_sounds_routes(client_vh):
     client, vh = client_vh
     v = client.post("/api/voice/voices", json={"name": "라우트", "language": "ko"}).json()

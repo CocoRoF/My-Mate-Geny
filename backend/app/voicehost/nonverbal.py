@@ -206,7 +206,9 @@ def render(text: str, engine: str, *, on: bool = True) -> Rendered:
 
 
 # -- a line in parts: words to say, and sounds to put in (a voice's own laugh: app/voicehost/sounds.py) ----------------
-SPLICED = ("laugh", "giggle", "yawn")   # the sounds a clip stands in for, when the voice has one
+# the sounds a clip of the voice stands in for, when it has one (its 의성어 clips: voices.SOUNDS; a giggle takes a
+# laugh's) — a sound it has no clip of is made by the engine as written
+SPLICED = ("laugh", "giggle", "sigh", "yawn", "gasp", "sob")
 # the fewest syllables a part may be said with: CosyVoice3 makes up words for a line of two or three ("왜 그래" came out
 # as "잠시만요" in 2 of 6 takes) — a laugh that would leave so short a part beside it stays in the line
 MIN_PART = {"cosyvoice3": 5}

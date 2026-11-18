@@ -31,16 +31,13 @@ import { Card, FeelingDot, Modal, ParamControls, PlayButton, readableAudio, refU
 /** what a feeling without a clip speaks like (backend voicehost/voices.py _CHAIN) */
 const FALLBACK: Partial<Record<Feeling, Feeling>> = { smile: "joy", fear: "sadness", disgust: "anger" };
 
-/** the models it speaks on with what it learned (Voice Studio → 학습; a built-in voice's own came with it), by name —
- *  or ("later") those whose adapter comes once the model is installed; "" none */
-const trainedOn = (v: LocalVoice, status: VoiceStatus | null, which: "ready" | "later" = "ready") =>
-  Object.entries(v.trained ?? Object.fromEntries(Object.keys(v.adapters ?? {}).map((m) => [m, "ready"])))
-    .filter(([, s]) => s === which)
-    .map(([id]) => status?.models.find((m) => m.id === id)?.name ?? id)
-    .join(", ");
-const trainedAny = (v: LocalVoice, status: VoiceStatus | null) => trainedOn(v, status) || trainedOn(v, status, "later");
-/** only the adapters a built-in voice came with (none trained here) */
-const onlyShipped = (v: LocalVoice) => Object.values(v.adapters ?? {}).every((r) => r.startsWith("shipped-"));
+/** its LoRA adapters, one per model ([model id, "ready" — it speaks with it now — or "later" — a built-in voice's for a
+ *  model not installed yet: it speaks with it once the model is]), in the catalog's order (Voice Studio → 학습; a
+ *  built-in voice's came with it) */
+const loras = (v: LocalVoice) =>
+  Object.entries(v.trained ?? Object.fromEntries(Object.keys(v.adapters ?? {}).map((m) => [m, "ready"]))) as [string, "ready" | "later"][];
+const loraNames = (v: LocalVoice, status: VoiceStatus | null) =>
+  loras(v).map(([id]) => status?.models.find((m) => m.id === id)?.name ?? id).join(", ");
 
 type Filter = "all" | "mine" | "builtin";
 
@@ -96,7 +93,7 @@ export default function ProfilesPage() {
                     {v.starred && <Icon name="star" size={12} className="text-warning" />}
                     <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-content">{v.name}</span>
                     {v.builtin && <span className="pill border border-accent/30 bg-accent-soft text-[10px] text-accent">{t("localVoice.builtin")}</span>}
-                    {trainedAny(v, status) && <span className="pill border border-success/30 bg-success/10 text-[10px] text-success" title={t("voiceStudio.trTrainedHint", { models: trainedAny(v, status) })}>{t("voiceStudio.trTrained")}</span>}
+                    {loras(v).length > 0 && <span className="pill border border-success/30 bg-success/10 text-[10px] text-success" title={t("voiceStudio.trTrainedHint", { models: loraNames(v, status) })} data-testid="vs-profile-item-lora">{t("voiceStudio.trTrained")}{loras(v).length > 1 ? ` ×${loras(v).length}` : ""}</span>}
                   </span>
                   <span className="mt-1 flex items-center gap-1">
                     {FEELINGS.map((f) => (
@@ -225,7 +222,6 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="text-[15px]">{v.name}</span>
             {v.builtin && <span className="pill border border-accent/30 bg-accent-soft text-accent">{t("localVoice.builtin")}</span>}
-            {trainedOn(v, status) && <span className="pill border border-success/30 bg-success/10 text-success" title={t(onlyShipped(v) ? "voiceStudio.trShippedHint" : "voiceStudio.trTrainedHint", { models: trainedOn(v, status) })} data-testid="vs-profile-trained">{t("voiceStudio.trTrained")} · {trainedOn(v, status)}</span>}
             {(v.tags ?? []).map((tag) => (
               <span key={tag} className="pill border border-border bg-surface-3/50 text-content-dim">#{tag}</span>
             ))}
@@ -252,12 +248,24 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
           </div>
         }
       >
+        {loras(v).length > 0 && (
+          <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid="vs-profile-trained">
+            {/* (one chip per LoRA adapter: a model not installed yet, faint — it speaks with it once it is) */}
+            {loras(v).map(([id, state]) => (
+              <span key={id} data-testid="vs-profile-lora" data-model={id} data-state={state}
+                className={`pill border ${state === "ready" ? "border-success/30 bg-success/10 text-success" : "border-dashed border-border text-content-faint"}`}
+                title={state === "later" ? t("voiceStudio.pfLoraLater") : t(v.adapters?.[id]?.startsWith("shipped-") ? "voiceStudio.trShippedHint" : "voiceStudio.trTrainedHint", { models: status?.models.find((m) => m.id === id)?.name ?? id })}>
+                {t("voiceStudio.trTrained")} · {status?.models.find((m) => m.id === id)?.name ?? id}
+              </span>
+            ))}
+          </div>
+        )}
         {v.description && <p className="mb-1 text-[12.5px] leading-relaxed text-content-dim">{v.description}</p>}
         {v.rights && <p className="text-[11.5px] text-content-faint">{t("localVoice.rights", { x: (lang === "ko" && v.rights_ko) || v.rights })}</p>}
         {v.builtin && <p className="mt-1 text-[11.5px] text-content-faint">{t("voiceStudio.pfBuiltinHint")}</p>}
-        {trainedOn(v, status, "later") && (
-          <p className="mt-1.5 text-[11.5px] leading-relaxed text-content-dim" data-testid="vs-profile-trained-later">
-            {t("voiceStudio.pfTrainedLater", { models: trainedOn(v, status, "later") })}{" "}
+        {loras(v).some(([, state]) => state === "later") && (
+          <p className="mt-1.5 text-[11.5px] leading-relaxed text-content-faint" data-testid="vs-profile-trained-later">
+            {t("voiceStudio.pfLoraLater")}{" "}
             <button className="whitespace-nowrap text-link hover:underline" onClick={() => go("models")}>{t("voiceStudio.pfToModels")}</button>
           </p>
         )}
