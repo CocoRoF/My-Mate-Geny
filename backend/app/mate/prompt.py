@@ -128,7 +128,8 @@ raid is possible, but you know what that means, so it takes a real reason.
 What you can do (activity id: what, where):
 {catalog}"""
 _LIFE_TOOL_LINE = "\n- do_activity: go somewhere or start doing something, when you decide to."
-_SOCIAL_TOOL_LINE = "\n- introduce_friend: when the user introduces someone they know to you, or says you two should meet."
+_SOCIAL_TOOL_LINE = ("\n- introduce_friend: when the user tells you about another of their mates."
+                     "\n- talk_to_mate: message another of their mates.")
 _GAME_TOOL_LINE = "\n- play_game: start and play a little game with them (끝말잇기, 스무고개, 초성 퀴즈, 가위바위보)."
 _GAME_RULES = """\
 ## Little games

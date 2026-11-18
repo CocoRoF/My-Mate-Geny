@@ -153,6 +153,7 @@ class MateService:
         self.social = SocialRuntime(store, self.life, self._log)
         self.social.on_event = self._social_event
         self.social.narrate = self._social_narrate
+        self.social.speak = self._social_speak
         self._social_told: dict[str, datetime] = {}  # mate id -> when she last wrote first about a friend
         # the Geny-State-System around her turns (app/mate/gss): a model's reading of each message before she answers,
         # promises, what she remembers of them, not repeating herself, the journal
@@ -608,7 +609,7 @@ class MateService:
         self.store.set_session(mate_id, None)
         self.relation_reset(mate_id, "zero")
         self.store.wipe_memory(mate_id)
-        self.social.forget(mate_id)  # (a built-in one knows her friends again at the next minute, as at the start)
+        self.social.forget(mate_id)  # (whom she knew among the other mates, and what they said to each other)
         for folder in [*accounts.claude_transcript_dirs(files.home_dir(mate_id)), files.mate_dir(mate_id) / "codex"]:
             shutil.rmtree(folder, ignore_errors=True)
         self._log("info", f"the memory of “{self.store.get(mate_id)['name']}” was reset", code="mate.memory_wiped")
@@ -1008,39 +1009,60 @@ class MateService:
             self._log("warning", f"social: {exc}")
 
     def _social_event(self, e: dict[str, Any], mates: dict[str, dict[str, Any]]) -> None:
-        """Something between her and a friend is final: logged; and when it is the kind of news she might share (a really good
-        or awkward outing, a spark, someone new she met or was told about, plans called off), she may write first about it, if
-        reach-out is on — at most once in a while."""
+        """Something between her and another mate is final (app/mate/social): logged, and
+        - a conversation the user asked her to start is over: it goes back to her now, to tell the user how it went;
+        - the user read their conversation: both of them know it, and it touches how they feel (a little shy about it);
+        - a really good or awkward outing, plans called off: she may write first about it, if reach-out is on, once in a while."""
         names = " and ".join(mates.get(m, {}).get("name") or m for m in e["who"])
         self._log("info", f"social: {e['type']}: {names}", code="mate.social_" + e["type"], detail={"event": e["id"], "who": e["who"]})
-        share = (e["type"] in ("met", "called_off") or (e["type"] == "introduced") or
-                 (e["type"] == "outing" and (e.get("mood") in ("great", "awkward") or e.get("spark"))))
+        if e["type"] == "talk":
+            if e.get("why") == "asked" and e.get("messages"):
+                o = next(x for x in e["who"] if x != e["by"])
+                self._social_turn(e["by"], f"[Your conversation with {mates.get(o, {}).get('name') or 'the other mate'} is over (the user had "
+                                  "asked you to message her): your <context> says what was said. Tell the user how it went, briefly, in your own "
+                                  "voice.]", "social_talk", need_reach_out=False)
+            return
+        if e["type"] == "peeked":
+            for m in e["who"]:
+                o = next((x for x in e["who"] if x != m), "")
+                reason = f"they read my messages with {mates.get(o, {}).get('name') or 'another mate'}"
+                self._state_event(m, lambda doc, who, now, tz, reason=reason: S.report(doc, who, "shy", "slight", reason, now, tz))
+            return
+        share = e["type"] == "called_off" or (e["type"] == "outing" and e.get("mood") in ("great", "awkward"))
         if not share:
             return
         now = datetime.now(timezone.utc)
         for m in e["who"]:
-            if e["type"] == "introduced" and m == e["who"][0]:
-                continue  # (she was the one told: it was in her conversation)
             if now - self._social_told.get(m, datetime.min.replace(tzinfo=timezone.utc)) < SOCIAL_NEWS_GAP:
                 continue
-            try:
-                mate = self.store.get(m)
-            except KeyError:
-                continue
-            sid = mate.get("session_id")
-            life = mate.get("life") or {}
-            if not sid or not ((mate.get("prefs") or {}).get("proactive") or {}).get("enabled") or life.get("asleep") or self._svc.is_running(sid):
-                continue
-            if self.calls is not None and self.calls.in_call(m):
-                continue
-            self._social_told[m] = now
-            prompt = ("[Something just happened between you and a friend: your <context> says what. If it is the kind of thing you "
-                      "would tell them, write them a line or two about it now, in your own voice, as you would by message. If not, or "
-                      "if you have nothing to say, reply with EXACTLY [SILENT].]")
-            try:
-                self._svc.start_turn(sid, prompt, meta={"internal": True, "kind": "social"})
-            except (TurnBusyError, KeyError, RuntimeError):
-                pass
+            if self._social_turn(m, "[Something just happened between you and another mate: your <context> says what. If it is the kind of "
+                                 "thing you would tell them, write them a line or two about it now, in your own voice, as you would by message. "
+                                 "If not, or if you have nothing to say, reply with EXACTLY [SILENT].]", "social"):
+                self._social_told[m] = now
+
+    def _social_turn(self, mate_id: str, prompt: str, kind: str, *, need_reach_out: bool = True) -> bool:
+        """She hears about it now (an internal turn), when she can. -> whether it started."""
+        try:
+            mate = self.store.get(mate_id)
+        except KeyError:
+            return False
+        sid = mate.get("session_id")
+        life = mate.get("life") or {}
+        if not sid or life.get("asleep") or self._svc.is_running(sid):
+            return False
+        if need_reach_out and not ((mate.get("prefs") or {}).get("proactive") or {}).get("enabled"):
+            return False
+        if self.calls is not None and self.calls.in_call(mate_id):
+            return False
+        try:
+            self._svc.start_turn(sid, prompt, meta={"internal": True, "kind": kind})
+            return True
+        except (TurnBusyError, KeyError, RuntimeError):
+            return False
+
+    async def _social_speak(self, mate: dict[str, Any], system: str, content: str) -> str:
+        """One message of hers to another mate, from her own engine (app/mate/social/talk.py): bounded, no tools."""
+        return await oneshot.ask(self, mate, system, content, ".social", timeout_s=90)
 
     async def _social_narrate(self, e: dict[str, Any], mates: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
         """What two friends remember of an outing, in their own words: one bounded model call in the engine of the first of them
@@ -2372,18 +2394,34 @@ class MateService:
         return out
 
     async def _tool_introduce_friend(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> str:
-        """The user introduced another of their mates to her, or said the two of them should meet (app/mate/social)."""
+        """The user told her about another of their mates (app/mate/social): she knows of her from now on."""
         out = self.social.introduce(mate["id"], args.get("name"), args.get("note") or "")
         code = out["code"]
         if code == "off":
             raise MateError("That isn't on right now.")
         if code == "unknown":
-            return ("Nobody by that name: they are someone you don't know and can't meet this way. Talk about them as you would "
-                    "anyone the user mentions.")
-        if code == "known":
-            return f"You already know {out['name']}. Just talk about them as you would."
-        self._log("info", f"“{mate['name']}” was introduced to “{out['name']}”", code="mate.social_introduced", session_id=sid)
-        return f"Done: you know of {out['name']} now, and you two might meet soon. React in your own voice."
+            return ("Nobody by that name among the user's mates: talk about them as you would anyone the user mentions.")
+        self._log("info", f"“{mate['name']}” was told about “{out['name']}”", code="mate.social_introduced", session_id=sid)
+        return (f"Noted: you know of {out['name']} now (she doesn't know of you). " if code == "ok" else f"Noted about {out['name']}. ") + \
+            "React in your own voice."
+
+    async def _tool_talk_to_mate(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> str:
+        """She messages another of the user's mates (app/mate/social): when the user asked her to (or on her own, if she may)."""
+        said = self._users_latest(sid)
+        out = self.social.talk_to(mate["id"], args.get("name"), args.get("message"), why="asked" if said else "own",
+                                  asked=(said or {}).get("content") or "")
+        code = out["code"]
+        if code == "off":
+            raise MateError("That isn't on right now.")
+        if code == "unknown":
+            return "Nobody by that name among the user's mates: you can't message them this way."
+        if code == "empty":
+            raise MateError("the message is empty: write what you want to say to her")
+        if code == "busy":
+            return f"You are already talking with {out['name']}: her answer comes to you."
+        self._log("info", f"“{mate['name']}” messaged “{out['name']}”", code="mate.social_message", session_id=sid)
+        return (f"Sent to {out['name']}. Her answer comes to you a little later, and you'll tell the user then: for now say briefly "
+                "that you messaged her.")
 
     async def _tool_feel(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> str:
         emotion, strength = str(args.get("emotion") or "").strip().lower(), str(args.get("strength") or "").strip().lower()

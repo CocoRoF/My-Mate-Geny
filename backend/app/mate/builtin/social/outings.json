@@ -1,163 +1,472 @@
 {
-  "_": "What two mates can do together (docs/mate-social.md). match: which activity of her own day it is (by place or body; else she is simply out, at the other one's place). hours: when it can start; minutes: how long. remote: each stays at home (a call, a game online). outdoor: not in rain or snow. body: what her avatar does there when her own day has nothing like it. shared: what both remember; own: what only she knows of it ({a} {b} are their names; {a:과} picks the particle).",
+  "_": "What two mates who are friends can do together (docs/mate-social.md). match: which activity of her own day it is (by place or body; else she is simply out, at the other one's place). hours: when it can start; minutes: how long. remote: each stays at home (a call, a game online). outdoor: not in rain or snow. body: what her avatar does there when her own day has nothing like it. shared: what both remember; own: what only she knows of it ({a} {b} are their names; {a:과} picks the particle).",
   "kinds": [
     {
-      "id": "cafe", "body": "drink",
-      "names": {"ko": "카페에서 수다", "en": "A chat at a café"},
-      "match": {"place": ["cafe"]},
-      "hours": ["11:00", "20:00"], "minutes": [70, 120], "weight": 1.4,
+      "id": "cafe",
+      "body": "drink",
+      "names": {
+        "ko": "카페에서 수다",
+        "en": "A chat at a café"
+      },
+      "match": {
+        "place": [
+          "cafe"
+        ]
+      },
+      "hours": [
+        "11:00",
+        "20:00"
+      ],
+      "minutes": [
+        70,
+        120
+      ],
+      "weight": 1.4,
       "shared": [
-        {"ko": "{a:과} {b:은} 카페에서 만나 한참 수다를 떨었다.", "en": "{a} and {b} met at a café and talked for ages."},
-        {"ko": "{a:과} {b:은} 카페 창가 자리에 앉아 요즘 있었던 일을 서로 털어놨다.", "en": "{a} and {b} took a window seat at a café and caught each other up on everything lately."}
+        {
+          "ko": "{a:과} {b:은} 카페에서 만나 한참 수다를 떨었다.",
+          "en": "{a} and {b} met at a café and talked for ages."
+        },
+        {
+          "ko": "{a:과} {b:은} 카페 창가 자리에 앉아 요즘 있었던 일을 서로 털어놨다.",
+          "en": "{a} and {b} took a window seat at a café and caught each other up on everything lately."
+        }
       ],
       "own": [
-        {"ko": "나는 딸기 라떼를 시켰다.", "en": "I had a strawberry latte."},
-        {"ko": "나는 조각 케이크를 하나 시켜서 천천히 먹었다.", "en": "I had a slice of cake and took my time with it."},
-        {"ko": "나는 아이스 아메리카노를 마셨다.", "en": "I had an iced americano."},
-        {"ko": "얘기하다 보니 커피가 다 식어 있었다.", "en": "We talked so long my coffee went cold."}
+        {
+          "ko": "나는 딸기 라떼를 시켰다.",
+          "en": "I had a strawberry latte."
+        },
+        {
+          "ko": "나는 조각 케이크를 하나 시켜서 천천히 먹었다.",
+          "en": "I had a slice of cake and took my time with it."
+        },
+        {
+          "ko": "나는 아이스 아메리카노를 마셨다.",
+          "en": "I had an iced americano."
+        },
+        {
+          "ko": "얘기하다 보니 커피가 다 식어 있었다.",
+          "en": "We talked so long my coffee went cold."
+        }
       ]
     },
     {
-      "id": "walk", "body": "walk",
-      "names": {"ko": "같이 산책", "en": "A walk together"},
-      "match": {"body": ["walk"]},
-      "hours": ["10:00", "19:00"], "minutes": [50, 90], "weight": 1.0, "outdoor": true,
+      "id": "walk",
+      "body": "walk",
+      "names": {
+        "ko": "같이 산책",
+        "en": "A walk together"
+      },
+      "match": {
+        "body": [
+          "walk"
+        ]
+      },
+      "hours": [
+        "10:00",
+        "19:00"
+      ],
+      "minutes": [
+        50,
+        90
+      ],
+      "weight": 1.0,
+      "outdoor": true,
       "shared": [
-        {"ko": "{a:과} {b:은} 같이 동네를 천천히 걸었다.", "en": "{a} and {b} took a slow walk around the neighbourhood together."},
-        {"ko": "{a:과} {b:은} 산책하면서 별것 아닌 이야기를 오래 나눴다.", "en": "{a} and {b} went for a walk and talked about nothing in particular for a long time."}
+        {
+          "ko": "{a:과} {b:은} 같이 동네를 천천히 걸었다.",
+          "en": "{a} and {b} took a slow walk around the neighbourhood together."
+        },
+        {
+          "ko": "{a:과} {b:은} 산책하면서 별것 아닌 이야기를 오래 나눴다.",
+          "en": "{a} and {b} went for a walk and talked about nothing in particular for a long time."
+        }
       ],
       "own": [
-        {"ko": "나는 걷다가 길고양이를 보고 한참 멈춰 서 있었다.", "en": "I stopped for a while to watch a stray cat on the way."},
-        {"ko": "나는 바람이 좋아서 기분이 가벼워졌다.", "en": "The breeze was nice; it lifted my mood."},
-        {"ko": "나는 오는 길에 사진을 몇 장 찍었다.", "en": "I took a few photos along the way."}
+        {
+          "ko": "나는 걷다가 길고양이를 보고 한참 멈춰 서 있었다.",
+          "en": "I stopped for a while to watch a stray cat on the way."
+        },
+        {
+          "ko": "나는 바람이 좋아서 기분이 가벼워졌다.",
+          "en": "The breeze was nice; it lifted my mood."
+        },
+        {
+          "ko": "나는 오는 길에 사진을 몇 장 찍었다.",
+          "en": "I took a few photos along the way."
+        }
       ]
     },
     {
-      "id": "books", "body": "read",
-      "names": {"ko": "서점 구경", "en": "Browsing a bookshop"},
-      "match": {"place": ["bookstore"], "body": ["read"], "away": true},
-      "hours": ["11:00", "20:00"], "minutes": [60, 100], "weight": 0.9,
+      "id": "books",
+      "body": "read",
+      "names": {
+        "ko": "서점 구경",
+        "en": "Browsing a bookshop"
+      },
+      "match": {
+        "place": [
+          "bookstore"
+        ],
+        "body": [
+          "read"
+        ],
+        "away": true
+      },
+      "hours": [
+        "11:00",
+        "20:00"
+      ],
+      "minutes": [
+        60,
+        100
+      ],
+      "weight": 0.9,
       "shared": [
-        {"ko": "{a:과} {b:은} 같이 서점에 가서 각자 책을 구경했다.", "en": "{a} and {b} went to a bookshop together and browsed on their own."},
-        {"ko": "{a:과} {b:은} 서점에서 한참 머물다 나왔다.", "en": "{a} and {b} spent a long time in a bookshop."}
+        {
+          "ko": "{a:과} {b:은} 같이 서점에 가서 각자 책을 구경했다.",
+          "en": "{a} and {b} went to a bookshop together and browsed on their own."
+        },
+        {
+          "ko": "{a:과} {b:은} 서점에서 한참 머물다 나왔다.",
+          "en": "{a} and {b} spent a long time in a bookshop."
+        }
       ],
       "own": [
-        {"ko": "나는 표지가 예쁜 소설을 한 권 골랐다.", "en": "I picked out a novel with a lovely cover."},
-        {"ko": "나는 만화 코너에서 시간 가는 줄 몰랐다.", "en": "I lost track of time in the comics section."},
-        {"ko": "나는 사고 싶은 책을 메모만 해 두고 나왔다.", "en": "I only noted down the books I wanted."}
+        {
+          "ko": "나는 표지가 예쁜 소설을 한 권 골랐다.",
+          "en": "I picked out a novel with a lovely cover."
+        },
+        {
+          "ko": "나는 만화 코너에서 시간 가는 줄 몰랐다.",
+          "en": "I lost track of time in the comics section."
+        },
+        {
+          "ko": "나는 사고 싶은 책을 메모만 해 두고 나왔다.",
+          "en": "I only noted down the books I wanted."
+        }
       ]
     },
     {
-      "id": "karaoke", "body": "sing",
-      "names": {"ko": "노래방", "en": "Karaoke"},
-      "match": {"body": ["sing"]},
-      "hours": ["13:00", "22:00"], "minutes": [60, 100], "weight": 0.9,
+      "id": "karaoke",
+      "body": "sing",
+      "names": {
+        "ko": "노래방",
+        "en": "Karaoke"
+      },
+      "match": {
+        "body": [
+          "sing"
+        ]
+      },
+      "hours": [
+        "13:00",
+        "22:00"
+      ],
+      "minutes": [
+        60,
+        100
+      ],
+      "weight": 0.9,
       "shared": [
-        {"ko": "{a:과} {b:은} 노래방에 가서 번갈아 가며 노래를 불렀다.", "en": "{a} and {b} went to karaoke and took turns singing."},
-        {"ko": "{a:과} {b:은} 코인 노래방에서 시간을 몇 번이나 추가했다.", "en": "{a} and {b} kept adding time at a coin karaoke."}
+        {
+          "ko": "{a:과} {b:은} 노래방에 가서 번갈아 가며 노래를 불렀다.",
+          "en": "{a} and {b} went to karaoke and took turns singing."
+        },
+        {
+          "ko": "{a:과} {b:은} 코인 노래방에서 시간을 몇 번이나 추가했다.",
+          "en": "{a} and {b} kept adding time at a coin karaoke."
+        }
       ],
       "own": [
-        {"ko": "나는 고음이 나오는 노래에 도전했다.", "en": "I tried a song with a high note."},
-        {"ko": "나는 듀엣곡을 하자고 졸랐다.", "en": "I begged for a duet."},
-        {"ko": "나는 처음엔 쑥스러웠는데 나중엔 마이크를 놓지 않았다.", "en": "I was shy at first and then wouldn't let go of the mic."}
+        {
+          "ko": "나는 고음이 나오는 노래에 도전했다.",
+          "en": "I tried a song with a high note."
+        },
+        {
+          "ko": "나는 듀엣곡을 하자고 졸랐다.",
+          "en": "I begged for a duet."
+        },
+        {
+          "ko": "나는 처음엔 쑥스러웠는데 나중엔 마이크를 놓지 않았다.",
+          "en": "I was shy at first and then wouldn't let go of the mic."
+        }
       ]
     },
     {
-      "id": "games", "body": "game",
-      "names": {"ko": "게임하러 외출", "en": "Out for games"},
-      "match": {"place": ["boardgame", "arcade", "pcbang"]},
-      "hours": ["13:00", "22:00"], "minutes": [70, 130], "weight": 1.1,
+      "id": "games",
+      "body": "game",
+      "names": {
+        "ko": "게임하러 외출",
+        "en": "Out for games"
+      },
+      "match": {
+        "place": [
+          "boardgame",
+          "arcade",
+          "pcbang"
+        ]
+      },
+      "hours": [
+        "13:00",
+        "22:00"
+      ],
+      "minutes": [
+        70,
+        130
+      ],
+      "weight": 1.1,
       "shared": [
-        {"ko": "{a:과} {b:은} 같이 게임을 하러 나가서 신나게 놀았다.", "en": "{a} and {b} went out to play games together and had a blast."},
-        {"ko": "{a:과} {b:은} 게임 한 판만 하자더니 몇 시간을 놀았다.", "en": "{a} and {b} said just one game, and played for hours."}
+        {
+          "ko": "{a:과} {b:은} 같이 게임을 하러 나가서 신나게 놀았다.",
+          "en": "{a} and {b} went out to play games together and had a blast."
+        },
+        {
+          "ko": "{a:과} {b:은} 게임 한 판만 하자더니 몇 시간을 놀았다.",
+          "en": "{a} and {b} said just one game, and played for hours."
+        }
       ],
       "own": [
-        {"ko": "나는 한 판 크게 이겨서 기분이 좋았다.", "en": "I won one big round and felt great."},
-        {"ko": "나는 연달아 져서 조금 분했다.", "en": "I lost several in a row and was a little sore about it."},
-        {"ko": "나는 처음 해 본 게임이 의외로 재밌었다.", "en": "A game I had never played turned out to be fun."}
+        {
+          "ko": "나는 한 판 크게 이겨서 기분이 좋았다.",
+          "en": "I won one big round and felt great."
+        },
+        {
+          "ko": "나는 연달아 져서 조금 분했다.",
+          "en": "I lost several in a row and was a little sore about it."
+        },
+        {
+          "ko": "나는 처음 해 본 게임이 의외로 재밌었다.",
+          "en": "A game I had never played turned out to be fun."
+        }
       ]
     },
     {
-      "id": "food", "body": "eat",
-      "names": {"ko": "맛집 탐방", "en": "Eating out"},
-      "match": {"place": ["tteokbokki"]},
-      "hours": ["11:30", "20:30"], "minutes": [50, 90], "weight": 1.0,
+      "id": "food",
+      "body": "eat",
+      "names": {
+        "ko": "맛집 탐방",
+        "en": "Eating out"
+      },
+      "match": {
+        "place": [
+          "tteokbokki"
+        ]
+      },
+      "hours": [
+        "11:30",
+        "20:30"
+      ],
+      "minutes": [
+        50,
+        90
+      ],
+      "weight": 1.0,
       "shared": [
-        {"ko": "{a:과} {b:은} 같이 맛집에 가서 배불리 먹었다.", "en": "{a} and {b} went out to eat and ate their fill."},
-        {"ko": "{a:과} {b:은} 매운 떡볶이를 먹으며 땀을 뻘뻘 흘렸다.", "en": "{a} and {b} had spicy tteokbokki and sweated buckets."}
+        {
+          "ko": "{a:과} {b:은} 같이 맛집에 가서 배불리 먹었다.",
+          "en": "{a} and {b} went out to eat and ate their fill."
+        },
+        {
+          "ko": "{a:과} {b:은} 매운 떡볶이를 먹으며 땀을 뻘뻘 흘렸다.",
+          "en": "{a} and {b} had spicy tteokbokki and sweated buckets."
+        }
       ],
       "own": [
-        {"ko": "나는 사리를 추가하자고 했다.", "en": "I wanted extra noodles."},
-        {"ko": "나는 너무 매워서 쿨피스를 두 잔이나 마셨다.", "en": "It was so spicy I drank two cups of something cold."},
-        {"ko": "나는 마지막 한 입을 양보했다.", "en": "I let the other one have the last bite."}
+        {
+          "ko": "나는 사리를 추가하자고 했다.",
+          "en": "I wanted extra noodles."
+        },
+        {
+          "ko": "나는 너무 매워서 쿨피스를 두 잔이나 마셨다.",
+          "en": "It was so spicy I drank two cups of something cold."
+        },
+        {
+          "ko": "나는 마지막 한 입을 양보했다.",
+          "en": "I let the other one have the last bite."
+        }
       ]
     },
     {
-      "id": "gym", "body": "workout",
-      "names": {"ko": "같이 운동", "en": "A workout together"},
-      "match": {"body": ["workout"]},
-      "hours": ["10:00", "21:00"], "minutes": [50, 80], "weight": 0.5,
+      "id": "gym",
+      "body": "workout",
+      "names": {
+        "ko": "같이 운동",
+        "en": "A workout together"
+      },
+      "match": {
+        "body": [
+          "workout"
+        ]
+      },
+      "hours": [
+        "10:00",
+        "21:00"
+      ],
+      "minutes": [
+        50,
+        80
+      ],
+      "weight": 0.5,
       "shared": [
-        {"ko": "{a:과} {b:은} 같이 운동을 했다.", "en": "{a} and {b} worked out together."}
+        {
+          "ko": "{a:과} {b:은} 같이 운동을 했다.",
+          "en": "{a} and {b} worked out together."
+        }
       ],
       "own": [
-        {"ko": "나는 생각보다 오래 버텼다.", "en": "I lasted longer than I expected."},
-        {"ko": "나는 중간에 몰래 쉬었다.", "en": "I sneaked a break halfway."}
+        {
+          "ko": "나는 생각보다 오래 버텼다.",
+          "en": "I lasted longer than I expected."
+        },
+        {
+          "ko": "나는 중간에 몰래 쉬었다.",
+          "en": "I sneaked a break halfway."
+        }
       ]
     },
     {
-      "id": "online", "body": "game",
-      "names": {"ko": "같이 온라인 게임", "en": "Gaming online together"},
-      "match": {"body": ["game"], "home": true},
-      "hours": ["19:00", "23:00"], "minutes": [60, 140], "weight": 1.0, "remote": true,
+      "id": "online",
+      "body": "game",
+      "names": {
+        "ko": "같이 온라인 게임",
+        "en": "Gaming online together"
+      },
+      "match": {
+        "body": [
+          "game"
+        ],
+        "home": true
+      },
+      "hours": [
+        "19:00",
+        "23:00"
+      ],
+      "minutes": [
+        60,
+        140
+      ],
+      "weight": 1.0,
+      "remote": true,
       "shared": [
-        {"ko": "{a:과} {b:은} 각자 집에서 접속해 같이 게임을 했다.", "en": "{a} and {b} logged on from home and played together."},
-        {"ko": "{a:과} {b:은} 음성 채팅을 켜 놓고 밤늦게까지 게임을 했다.", "en": "{a} and {b} played late into the night on voice chat."}
+        {
+          "ko": "{a:과} {b:은} 각자 집에서 접속해 같이 게임을 했다.",
+          "en": "{a} and {b} logged on from home and played together."
+        },
+        {
+          "ko": "{a:과} {b:은} 음성 채팅을 켜 놓고 밤늦게까지 게임을 했다.",
+          "en": "{a} and {b} played late into the night on voice chat."
+        }
       ],
       "own": [
-        {"ko": "나는 결정적인 순간에 실수해서 한참 웃음거리가 됐다.", "en": "I messed up at the crucial moment and got laughed at for a while."},
-        {"ko": "나는 오늘 컨디션이 좋아서 제법 잘했다.", "en": "I was on form today and played rather well."},
-        {"ko": "나는 게임보다 수다를 더 많이 떨었다.", "en": "I chatted more than I played."}
+        {
+          "ko": "나는 결정적인 순간에 실수해서 한참 웃음거리가 됐다.",
+          "en": "I messed up at the crucial moment and got laughed at for a while."
+        },
+        {
+          "ko": "나는 오늘 컨디션이 좋아서 제법 잘했다.",
+          "en": "I was on form today and played rather well."
+        },
+        {
+          "ko": "나는 게임보다 수다를 더 많이 떨었다.",
+          "en": "I chatted more than I played."
+        }
       ]
     },
     {
-      "id": "call", "body": "",
-      "names": {"ko": "전화 수다", "en": "A long call"},
-      "match": {"activity": ["rest"], "body": [""], "home": true, "free": true},
-      "hours": ["20:00", "23:00"], "minutes": [30, 70], "weight": 0.8, "remote": true,
+      "id": "call",
+      "body": "",
+      "names": {
+        "ko": "전화 수다",
+        "en": "A long call"
+      },
+      "match": {
+        "activity": [
+          "rest"
+        ],
+        "body": [
+          ""
+        ],
+        "home": true,
+        "free": true
+      },
+      "hours": [
+        "20:00",
+        "23:00"
+      ],
+      "minutes": [
+        30,
+        70
+      ],
+      "weight": 0.8,
+      "remote": true,
       "shared": [
-        {"ko": "{a:과} {b:은} 밤에 전화로 한참 이야기했다.", "en": "{a} and {b} had a long phone call in the evening."},
-        {"ko": "{a:과} {b:은} 잠깐 통화하려다 한 시간 넘게 떠들었다.", "en": "{a} and {b} meant to talk for a minute and went on for over an hour."}
+        {
+          "ko": "{a:과} {b:은} 밤에 전화로 한참 이야기했다.",
+          "en": "{a} and {b} had a long phone call in the evening."
+        },
+        {
+          "ko": "{a:과} {b:은} 잠깐 통화하려다 한 시간 넘게 떠들었다.",
+          "en": "{a} and {b} meant to talk for a minute and went on for over an hour."
+        }
       ],
       "own": [
-        {"ko": "나는 누워서 이불 속에서 통화했다.", "en": "I talked lying in bed under the covers."},
-        {"ko": "나는 요즘 고민을 조금 털어놨다.", "en": "I opened up a little about something on my mind."},
-        {"ko": "나는 웃느라 배가 아팠다.", "en": "I laughed so much my stomach hurt."}
+        {
+          "ko": "나는 누워서 이불 속에서 통화했다.",
+          "en": "I talked lying in bed under the covers."
+        },
+        {
+          "ko": "나는 요즘 고민을 조금 털어놨다.",
+          "en": "I opened up a little about something on my mind."
+        },
+        {
+          "ko": "나는 웃느라 배가 아팠다.",
+          "en": "I laughed so much my stomach hurt."
+        }
       ]
     }
   ],
   "moods": {
     "great": [
-      {"ko": "정말 즐거운 시간이었다.", "en": "It was a really good time."},
-      {"ko": "오랜만에 마음껏 웃었다.", "en": "We laughed like we hadn't in a while."}
+      {
+        "ko": "정말 즐거운 시간이었다.",
+        "en": "It was a really good time."
+      },
+      {
+        "ko": "오랜만에 마음껏 웃었다.",
+        "en": "We laughed like we hadn't in a while."
+      }
     ],
     "good": [
-      {"ko": "즐거웠다.", "en": "It was fun."},
-      {"ko": "편하고 좋은 시간이었다.", "en": "It was easy and nice."}
+      {
+        "ko": "즐거웠다.",
+        "en": "It was fun."
+      },
+      {
+        "ko": "편하고 좋은 시간이었다.",
+        "en": "It was easy and nice."
+      }
     ],
     "okay": [
-      {"ko": "무난한 시간이었다.", "en": "It was alright."},
-      {"ko": "조금 피곤했지만 나쁘지 않았다.", "en": "A bit tiring, but not bad."}
+      {
+        "ko": "무난한 시간이었다.",
+        "en": "It was alright."
+      },
+      {
+        "ko": "조금 피곤했지만 나쁘지 않았다.",
+        "en": "A bit tiring, but not bad."
+      }
     ],
     "awkward": [
-      {"ko": "중간에 말이 엇갈려서 조금 어색해졌다.", "en": "We got our wires crossed at one point and it got a bit awkward."},
-      {"ko": "사소한 일로 티격태격하고 헤어졌다.", "en": "We bickered over something small and parted a little stiffly."}
+      {
+        "ko": "중간에 말이 엇갈려서 조금 어색해졌다.",
+        "en": "We got our wires crossed at one point and it got a bit awkward."
+      },
+      {
+        "ko": "사소한 일로 티격태격하고 헤어졌다.",
+        "en": "We bickered over something small and parted a little stiffly."
+      }
     ]
-  },
-  "messages": [
-    {"ko": "{a:이} {b}에게 웃긴 영상을 보내서 한참 메시지를 주고받았다.", "en": "{a} sent {b} a funny video and they messaged back and forth for a while."},
-    {"ko": "{a:이} {b}에게 요즘 어떻게 지내냐고 먼저 연락했다.", "en": "{a} messaged {b} first to ask how things were going."},
-    {"ko": "{a:과} {b:은} 메시지로 점심 메뉴 고민을 나눴다.", "en": "{a} and {b} messaged about what to have for lunch."},
-    {"ko": "{a:이} {b}에게 맛있어 보이는 가게 사진을 보내며 다음에 같이 가자고 했다.", "en": "{a} sent {b} a photo of a tasty-looking place and said they should go together sometime."}
-  ]
+  }
 }

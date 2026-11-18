@@ -447,6 +447,24 @@ async def game_action(mate_id: str, body: dict, request: Request) -> dict:
     raise HTTPException(400, "action: start | throw | give_up | close")
 
 
+@router.get("/{mate_id}/social/threads/{tid}")
+async def get_social_thread(mate_id: str, tid: str, request: Request) -> dict:
+    """One conversation between her and another mate, as it is (reading it doesn't mark it read: ``seen`` does)"""
+    try:
+        return _svc(request).social.thread(mate_id, tid)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/{mate_id}/social/threads/{tid}/seen")
+async def seen_social_thread(mate_id: str, tid: str, request: Request) -> dict:
+    """The user read it: both of them know (app/mate/social ``seen``). -> the conversation"""
+    try:
+        return _svc(request).social.seen(mate_id, tid)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @router.put("/{mate_id}/life/plan/{slot}")
 async def set_life_plan(mate_id: str, slot: str, body: dict, request: Request) -> dict:
     """A suggestion for how she spends this slot of the week (activity null: it's up to her). -> her day as it is now."""

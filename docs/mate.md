@@ -1345,12 +1345,14 @@ and her journal. All of it is in [docs/mate-life.md](mate-life.md). API: `GET /a
 `PUT /api/mates/{id}/life/plan/{slot}` `{activity}` (a suggestion for one slot of her week, null = up to her),
 `POST /api/mates/{id}/life/gift` `{item}`; `prefs.life` (auto, on, off) turns it on or off. Her tool: `do_activity`.
 
-## Her friends, and games with her
+## The other mates, and games with her
 
-The user's mates know each other, make plans, go out together and remember it, each with a part only she knows; the built-in ones
-already know each other, anyone else meets them over time or is introduced in a conversation (`introduce_friend`). All of it is in
-[docs/mate-social.md](mate-social.md); `GET /api/mates/{id}/social`, the ♥ status window's 인맥 tab, Shared mate settings →
-메이트끼리 (`social_on`, `social_romance` in `PUT /api/mates/settings`).
+The user's mates start as strangers; each knows the user talks with other mates too, knows of one the user tells her about
+(`introduce_friend`), and gets to know her by messaging (`talk_to_mate`: when the user asks, or on her own when she may reach out).
+How she feels about another mate is a relationship like the one with the user, never warmer. Their conversations are in the ♥ status
+window's 관계 tab; reading one, both of them know. Friends go out together. All of it: [docs/mate-social.md](mate-social.md);
+`GET /api/mates/{id}/social`, `GET`/`POST …/social/threads/{tid}[/seen]`, Shared mate settings → 메이트끼리 (`social_on`,
+`social_romance` in `PUT /api/mates/settings`).
 
 Little games from the stage's 놀이 menu or by asking her — 끝말잇기, 스무고개, 초성 퀴즈, 가위바위보: [docs/mate-games.md](mate-games.md);
 `GET`/`POST /api/mates/{id}/game` (`{action: start | throw | give_up | close}`), her tool `play_game`.

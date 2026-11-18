@@ -21,5 +21,4 @@ export default {
   outfitNoNote: "No description for this outfit.",
   outfitManage: "Edit the wardrobe",
   games: "Play",
-  tabFriends: "Friends",
 };
