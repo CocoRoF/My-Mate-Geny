@@ -60,7 +60,8 @@ def run(w: dict[str, Any], script: dict[str, Any], *, relation: dict[str, Any] |
     if rel.get("started_at") is None:
         rel["started_at"] = A._iso(START - timedelta(days=1))
     # (her own day and what she has on are left out: the same script always gives the same curves)
-    w = {**copy.deepcopy(w), "closeness": float(rel["affinity"]) / 100, "life": None, "outfit": None}
+    w = {**copy.deepcopy(w), "closeness": max(0.0, float(rel["affinity"])) / 100, "dislike": max(0.0, -float(rel["affinity"])) / 100,
+         "life": None, "outfit": None}
     at, minute, points = START, 0.0, []
     steps = script.get("steps") if isinstance(script.get("steps"), list) else []
     steps = [s for s in steps if isinstance(s, dict)][:MAX_STEPS]

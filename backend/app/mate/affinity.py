@@ -4,17 +4,21 @@ How she feels right now is app/mate/state.py.
 Two numbers, as in memora:
 
 * **earned** — days talked, turns, memories: cumulative, never goes down;
-* **affinity** (0–100) — the warmth *now*: rises with what happens between them
-  (a conversation that keeps going, her laughing with them, gifts, their
-  anniversaries — showing up alone only a little), slowly, and more slowly
-  the closer they are; it drops with what they do that she minds (rudeness,
-  worse done to her, brushing her off, leaving her unanswered …) and cools
-  when you stay away (after a few free days, faster each day, never below a
-  floor).
+* **affinity** (−100 – 100) — the warmth *now*: 0 is nothing between them yet;
+  it rises with what happens between them (a conversation that keeps going,
+  her laughing with them, gifts, their anniversaries — showing up alone only a
+  little), slowly, and more slowly the closer they are; it drops with what they
+  do that she minds (rudeness, worse done to her, brushing her off, leaving her
+  unanswered …) — below zero, into ill feeling towards them — and cools when you
+  stay away (after a few free days, faster each day, never below a floor:
+  staying away is no wrong done to her, it never makes her dislike them).
+  Below zero it mends slowly: a day with nothing done to her eases it a little,
+  making up eases it more, and what they do for her counts for less until it
+  has (trust is rebuilt slowly).
 
-The stage follows the affinity (new → familiar → trusted → companion), so what
-she is to the user is what the number says; earned only tells a long bond that
-cooled from one that never was. Gains are credited the moment they
+The stage follows the affinity (hostile → resentful → dislike → cold → new →
+familiar → trusted → companion), so what she is to the user is what the number
+says; earned only tells a long bond that cooled from one that never was. Gains are credited the moment they
 happen; losses only for **finished** days, settled in time order — the same
 functions for real time and for a recompute from history (memora plan/61:
 two rule sets drift; a timer that settles a day before its talk was counted
@@ -32,11 +36,25 @@ import re
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
-STAGES = ("new", "familiar", "trusted", "companion")
+# below "new", what she feels against them: cold (gone sour) → dislike → resentful → hostile
+STAGES = ("hostile", "resentful", "dislike", "cold", "new", "familiar", "trusted", "companion")
+NEGATIVE = ("hostile", "resentful", "dislike", "cold")
+POSITIVE = ("familiar", "trusted", "companion")
+NEW = STAGES.index("new")
+LOW, HIGH = -100.0, 100.0
 # earned: (active days, user turns, memories) a stage needs
 EARNED = {"familiar": (3, 15, 0), "trusted": (10, 60, 10), "companion": (30, 200, 25)}
 # warmth bands: the floor of each stage (index = STAGES index)
-BAND_FLOORS = (0.0, 20.0, 45.0, 70.0)
+BAND_FLOORS = (-100.0, -70.0, -45.0, -20.0, 0.0, 20.0, 45.0, 70.0)
+# below zero it mends slowly: what they do for her counts for less (MEND_LOW of it at −100), a day with nothing done to her
+# eases it this share of the way back to zero, and making up (an apology she took) is worth MADE_UP each, MADE_UP_CAP a day
+MEND_LOW, MEND_DAY = 0.5, 0.012
+MADE_UP, MADE_UP_CAP = 3.0, 6.0
+VERSION = 2  # (1: 0 – 100 and four stages)
+#: what the stage is, as she is told it ("Relationship: …"; how she treats them at each is in prompt._STAGE_GUIDES)
+STAGE_WORDS = {"hostile": "hostile (you can hardly stand them)", "resentful": "resentful (you resent them)",
+               "dislike": "dislike (you don't like them right now)", "cold": "cold (things have gone sour)", "new": "new",
+               "familiar": "familiar", "trusted": "trusted", "companion": "companion"}
 HYST_UP, HYST_DOWN = 2.0, 3.0      # a band is entered 2 above its floor, left 3 below it
 
 # Showing up alone is worth little; what moves it is what happens between them: a conversation that keeps going, her
@@ -174,11 +192,12 @@ _REPLY_POS = re.compile(r"\[\s*(joy|laugh|smile|shy)\b", re.I)
 
 def new() -> dict[str, Any]:
     return {
+        "v": VERSION,
         "enabled": True, "paused": False, "sensitivity": 1.0, "show_indicator": True, "avatar_mood": True,
         "avatar_v2": True,
         "affinity": 0.0, "started_at": None, "turns": 0, "active_days": 0, "last_active_day": None,
-        "streak_days": 0, "memories": 0, "settled_day": None, "today": {}, "talk_days": [], "warm": 0,
-        "stage": "new", "stage_changed_at": None, "milestones": [], "log": [],
+        "streak_days": 0, "memories": 0, "settled_day": None, "today": {}, "talk_days": [],
+        "stage": "new", "stage_changed_at": None, "milestones": [], "log": [], "warm": NEW,
         "quiet_from": None,
         "tz": None,  # the zone its days were counted in (store.tz_and_key); another → computed again from history
         "marks": [],  # what the user did by hand ({at, kind: set | reset, v}): a recompute in another zone keeps them
@@ -202,7 +221,15 @@ def normalized(doc: Any) -> dict[str, Any]:
         except (TypeError, ValueError, OverflowError):
             out[b] = start
     out["sensitivity"] = max(SENSITIVITY[0], min(SENSITIVITY[1], float(out.get("sensitivity") or 1.0)))
-    out["affinity"] = max(0.0, min(100.0, float(out.get("affinity") or 0.0)))
+    out["affinity"] = max(LOW, min(HIGH, float(out.get("affinity") or 0.0)))
+    if not isinstance(doc, dict) or doc.get("v") != VERSION:  # (from before ill feeling: its band counted from "new")
+        try:
+            old = int((doc or {}).get("warm") or 0) if isinstance(doc, dict) else 0
+        except (TypeError, ValueError):
+            old = 0
+        out["warm"], out["v"] = NEW + max(0, min(3, old)), VERSION
+    if out.get("stage") not in STAGES:
+        out["stage"] = STAGES[int(out["warm"])]
     return out
 
 
@@ -261,10 +288,10 @@ def _milestone(r: dict[str, Any], key: str, at: datetime) -> None:
 
 def refresh(r: dict[str, Any], at: datetime, tz: Any) -> None:
     """Stage (the warmth band, with hysteresis) and milestones."""
-    r["warm"] = warmth_index(r["affinity"], int(r.get("warm") or 0))
+    r["warm"] = warmth_index(r["affinity"], int(r.get("warm") if r.get("warm") is not None else NEW))
     stage = STAGES[int(r["warm"])]
     if stage != r["stage"]:
-        if STAGES.index(stage) > STAGES.index(r["stage"]):
+        if stage in POSITIVE and STAGES.index(stage) > STAGES.index(r["stage"]):  # (a milestone is getting closer, not less bad)
             _milestone(r, f"stage_{stage}", at)
         r["stage"], r["stage_changed_at"] = stage, _iso(at)
     today = at.astimezone(tz).date()
@@ -284,7 +311,7 @@ def _log(r: dict[str, Any], d: float, why: str, at: datetime) -> None:
 
 def _bump(r: dict[str, Any], delta: float, why: str, at: datetime, *, floor: float = 0.0) -> float:
     before = r["affinity"]
-    after = max(0.0, min(100.0, before + delta))
+    after = max(LOW, min(HIGH, before + delta))
     if delta < 0 and floor:
         after = max(min(before, floor), after)  # (never pushed below the floor; already below: stays)
     after = round(after, 2)
@@ -302,8 +329,10 @@ def _today(r: dict[str, Any], day: date) -> dict[str, Any]:
 
 
 def climb(a: float) -> float:
-    """What a gain is worth at affinity ``a``: all of it below CLIMB_FROM, then less and less, CLIMB_LOW of it at 100 — the
-    closer they are, the more it takes."""
+    """What a gain is worth at affinity ``a``: all of it from 0 to CLIMB_FROM, then less and less, CLIMB_LOW of it at 100 — the
+    closer they are, the more it takes; and below zero less too, MEND_LOW of it at −100 — ill feeling mends slowly."""
+    if a < 0:
+        return 1 - (1 - MEND_LOW) * min(1.0, -a / 100)
     return 1.0 if a < CLIMB_FROM else max(CLIMB_LOW, 1 - (1 - CLIMB_LOW) * (a - CLIMB_FROM) / (100 - CLIMB_FROM))
 
 
@@ -341,7 +370,7 @@ def bond(r: dict[str, Any], name: str, delta: float, why: str, at: datetime, tz:
 
 
 def trust_room(r: dict[str, Any]) -> float:
-    return TRUST_ROOM[0] + TRUST_ROOM[1] * float(r["affinity"])
+    return max(0.0, TRUST_ROOM[0] + TRUST_ROOM[1] * float(r["affinity"]))
 
 
 def romance_open(r: dict[str, Any]) -> bool:
@@ -380,8 +409,25 @@ def _last_talk(r: dict[str, Any], d: date) -> date | None:
     return last
 
 
+def _hurt_on(r: dict[str, Any], d: date, tz: Any) -> bool:
+    """Whether something they did that day cost her (rudeness, worse, what she minded): no easing that day."""
+    for e in reversed(r["log"]):
+        day = log_day(e, tz)
+        if day is None or day < d:
+            break
+        if day == d and float(e.get("d") or 0) < 0 and not str(e.get("why") or "").startswith("quiet_") and e.get("why") not in USER_WHYS:
+            return True
+    return False
+
+
 def _settle_day(r: dict[str, Any], d: date, tz: Any) -> None:
-    if r["paused"] or not r["started_at"] or d.isoformat() in r["talk_days"]:
+    if r["paused"] or not r["started_at"]:
+        return
+    if r["affinity"] < 0 and not _hurt_on(r, d, tz):  # (ill feeling eases, a little, on a day nothing was done to her)
+        end = datetime.combine(d + timedelta(days=1), time.min, tzinfo=tz)
+        eased = min(-r["affinity"], max(0.01, -r["affinity"] * MEND_DAY))
+        _bump(r, eased, "mended", end)
+    if d.isoformat() in r["talk_days"]:
         return
     last = _last_talk(r, d)
     if last is None:
@@ -565,6 +611,12 @@ def cost(r: dict[str, Any], code: str, at: datetime, tz: Any, until: Any = None)
             _bump(r, -loss, code, at)
     for name, delta in BOND_EVENTS.get(code, {}).items():  # (promises, making up: they move trust; capped per day like the rest)
         bond(r, name, delta * r["sensitivity"], code, at, tz, f"bond_{code}", abs(delta) * 2)
+    if code == "made_up" and r["affinity"] < 0:  # (and below zero, making up is the way back: never past zero by itself)
+        t = _today(r, at.astimezone(tz).date())
+        gain = min(MADE_UP * r["sensitivity"], max(0.0, MADE_UP_CAP - float(t.get("made_up") or 0.0)), -r["affinity"])
+        if gain > 0:
+            t["made_up"] = float(t.get("made_up") or 0.0) + gain
+            _bump(r, gain, "made_up", at)
     if (r["affinity"], *(r.get(b) for b in BONDS)) != before:  # (kept only when it moved something: a capped-out one is nothing)
         r["costs"] = [*(r.get("costs") or []), entry][-COSTS_KEEP:]
     refresh(r, at, tz)
@@ -585,7 +637,7 @@ def set_switch(r: dict[str, Any], key: str, on: bool, at: datetime, tz: Any) -> 
 def set_value(r: dict[str, Any], value: float, at: datetime, tz: Any, why: str = "manual") -> None:
     """The user sets it (Relationship tab): logged; the band follows at once (no hysteresis)."""
     before = r["affinity"]
-    r["affinity"] = round(max(0.0, min(100.0, float(value))), 2)
+    r["affinity"] = round(max(LOW, min(HIGH, float(value))), 2)
     r["warm"] = _raw_band(r["affinity"])
     _log(r, r["affinity"] - before, why, at)
     if why == "manual":
@@ -625,15 +677,21 @@ def marks_of(r: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _next_target(r: dict[str, Any]) -> tuple[str, float] | None:
     """The next stage and the affinity that reaches it (None at the last stage)."""
-    i = int(r.get("warm") or 0)
+    i = int(r.get("warm") if r.get("warm") is not None else NEW)
     return None if i >= len(STAGES) - 1 else (STAGES[i + 1], BAND_FLOORS[i + 1] + HYST_UP)
+
+
+def _along(r: dict[str, Any], target: float) -> float:
+    """How far along from where this stage begins to ``target``, 0 – 1."""
+    lo = BAND_FLOORS[int(r.get("warm") if r.get("warm") is not None else NEW)]
+    return round(max(0.0, min(1.0, (r["affinity"] - lo) / max(1.0, target - lo))), 3)
 
 
 def next_stage(r: dict[str, Any]) -> dict[str, Any] | None:
     target = _next_target(r)
     if target is None:
         return None
-    return {"stage": target[0], "ratio": round(min(1.0, r["affinity"] / target[1]), 3)}
+    return {"stage": target[0], "ratio": _along(r, target[1])}
 
 
 def view(r: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
@@ -643,7 +701,7 @@ def view(r: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
         "enabled": r["enabled"], "paused": r["paused"], "sensitivity": r["sensitivity"],
         "show_indicator": r["show_indicator"], "avatar_mood": r["avatar_mood"],
         "affinity": round(r["affinity"], 1), "stage": r["stage"], "earned_stage": earned_stage(r),
-        "warmth_stage": STAGES[int(r.get("warm") or 0)], "next": next_stage(r),
+        "warmth_stage": STAGES[int(r.get("warm") if r.get("warm") is not None else NEW)], "next": next_stage(r),
         "stats": {"days_together": days_together(r, today, tz), "turns": r["turns"], "active_days": r["active_days"],
                   "streak_days": r["streak_days"], "memories": r["memories"],
                   "idle_days": (today - last).days if last else None, "grace_days": GRACE_DAYS},
@@ -712,7 +770,7 @@ def requirements(r: dict[str, Any]) -> dict[str, Any] | None:
         return None
     return {"stage": target[0], "warmth": {"value": round(r["affinity"], 1), "target": target[1],
                                            "left": round(max(0.0, target[1] - r["affinity"]), 1),
-                                           "ratio": round(min(1.0, r["affinity"] / target[1]), 3)}}
+                                           "ratio": _along(r, target[1])}}
 
 
 def anniversaries(r: dict[str, Any], today: date, tz: Any) -> list[dict[str, Any]]:

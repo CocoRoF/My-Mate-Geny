@@ -1812,7 +1812,8 @@ class MateStore:
         item = next((it for it in wardrobe.get("items") or [] if it["id"] == worn), None)
         outfit = {"id": worn, "name": item["name"], "feel": S.clean_feel(item.get("feel")), "since": wardrobe.get("worn_at")} if item else None
         on = relation["enabled"]
-        return S.who(closeness=float(relation["affinity"]) / 100 if on else 0.33, sensitivity=relation["sensitivity"] if on else 1.0,
+        return S.who(closeness=float(relation["affinity"]) / 100 if on else 0.33, dislike=max(0.0, -float(relation["affinity"])) / 100 if on else 0.0,
+                     sensitivity=relation["sensitivity"] if on else 1.0,
                      builtin=builtin, away=on and relation["paused"], outfit=outfit, life=life, name=name, gender=gender,
                      met=relation.get("started_at") or created_at, seed=seed, temperament=temperament)
 

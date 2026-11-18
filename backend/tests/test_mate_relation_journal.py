@@ -96,11 +96,16 @@ def test_a_set_value_is_not_a_gain_and_kinds_of_changes():
 
 def test_the_next_stage_needs_only_the_affinity():
     r = A.new()
-    r.update(affinity=30.0, warm=1, stage="familiar")
+    familiar = A.STAGES.index("familiar")
+    r.update(affinity=30.0, warm=familiar, stage="familiar")
     q = A.requirements(r)
     assert q["stage"] == "trusted"
-    assert q["warmth"]["target"] == A.BAND_FLOORS[2] + A.HYST_UP and q["warmth"]["left"] == 17.0
-    r.update(warm=3, stage="companion")
+    assert q["warmth"]["target"] == A.BAND_FLOORS[familiar + 1] + A.HYST_UP and q["warmth"]["left"] == 17.0
+    assert q["warmth"]["ratio"] == round(10 / 27, 3)  # (along this stage: from 20 to 47)
+    r.update(affinity=-30.0, warm=A.STAGES.index("dislike"), stage="dislike")
+    q = A.requirements(r)
+    assert q["stage"] == "cold" and q["warmth"]["target"] == -18.0 and q["warmth"]["ratio"] == round(15 / 27, 3)
+    r.update(affinity=95.0, warm=len(A.STAGES) - 1, stage="companion")
     assert A.requirements(r) is None
 
 

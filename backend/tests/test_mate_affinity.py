@@ -269,9 +269,11 @@ def test_pause_off_and_sensitivity():
 
 
 def test_hysteresis_and_the_stage_follows_the_affinity():
-    assert A.warmth_index(21, 0) == 0 and A.warmth_index(22, 0) == 1  # in only 2 past the floor
-    assert A.warmth_index(18, 1) == 1 and A.warmth_index(16.9, 1) == 0  # out only 3 below it
-    assert A.warmth_index(90, 0) == 3 and A.warmth_index(5, 3) == 0
+    new, familiar, companion = (A.STAGES.index(s) for s in ("new", "familiar", "companion"))
+    assert A.warmth_index(21, new) == new and A.warmth_index(22, new) == familiar  # in only 2 past the floor
+    assert A.warmth_index(18, familiar) == familiar and A.warmth_index(16.9, familiar) == new  # out only 3 below it
+    assert A.warmth_index(90, new) == companion and A.warmth_index(5, companion) == new
+    assert A.warmth_index(-2, new) == new and A.warmth_index(-3.1, new) == A.STAGES.index("cold"), "below zero: ill feeling"
     r = A.new()
     talk(r, day(0))
     A.set_value(r, 90, day(0), TZ)
@@ -282,7 +284,7 @@ def test_hysteresis_and_the_stage_follows_the_affinity():
     A.set_value(r, 10, day(0), TZ)
     assert r["stage"] == "new"  # (the milestone stays: history)
     assert any(m["key"] == "stage_companion" for m in r["milestones"])
-    assert A.next_stage(r) == {"stage": "familiar", "ratio": round(10 / 22, 3)}
+    assert A.next_stage(r) == {"stage": "familiar", "ratio": round(10 / 22, 3)}  # (from 0, where "new" begins)
     A.set_value(r, 90, day(0), TZ)
     assert A.next_stage(r) is None
 
@@ -596,3 +598,78 @@ def test_setting_the_timezone_over_http_recounts(client):
     v = client.get(f"/api/mates/{m['id']}/relation").json()
     assert v["stats"]["active_days"] == 6 and got["relation"]["affinity"] == round(v["affinity"])
     client.delete(f"/api/mates/{m['id']}")
+
+
+# ---- below zero: ill feeling (affinity −100 – 100) ----
+
+def test_what_they_do_to_her_takes_it_below_zero_into_ill_feeling():
+    r = A.new()
+    assert r["affinity"] == 0 and r["stage"] == "new" and r["warm"] == A.NEW
+    for n in range(6):
+        A.advance(r, day(n), TZ)
+        A.credit_turn(r, day(n), TZ, "(뺨을 때린다) 닥쳐", "")
+    assert r["affinity"] <= -30 and r["stage"] == "dislike", r["affinity"]
+    assert not any(m["key"].startswith("stage_") for m in r["milestones"]), "getting worse is no milestone"
+    for n in range(6, 20):
+        A.advance(r, day(n), TZ)
+        A.credit_turn(r, day(n), TZ, "(목을 조른다) 꺼져", "")
+    assert r["affinity"] >= A.LOW and r["stage"] == "hostile"
+    A.set_value(r, -150, day(20), TZ)
+    assert r["affinity"] == -100.0
+
+
+def test_staying_away_never_makes_her_dislike_them():
+    r = A.new()
+    A.credit_turn(r, day(0), TZ, "안녕", "")
+    A.set_value(r, 12, day(0), TZ)
+    A.advance(r, day(40), TZ)
+    assert r["affinity"] >= A.FLOOR - 0.01, "quiet days stop at the floor"
+    A.set_value(r, -30, day(40), TZ)
+    before = r["affinity"]
+    A.advance(r, day(41), TZ)
+    assert before <= r["affinity"] <= 0, "a quiet day only eases it"
+
+
+def test_ill_feeling_mends_slowly_and_making_up_helps_most():
+    r = A.new()
+    A.credit_turn(r, day(0), TZ, "안녕", "")
+    A.set_value(r, -60, day(0), TZ)
+    A.advance(r, day(30), TZ)
+    eased = r["affinity"]
+    assert -60 < eased < -35, f"a month of nothing done to her eases it, not away: {eased}"
+    assert r["log"][-1]["why"] in ("mended", "manual") and any(e["why"] == "mended" for e in r["log"])
+    # (what they do for her counts for less below zero)
+    assert A.climb(-100) == A.MEND_LOW and A.climb(-50) == 1 - (1 - A.MEND_LOW) * 0.5 and A.climb(10) == 1.0
+    before = r["affinity"]
+    A.cost(r, "made_up", day(30), TZ)
+    assert r["affinity"] == before + A.MADE_UP
+    for _ in range(5):
+        A.cost(r, "made_up", day(30), TZ)
+    assert r["affinity"] == before + A.MADE_UP_CAP, "making up, a few times a day at most"
+
+
+def test_a_day_she_was_hurt_on_does_not_ease_it():
+    r = A.new()
+    A.credit_turn(r, day(0), TZ, "안녕", "")
+    A.set_value(r, -40, day(0), TZ)
+    A.advance(r, day(1), TZ)
+    A.credit_turn(r, day(1), TZ, "닥쳐", "")
+    hurt = r["affinity"]
+    A.advance(r, day(2), TZ)
+    assert not any(e["why"] == "mended" and A._t(e["at"]).astimezone(TZ).date() == day(2).date() for e in r["log"])
+    assert r["affinity"] == hurt
+
+
+def test_a_document_from_before_keeps_its_stage():
+    old = {"affinity": 50.0, "warm": 2, "stage": "trusted", "enabled": True}
+    r = A.normalized(old)
+    assert r["v"] == A.VERSION and r["warm"] == A.STAGES.index("trusted") and r["stage"] == "trusted"
+    assert A.normalized(r)["warm"] == r["warm"], "once is enough"
+    assert A.normalized({"affinity": 0})["warm"] == A.NEW
+
+
+def test_the_replay_comes_to_the_same_below_zero():
+    events = [(day(n), "turn", ("(때린다) 닥쳐", "")) for n in range(4)] + [(day(n), "turn", ("미안해, 내가 잘못했어", "")) for n in range(5, 9)]
+    r = A.replay(events, day(10), TZ)
+    assert r["affinity"] < 0 and r["stage"] in A.NEGATIVE
+    assert A.replay(events, day(10), TZ)["affinity"] == r["affinity"]

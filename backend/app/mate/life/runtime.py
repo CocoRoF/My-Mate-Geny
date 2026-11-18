@@ -44,7 +44,7 @@ class LifeRuntime:
         rel = self.store.relation_doc(mate_id) or A.new()
         if not rel.get("enabled"):
             return 0.33, "new", []
-        return float(rel.get("affinity") or 0) / 100, str(rel.get("stage") or "new"), list(rel.get("milestones") or [])
+        return max(0.0, float(rel.get("affinity") or 0)) / 100, str(rel.get("stage") or "new"), list(rel.get("milestones") or [])
 
     def _birthdays(self, row: Any) -> dict[str, str]:
         """Hers (her persona) and theirs (the app-wide settings): what she knows of the days that are theirs."""

@@ -293,8 +293,14 @@ export interface StyleChange {
   resolved_at: string | null;
 }
 
-export type RelationStage = "new" | "familiar" | "trusted" | "companion";
+/** what she is to them, from the affinity (−100 – 100): below "new", ill feeling (app/mate/affinity.py STAGES) */
+export type RelationStage = "hostile" | "resentful" | "dislike" | "cold" | "new" | "familiar" | "trusted" | "companion";
+/** getting closer (the track the ♥ panel shows while it is going well) */
 export const RELATION_STAGES: RelationStage[] = ["new", "familiar", "trusted", "companion"];
+/** below zero: ill feeling, worst first */
+export const SOUR_STAGES: RelationStage[] = ["hostile", "resentful", "dislike", "cold"];
+/** all of them, worst to closest */
+export const ALL_STAGES: RelationStage[] = [...SOUR_STAGES, ...RELATION_STAGES];
 export type StateEmotion = "happy" | "excited" | "shy" | "angry" | "sad" | "lonely" | "worried" | "sleepy";
 export type StateLabel = StateEmotion | "calm";
 /** why she feels it: her own words (`text`), or what happened (`code`, with an outfit's `name` or what was said, `quote`) */

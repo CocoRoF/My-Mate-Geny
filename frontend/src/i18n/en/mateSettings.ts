@@ -432,6 +432,8 @@ export default {
   relWhySmiled: "She laughed with you",
   relWhyGift: "A gift for her",
   relWhyPlayed: "A game together",
+  relWhyMended: "A day that went by without hurt",
+  relWhyMadeUp: "You made up",
   relWhyAnniversary: "Day {days} together",
   relWhyRude: "A harsh word",
   relWhyHostile: "Treated her badly",

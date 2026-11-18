@@ -269,7 +269,7 @@ class GSSRuntime:
                 st["bonds"], st["bonds_turn"] = sig, turn
                 line = f"Between you: trust {words['trust']}; romance {words['romance']}"
                 line += f"; respect {words['respect']}." if words["respect"] != "fine" else "."
-                if words["trust"] in ("broken", "shaken") and A.STAGES.index(rel["stage"]) >= 2:
+                if words["trust"] in ("broken", "shaken") and A.STAGES.index(rel["stage"]) >= A.STAGES.index("trusted"):
                     line += " You are close, but right now you don't trust them: guarded, and nothing romantic until that changes."
                 elif words["romance"] in ("none", "a spark"):
                     line += " It isn't romantic between you (yet): warmth, not love talk."

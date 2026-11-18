@@ -1306,10 +1306,11 @@ class MateService:
         lines: list[str] = []
         today = now_utc.astimezone(tz).date()
         streak = int(rel["streak_days"] or 0)
-        distant = A.STAGES.index(A.STAGES[int(rel.get("warm") or 0)]) < A.STAGES.index(A.earned_stage(rel))
+        # (a long bond that cooled — not one that went bad: that has its own words, in her stage)
+        distant = rel["stage"] not in A.NEGATIVE and A.STAGES.index(rel["stage"]) < A.STAGES.index(A.earned_stage(rel))
         sig = [rel["stage"], 0 if streak < 2 else 1 if streak < 7 else 2, distant]
         if rel["started_at"] and (st.get("rel") != sig or turn - int(st.get("rel_turn") or 0) >= 30):
-            line = f"Relationship: {rel['stage']} — day {A.days_together(rel, today, tz)} together"
+            line = f"Relationship: {A.STAGE_WORDS.get(rel['stage'], rel['stage'])} — day {A.days_together(rel, today, tz)} together"
             if streak >= 2:
                 line += f", talking {streak} days in a row"
             lines.append(line + ".")

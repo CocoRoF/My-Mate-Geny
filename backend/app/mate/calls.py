@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
+from app.mate import affinity as A
 from app.mate import files
 from app.mate import memory as M
 from app.mate import state as S
@@ -1389,7 +1390,7 @@ class CallService:
                 break
         lonely = S.levels(doc, who, now, self.store.tz())["lonely"]["v"]
         rel = self.mates._advanced(mid, now, self.store.tz())
-        close = bool(rel and rel["enabled"] and rel["stage"] != "new")
+        close = bool(rel and rel["enabled"] and rel["stage"] in A.POSITIVE)
         if lonely >= (LONELY_FROM if close else 0.7) and (last_user is None or now - last_user >= timedelta(hours=3)):
             return "lonely", ""
         return None

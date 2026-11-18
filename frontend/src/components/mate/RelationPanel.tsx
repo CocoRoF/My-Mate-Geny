@@ -7,7 +7,7 @@
  * including their preferences. It follows the server's pushes (mates.changed → the store).
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getRelationJournal, patchRelation, type Mate, type RelationChange, type RelationJournal, type RelationStage, RELATION_STAGES } from "../../api/mates";
+import { ALL_STAGES, getRelationJournal, patchRelation, type Mate, type RelationChange, type RelationJournal, type RelationStage, RELATION_STAGES, SOUR_STAGES } from "../../api/mates";
 import { useMateStore } from "../../stores/mateStore";
 import { fmtDate, fmtTime, relTime } from "../../i18n/format";
 import { useT, type MsgKey, type TFunction } from "../../i18n";
@@ -30,6 +30,10 @@ const TABS: { id: RelationLink; icon: "heart" | "brain" | "network" | "book"; la
 ];
 
 const STAGE_DESC: Record<RelationStage, MsgKey> = {
+  hostile: "mate.relPanelStageDescHostile",
+  resentful: "mate.relPanelStageDescResentful",
+  dislike: "mate.relPanelStageDescDislike",
+  cold: "mate.relPanelStageDescCold",
   new: "mate.relPanelStageDescNew",
   familiar: "mate.relPanelStageDescFamiliar",
   trusted: "mate.relPanelStageDescTrusted",
@@ -188,15 +192,15 @@ function Card({ title, right, children, testId }: { title?: ReactNode; right?: R
   );
 }
 
-/** the big ring: fill = affinity, colour = the stage */
+/** the big ring: fill = affinity (−100 – 100: below zero it runs the other way round), colour = the stage */
 function StageRing({ value, stage, size = 104 }: { value: number; stage: RelationStage; size?: number }) {
   const sw = 8;
   const r = (size - sw) / 2;
   const c = 2 * Math.PI * r;
-  const f = Math.max(0, Math.min(100, value)) / 100;
+  const f = Math.min(100, Math.abs(value)) / 100;
   return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
+    <div className="relative shrink-0" style={{ width: size, height: size }} data-sour={value < 0 || undefined}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={`-rotate-90 ${value < 0 ? "-scale-y-100" : ""}`} aria-hidden>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" className="text-surface-3" strokeWidth={sw} />
         <circle
           cx={size / 2}
@@ -225,7 +229,9 @@ function StageRing({ value, stage, size = 104 }: { value: number; stage: Relatio
 function Hero({ j, mate }: { j: RelationJournal; mate: Mate }) {
   const t = useT();
   const v = j.relation;
-  const idx = RELATION_STAGES.indexOf(v.stage);
+  // (going well: getting closer, from 처음 to 동반자; gone sour: the way back up, from the worst to 처음)
+  const track = SOUR_STAGES.includes(v.stage) ? [...SOUR_STAGES, "new" as RelationStage] : RELATION_STAGES;
+  const idx = track.indexOf(v.stage);
   return (
     <Card testId="mate-relation-panel-hero">
       <div className="flex items-center gap-4">
@@ -261,8 +267,8 @@ function Hero({ j, mate }: { j: RelationJournal; mate: Mate }) {
           </div>
         </div>
       </div>
-      <ol className="mt-4 flex items-center gap-1" aria-label={t("mate.relPanelStages")}>
-        {RELATION_STAGES.map((s, i) => (
+      <ol className="mt-4 flex items-center gap-1" aria-label={t("mate.relPanelStages")} data-testid="mate-relation-panel-track">
+        {track.map((s, i) => (
           <li key={s} className="flex min-w-0 flex-1 items-center gap-1">
             <span
               className={`min-w-0 flex-1 truncate rounded-full px-2 py-1 text-center text-[11px] font-medium ${i <= idx ? "text-stage-ink" : "bg-surface-3 text-content-faint"}`}
@@ -299,7 +305,7 @@ function NextStage({ j, mate }: { j: RelationJournal; mate: Mate }) {
   const t = useT();
   const q = j.requirements;
   const v = j.relation;
-  const distant = RELATION_STAGES.indexOf(v.warmth_stage) < RELATION_STAGES.indexOf(v.earned_stage);
+  const distant = !SOUR_STAGES.includes(v.warmth_stage) && ALL_STAGES.indexOf(v.warmth_stage) < ALL_STAGES.indexOf(v.earned_stage);
   if (!q) {
     return (
       <Card title={t("mate.relPanelNextTitle")} testId="mate-relation-panel-next">
@@ -375,6 +381,8 @@ function Chart({ j }: { j: RelationJournal }) {
   const [hover, setHover] = useState<number | null>(null);
   const sum = chartSummary(j.series);
   const color = STAGE_COLOR[j.relation.stage];
+  // (a month with ill feeling in it: zero in the middle, bars up for warmth and down for ill feeling)
+  const split = j.series.some((p) => (p.v ?? 0) < 0);
   const shown = hover ?? j.series.length - 1;
   const x = j.series[shown];
   const alt = sum ? t("mate.relPanelChartAlt", { days: j.days, ...sum }) : t("mate.relPanelChartEmpty");
@@ -398,11 +406,11 @@ function Chart({ j }: { j: RelationJournal }) {
           </p>
           <div role="img" aria-label={alt}>
             <div className="relative h-[84px]">
-              {/* recessive guides at 25 / 50 / 75 */}
+              {/* recessive guides at 25 / 50 / 75 (split: zero, solid, in the middle) */}
               {[25, 50, 75].map((g) => (
-                <div key={g} className="pointer-events-none absolute inset-x-0 border-t border-dashed border-border/50" style={{ bottom: `${g}%` }} />
+                <div key={g} className={`pointer-events-none absolute inset-x-0 border-t ${split && g === 50 ? "border-border" : "border-dashed border-border/50"}`} style={{ bottom: `${g}%` }} />
               ))}
-              <div className="relative flex h-full items-end gap-[2px]" onMouseLeave={() => setHover(null)}>
+              <div className="relative flex h-full items-end gap-[2px]" onMouseLeave={() => setHover(null)} data-split={split || undefined}>
                 {j.series.map((p, i) => (
                   <div
                     key={p.day}
@@ -415,10 +423,19 @@ function Chart({ j }: { j: RelationJournal }) {
                     data-testid="mate-relation-panel-bar"
                     data-v={p.v ?? ""}
                   >
-                    <div
-                      className={`w-full rounded-t-[3px] transition-opacity ${i === shown ? "opacity-100" : "opacity-55"}`}
-                      style={{ height: p.v === null ? 0 : `${Math.max(2, p.v)}%`, background: color }}
-                    />
+                    {split ? (
+                      <div className="relative h-full w-full">
+                        <div
+                          className={`absolute inset-x-0 transition-opacity ${(p.v ?? 0) < 0 ? "top-1/2 rounded-b-[3px]" : "bottom-1/2 rounded-t-[3px]"} ${i === shown ? "opacity-100" : "opacity-55"}`}
+                          style={{ height: p.v === null ? 0 : `${Math.max(1, Math.abs(p.v) / 2)}%`, background: (p.v ?? 0) < 0 ? STAGE_COLOR.resentful : color }}
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className={`w-full rounded-t-[3px] transition-opacity ${i === shown ? "opacity-100" : "opacity-55"}`}
+                        style={{ height: p.v === null ? 0 : `${Math.max(2, p.v)}%`, background: color }}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
