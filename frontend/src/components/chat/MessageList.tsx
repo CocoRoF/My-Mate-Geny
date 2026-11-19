@@ -1,4 +1,8 @@
+import { Fragment, useMemo } from "react";
 import { useChatStore, type Turn } from "../../stores/chatStore";
+import { dayBreaks } from "../../lib/messageTime";
+import { useUserTimezone } from "../../lib/userTimezone";
+import { DayDivider } from "./MessageTime";
 import { useHistoryScroll } from "../../hooks/useHistoryScroll";
 import MessageItem from "./MessageItem";
 import HistoryEdge from "./HistoryEdge";
@@ -36,6 +40,9 @@ export default function MessageList() {
   const detached = useChatStore((s) => s.detached);
   const connection = useChatStore((s) => s.connection);
   const { ref, onScroll, showJump, jump, paging, loadOlder } = useHistoryScroll(useChatStore);
+  // where the day changes, in the user's timezone (lib/messageTime.ts)
+  const tz = useUserTimezone();
+  const breaks = useMemo(() => dayBreaks(turns, tz, (x) => !(x.role === "user" && x.meta?.hidden)), [turns, tz]);
 
   return (
     <div className="relative flex-1 min-h-0">
@@ -52,9 +59,17 @@ export default function MessageList() {
               </p>
             </div>
           )}
-          {turns.map((x) => (
-            <MessageItem key={x.key} turn={x} />
-          ))}
+          {turns.map((x) => {
+            const day = breaks.get(x.key);
+            return day === undefined ? (
+              <MessageItem key={x.key} turn={x} />
+            ) : (
+              <Fragment key={x.key}>
+                <DayDivider at={day} />
+                <MessageItem turn={x} />
+              </Fragment>
+            );
+          })}
           {detached && <Detached turn={detached} />}
         </div>
       </div>

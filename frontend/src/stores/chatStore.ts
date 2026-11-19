@@ -53,7 +53,7 @@ export type FlowItem =
   | { kind: "notice"; level: "info" | "warning"; message: string; code?: string; data?: Record<string, any> }
   // Instructions the user added while the agent was working (pending until
   // the runtime confirms delivery into the running turn).
-  | { kind: "steer"; text: string; attachments: Attachment[]; clientMsgId?: string; messageId?: string; pending: boolean; meta?: MessageMeta };
+  | { kind: "steer"; text: string; attachments: Attachment[]; clientMsgId?: string; messageId?: string; pending: boolean; meta?: MessageMeta; at?: number };
 
 /** What the backend says about a message beyond its text (docs/mate.md §3):
  * who sent it (`via` a mate) and internal messages (a mate's greeting,
@@ -101,6 +101,9 @@ export interface Turn {
   model?: string;
   usage?: Record<string, any>;
   startedAt?: number;
+  /** when it was said (ms): a user's message (stored ``created_at``; sending, the moment it was sent) and a notice —
+   * a reply's time is its ``endedAt`` / ``startedAt`` (lib/messageTime.ts) */
+  at?: number;
   /** device designated by the server for this reply's voice, including autonomous turns */
   voiceDevice?: string | null;
   endedAt?: number;
@@ -231,8 +234,8 @@ function appendText(turn: Turn, text: string, at: number) {
   else turn.flow.push({ kind: "text", text });
 }
 
-function systemTurn(turns: Turn[], message: string, level: "info" | "warning", code?: string, data?: Record<string, any>) {
-  turns.push({ key: newKey("s"), role: "system", text: message, flow: [], tools: [], complete: true, level, code, data });
+function systemTurn(turns: Turn[], message: string, level: "info" | "warning", code?: string, data?: Record<string, any>, at?: number) {
+  turns.push({ key: newKey("s"), role: "system", text: message, flow: [], tools: [], complete: true, level, code, data, at });
 }
 
 /** A context report on top of the previous one: per-call reports may lack
@@ -514,7 +517,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
     case "notice": {
       const level = data.level === "warning" ? "warning" : "info";
       const message = String(data.message || "");
-      if (data.code === "context.reset" || !hasLiveTurn(turns)) systemTurn(turns, message, level, data.code, data);
+      if (data.code === "context.reset" || !hasLiveTurn(turns)) systemTurn(turns, message, level, data.code, data, at);
       else liveTurn(turns, at).flow.push({ kind: "notice", level, message, code: data.code, data });
       if (data.code === "context.reset") return { context: null, lastCompaction: null };
       if (data.code === "context.compacted") return { lastCompaction: compactionOf(data, ev.timestamp) };
@@ -546,7 +549,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         return { bounced: [{ clientMsgId: cid, text: t.text, attachments: t.attachments || [], reason: "busy" }] };
       }
       if (code === "attachment.invalid" || code === "session.not_found") {
-        systemTurn(turns, message, "warning");
+        systemTurn(turns, message, "warning", undefined, undefined, at);
         // (a send that started nothing: no run is on because of it)
         return cid ? { runActive: hasLiveTurn(turns), isStreaming: hasLiveTurn(turns) } : {};
       }
@@ -595,10 +598,11 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         messageId: data.message_id ? String(data.message_id) : undefined,
         pending: false,
         meta: metaOf(data),
+        at,
       };
       if (!hasLiveTurn(turns)) {
         // Nothing running here (e.g. delivered just as the turn closed): plain user bubble.
-        turns.push({ key: newKey("u"), role: "user", messageId: item.messageId, text: item.text, flow: [], tools: [], complete: true, attachments: item.attachments, meta: item.meta });
+        turns.push({ key: newKey("u"), role: "user", messageId: item.messageId, text: item.text, flow: [], tools: [], complete: true, attachments: item.attachments, meta: item.meta, at });
         break;
       }
       const t = liveTurn(turns, at);
@@ -606,6 +610,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       if (mine && mine.kind === "steer") {
         mine.pending = false;
         mine.messageId = item.messageId;
+        mine.at = at; // (the server's time for it)
         if (item.meta) mine.meta = item.meta;
       }
       else {
@@ -648,7 +653,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         ownMessages.delete(cid);
         // (already on screen: now it knows which message it is)
         const i = turns.findIndex((t) => t.clientMsgId === cid);
-        if (i >= 0 && data.message_id) turns[i] = { ...turns[i], messageId: String(data.message_id) };
+        if (i >= 0 && data.message_id) turns[i] = { ...turns[i], messageId: String(data.message_id), at };
         break;
       }
       if (hasLiveTurn(turns)) finish(liveTurn(turns, at), at);
@@ -662,6 +667,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         complete: true,
         attachments: (data.attachments as Attachment[]) || [],
         meta: metaOf(data),
+        at,
       });
       break;
     }
@@ -697,6 +703,7 @@ function reconstruct(
   const turns: Turn[] = [];
   for (const it of items) {
     if (it.user && it.user.role === "assistant") {
+      const said = Date.parse(it.user.created_at || "") || undefined;
       turns.push({
         key: newKey("g"),
         role: "assistant",
@@ -706,6 +713,8 @@ function reconstruct(
         complete: true,
         status: "done",
         meta: it.user.meta || undefined,
+        startedAt: said,
+        endedAt: said,
       });
     } else if (it.user) {
       if (hasLiveTurn(turns)) {
@@ -723,6 +732,7 @@ function reconstruct(
         complete: true,
         attachments: it.user.attachments || [],
         meta: it.user.meta || undefined,
+        at: Date.parse(it.user.created_at || "") || undefined, // (stored: older messages have their time too)
       });
     } else if (it.ev) {
       if (park && park(turns, it.ev)) continue;
@@ -960,7 +970,7 @@ export function createChatStore(opts: { lite?: boolean } = {}) {
     set((s) => ({
       turns: [
         ...s.turns,
-        { key: newKey("u"), role: "user", clientMsgId, text, flow: [], tools: [], complete: true, attachments },
+        { key: newKey("u"), role: "user", clientMsgId, text, flow: [], tools: [], complete: true, attachments, at: Date.now() },
       ],
     }));
   },
@@ -971,7 +981,7 @@ export function createChatStore(opts: { lite?: boolean } = {}) {
       if (!hasLiveTurn(turns)) return {};
       const t = liveTurn(turns, Date.now());
       closeThinking(t, Date.now());
-      t.flow.push({ kind: "steer", text, attachments, clientMsgId, pending: true });
+      t.flow.push({ kind: "steer", text, attachments, clientMsgId, pending: true, at: Date.now() });
       return { turns };
     }),
 

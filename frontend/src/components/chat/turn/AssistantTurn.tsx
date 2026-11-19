@@ -11,7 +11,6 @@ import { isAgentTool } from "./subagent";
 import { fmtMs } from "./toolMeta";
 import TurnChangesCard from "../../changes/TurnChangesCard";
 import { useT } from "../../../i18n";
-import { fmtDateTime, relTime } from "../../../i18n/format";
 import { useChatStore } from "../../../stores/chatStore";
 import RewindButton from "../RewindButton";
 import DeleteMessageButton from "../DeleteMessageButton";
@@ -20,6 +19,7 @@ import CompactionDivider from "../CompactionDivider";
 import ViaBadge from "../ViaBadge";
 import HiggsfieldSpend from "./HiggsfieldSpend";
 import { noticeText } from "../../../lib/notices";
+import { MessageTime } from "../MessageTime";
 
 type Segment =
   | { kind: "text"; text: string }
@@ -124,7 +124,10 @@ function Footer({ turn }: { turn: Turn }) {
       <span className="font-mono">{parts.join(" · ")}</span>
       <TurnCost turn={turn} />
       {turn.endedAt ? (
-        <span title={fmtDateTime(turn.endedAt)}>· {relTime(turn.endedAt)}</span>
+        // (when the answer came: its clock time; the whole date and time on hover / a tap — components/chat/MessageTime.tsx)
+        <span className="inline-flex items-center">
+          ·<MessageTime at={turn.endedAt} className="ml-1 !text-[10.5px]" />
+        </span>
       ) : null}
       {ended && (
         // (a turn cut off — a restart, a stop, an error: go on from where it was, instead of starting it again)
@@ -225,6 +228,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
                     <div className="flex items-center gap-0.5">
                       <DeleteMessageButton messageId={s.item.messageId} text={s.item.text} attachments={s.item.attachments} meta={s.item.meta} store={useChatStore} />
                       <RewindButton messageId={s.item.messageId} text={s.item.text} meta={s.item.meta} />
+                      <MessageTime at={s.item.at} className="ml-0.5" />
                     </div>
                   )}
                 </div>

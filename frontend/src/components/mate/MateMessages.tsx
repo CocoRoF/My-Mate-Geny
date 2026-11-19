@@ -3,7 +3,7 @@
  * streaming-safe), what she did with her tools as small activity chips, delegation results as compact cards linking to
  * the worker chat.
  */
-import { memo, useState } from "react";
+import { Fragment, memo, useMemo, useState } from "react";
 import type { FlowItem, MessageMeta, ToolActivity, Turn } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore } from "../../stores/uiStore";
@@ -20,6 +20,9 @@ import type { Attachment } from "../../types";
 import { useMateChat } from "../../mate/useMateConversation";
 import { useHistoryScroll } from "../../hooks/useHistoryScroll";
 import HistoryEdge from "../chat/HistoryEdge";
+import { DayDivider, MessageTime } from "../chat/MessageTime";
+import { dayBreaks } from "../../lib/messageTime";
+import { useUserTimezone } from "../../lib/userTimezone";
 import { tr, useT, type MsgKey } from "../../i18n";
 import type { StateEmotion } from "../../api/mates";
 import { STATE_LABEL } from "./StateCard";
@@ -279,18 +282,21 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
 /** what the user said: the files they attached (thumbnails / file cards, like the Chat view), then the text — and
  *  Delete just left of the last of them, on hover or once the bubble is tapped (beside it, not under it: no gap below
  *  every bubble; not always there: under every bubble it would crowd a phone) */
-function UserBubble({ text, attachments, pending, collecting, compact, messageId, meta }: { text: string; attachments?: Attachment[]; pending?: boolean; collecting?: boolean; compact?: boolean; messageId?: string; meta?: MessageMeta }) {
+function UserBubble({ text, attachments, pending, collecting, compact, messageId, meta, at }: { text: string; attachments?: Attachment[]; pending?: boolean; collecting?: boolean; compact?: boolean; messageId?: string; meta?: MessageMeta; at?: number }) {
   const t=useT();
   const [actions, setActions] = useState(false);
   if (meta?.hidden) return null; // (the user deleted it)
   attachments = visibleAttachments(attachments);
   const hasText = !!text.trim();
   const del = !pending && <DeleteMessageButton messageId={messageId} text={text} attachments={attachments} meta={meta} store={useMateChat} shown={actions} />;
+  // (when it was said, at the bubble's foot on its left, as in a messenger: components/chat/MessageTime.tsx)
+  const time = !pending && <MessageTime at={at} className={compact ? "!text-[10px]" : ""} />;
   return (
     <div className={`group flex w-full min-w-0 flex-col items-end gap-1.5 ${pending ? "opacity-70" : ""}`} onClick={() => setActions((v) => !v)} data-testid="mate-user-message">
       {!!attachments?.length && (
         <div className="flex w-full min-w-0 items-end justify-end gap-1">
           {!hasText && del}
+          {!hasText && time}
           {/* (the full width: three thumbnails in a row don't fit 85 % of a phone) */}
           <div className="min-w-0 max-w-full" data-testid="mate-user-attachments">
             <MessageAttachments attachments={attachments} sid={useMateChat.getState().sid} />
@@ -300,6 +306,7 @@ function UserBubble({ text, attachments, pending, collecting, compact, messageId
       {hasText && (
         <div className="flex w-full min-w-0 items-end justify-end gap-1">
           {del}
+          {time}
           <div
             className={`max-w-[85%] rounded-2xl rounded-br-md border text-content whitespace-pre-wrap break-words shadow-bubble ${
               compact ? "px-3 py-[7px] text-[13px] leading-[1.55]" : "px-3.5 py-2 text-sm leading-relaxed"
@@ -377,19 +384,26 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
   const lastSteer = turn.flow.reduce((n, f, i) => f.kind === "steer" ? i : n, -1);
   const items: JSX.Element[] = [];
   const sources: ReplySource[] = [];
+  // (when she said it — once it's all said: beside her last bubble, else after what there is)
+  const said = running ? undefined : turn.endedAt ?? turn.startedAt;
+  const time = said !== undefined ? <MessageTime at={said} className={compact ? "!text-[10px]" : ""} /> : null;
+  let timed = false;
   turn.flow.forEach((f: FlowItem, i) => {
     if (f.kind === "text") {
       const streaming = running && i === lastText && i > lastSteer;
       // (a closing list of sources: the links go under her bubbles)
       const own = splitSources(f.text, { streaming });
       for (const s of own.sources) if (!sources.some((x) => x.url === s.url)) sources.push(s);
-      if (segmentReply(own.body, { streaming }).length)
-        items.push(<MateReply key={i} keyPrefix={`${i}.`} text={own.body} streaming={streaming} compact={compact} />);
+      if (segmentReply(own.body, { streaming }).length) {
+        const last = i === lastText && i > lastSteer && !!time;
+        if (last) timed = true;
+        items.push(<MateReply key={i} keyPrefix={`${i}.`} text={own.body} streaming={streaming} compact={compact} trailing={last ? time : undefined} />);
+      }
     } else if (f.kind === "tool") {
       const t = toolsById.get(f.toolId);
       if (t) items.push(<ActivityChip key={i} tool={t} />);
     } else if (f.kind === "steer") {
-      items.push(<UserBubble key={i} text={f.text} attachments={f.attachments} pending={f.pending} collecting={!!f.meta?.speech_pending} compact={compact} messageId={f.messageId} meta={f.meta} />);
+      items.push(<UserBubble key={i} text={f.text} attachments={f.attachments} pending={f.pending} collecting={!!f.meta?.speech_pending} compact={compact} messageId={f.messageId} meta={f.meta} at={f.at} />);
     } else if (f.kind === "notice" && !engineNotice(f.code)) {
       items.push(
         <div key={i} className={`text-[11.5px] ${f.level === "warning" ? "text-warning" : "text-content-faint"}`}>
@@ -404,6 +418,7 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
   // would still add the parent's flex gap for every autonomous silence.
   if (!running && !items.length && !turn.error && turn.status !== "interrupted") return null;
   if (sources.length) items.push(<SourcesRow key="sources" sources={sources} />);
+  if (time && !timed && items.length) items.push(<div key="time" className="px-1">{time}</div>);
   return (
     <div className="flex w-full min-w-0 flex-col items-start gap-1.5 animate-fade-in" data-testid="mate-turn">
       {items}
@@ -418,6 +433,37 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
     </div>
   );
 });
+
+/** whether a turn of hers draws anything (a day divider goes over the first one of each day that does) */
+function mateTurnShown(t: Turn): boolean {
+  if (t.role === "user") return !t.meta?.hidden && (!t.meta?.internal || t.meta.kind === "delegation_result" || t.meta.kind === "call");
+  if (t.role === "system") return !engineNotice(t.code);
+  return !t.complete || !!t.error || t.status === "interrupted" || t.flow.some((f) => f.kind !== "thinking" && f.kind !== "notice" && (f.kind !== "text" || !!f.text.trim()));
+}
+
+/** one turn of the conversation: the user's bubble, her bubbles, a card or a notice */
+function mateTurn(t: Turn, compact: boolean, mateName: string): JSX.Element | null {
+  if (t.role === "user") {
+    if (t.meta?.kind === "call") return <CallCard key={t.key} meta={t.meta} name={mateName} messageId={t.messageId} text={t.text} />;
+    if (t.meta?.internal && t.meta.kind === "delegation_result") return <DelegationCards key={t.key} turn={t} />;
+    if (t.meta?.internal) return null;
+    return <UserBubble key={t.key} text={t.text} attachments={t.attachments} collecting={!!t.meta?.speech_pending} compact={compact} messageId={t.messageId} meta={t.meta} at={t.at} />;
+  }
+  if (t.role === "system") {
+    if (engineNotice(t.code)) return null;
+    const reset = t.code === "context.reset";
+    return (
+      <div key={t.key} className="flex items-center gap-3 py-1 text-[11px] text-content-faint">
+        <span className="h-px flex-1 bg-border" />
+        <span className={`text-center ${t.level === "warning" ? "text-warning" : ""}`}>
+          {reset ? tr("mate.resetDivider") : noticeText(t.code, t.data, t.text)}
+        </span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+    );
+  }
+  return <AssistantBubbles key={t.key} turn={t} compact={compact} />;
+}
 
 export default function MateMessages({
   turns,
@@ -436,6 +482,9 @@ export default function MateMessages({
   // (her name on a call's card)
   const sid = useMateChat((s) => s.sid);
   const mateName = useMateStore((s) => s.mates.find((m) => m.session_id && m.session_id === sid)?.name ?? "");
+  // where the day changes, in the user's timezone (lib/messageTime.ts): over the first one of each day that shows
+  const tz = useUserTimezone();
+  const breaks = useMemo(() => dayBreaks(turns, tz, mateTurnShown), [turns, tz]);
 
   return (
     <div className={`relative min-h-0 flex-1 ${className}`}>
@@ -444,26 +493,15 @@ export default function MateMessages({
           <HistoryEdge paging={paging} empty={turns.length === 0} onRetry={loadOlder} />
           {turns.length === 0 && emptyText && <p className="pt-10 text-center text-sm text-content-faint">{emptyText}</p>}
           {turns.map((t) => {
-            if (t.role === "user") {
-              if (t.meta?.kind === "call") return <CallCard key={t.key} meta={t.meta} name={mateName} messageId={t.messageId} text={t.text} />;
-              if (t.meta?.internal && t.meta.kind === "delegation_result") return <DelegationCards key={t.key} turn={t} />;
-              if (t.meta?.internal) return null;
-              return <UserBubble key={t.key} text={t.text} attachments={t.attachments} collecting={!!t.meta?.speech_pending} compact={compact} messageId={t.messageId} meta={t.meta} />;
-            }
-            if (t.role === "system") {
-              if (engineNotice(t.code)) return null;
-              const reset = t.code === "context.reset";
-              return (
-                <div key={t.key} className="flex items-center gap-3 py-1 text-[11px] text-content-faint">
-                  <span className="h-px flex-1 bg-border" />
-                  <span className={`text-center ${t.level === "warning" ? "text-warning" : ""}`}>
-                    {reset ? tt("mate.resetDivider") : noticeText(t.code, t.data, t.text)}
-                  </span>
-                  <span className="h-px flex-1 bg-border" />
-                </div>
-              );
-            }
-            return <AssistantBubbles key={t.key} turn={t} compact={compact} />;
+            const day = breaks.get(t.key);
+            const row = mateTurn(t, compact, mateName);
+            if (day === undefined) return row;
+            return (
+              <Fragment key={t.key}>
+                <DayDivider at={day} compact={compact} />
+                {row}
+              </Fragment>
+            );
           })}
         </div>
       </div>
