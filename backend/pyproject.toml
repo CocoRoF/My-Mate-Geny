@@ -1,6 +1,6 @@
 [project]
 name = "hr-harnessor-backend"
-version = "1.0.0"
+version = "1.1.0"
 description = "hr-harnessor — agent harness service backend (FastAPI)"
 requires-python = ">=3.11"
 dependencies = [
