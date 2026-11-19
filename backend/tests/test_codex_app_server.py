@@ -463,6 +463,29 @@ def test_a_sub_agent_talking_to_the_root_does_not_make_the_root_its_child():
     assert acc.completed and not acc.failed
 
 
+def test_sub_agents_talking_to_each_other_change_nothing_and_the_turn_ends_on_its_own_completion():
+    # (seen on 2026-11-19, the 내일의 종 chat: three sub-agents of the root sent each other messages —
+    # "/root/boss" → "/root/recruit" — and the root; the turn must end on the root's turn/completed)
+    acc = accumulator()
+    for i, child in enumerate(["boss", "recruit"]):
+        spawn = {"type": "collabAgentToolCall", "id": f"spawn{i}", "tool": "spawnAgent", "senderThreadId": "root",
+                 "receiverThreadIds": [], "agentsStates": {}, "status": "inProgress", "prompt": child}
+        notify(acc, "item/started", item=spawn)
+        notify(acc, "thread/started", thread={"id": child, "parentThreadId": "root"})
+        notify(acc, "item/completed", item={**spawn, "status": "completed", "receiverThreadIds": [child],
+                                             "agentsStates": {child: {"status": "running"}}})
+    before = dict(acc.parents)
+    sibling = {"type": "subAgentActivity", "id": "call_s", "agentThreadId": "recruit", "agentPath": "/root/recruit", "kind": "interacted"}
+    assert not [e for e in notify(acc, "item/completed", threadId="boss", item=sibling) if e.type == "tool.start"]
+    up = {"type": "subAgentActivity", "id": "call_r", "agentThreadId": "root", "agentPath": "/root", "kind": "interacted"}
+    assert not notify(acc, "item/completed", threadId="recruit", item=up)
+    assert acc.parents == before, "nobody re-parented"
+    notify(acc, "turn/completed", threadId="boss", turn={"id": "boss-turn", "status": "completed"})
+    assert not acc.completed
+    notify(acc, "turn/completed", turn={"id": "turn", "status": "completed"})
+    assert acc.completed and not acc.failed
+
+
 def test_the_turns_own_completion_ends_it_even_if_its_thread_was_ever_taken_for_a_child():
     acc = accumulator()
     acc.parents["root"] = "elsewhere:call"  # (a wrong mapping from before the fix, or one a new protocol might make)
