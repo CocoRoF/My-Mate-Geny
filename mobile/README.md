@@ -1,4 +1,7 @@
-# My Mate Geny Android
+# My Mate Geny Android (and iOS)
+
+The iOS · iPadOS app (`ios/`, the same connect page and server choice — `ios/App/App/GenyServer.swift`) is built,
+signed and sent to TestFlight by CI: docs/apps.md "iOS". What follows is the Android app.
 
 Capacitor shell around the live console of **your own** My Mate Geny server,
 with its mobile layout. Native: notifications (LocalNotifications), hardware

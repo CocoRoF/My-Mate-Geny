@@ -40,14 +40,18 @@ def digest(path: Path) -> str:
     return base64.b64encode(h.digest()).decode()
 
 
-def write_feed(directory: Path, version: str) -> Path:
-    files = sorted(directory.glob(f"my-mate-geny-{version}-macos-*.dmg"))
-    if {f.name.rsplit("-", 1)[-1] for f in files} != {"x64.dmg", "arm64.dmg"}:
+def write_feed(directory: Path, version: str, arch: str | None = None) -> Path:
+    """latest-mac-<arch>.yml: one architecture's feed, published the moment that build is (the desktop's update source
+    serves it to that architecture as latest-mac.yml); without an arch, one feed for both (the release has both)."""
+    files = sorted(directory.glob(f"my-mate-geny-{version}-macos-{arch or '*'}.dmg"))
+    if arch is None and {f.name.rsplit("-", 1)[-1] for f in files} != {"x64.dmg", "arm64.dmg"}:
         raise RuntimeError(
             "Both verified macOS architectures are required before publishing the feed"
         )
+    if not files:
+        raise RuntimeError(f"No verified {arch} image to describe")
     # A signed build also has a zip per architecture, which is what a running app updates itself from: first in the feed.
-    zips = sorted(directory.glob(f"my-mate-geny-{version}-macos-*.zip"))
+    zips = sorted(directory.glob(f"my-mate-geny-{version}-macos-{arch or '*'}.zip"))
     entries = [(f.name, digest(f), f.stat().st_size) for f in [*zips, *files]]
     lines = [f"version: {json.dumps(version)}", "files:"]
     for name, sha, size in entries:
@@ -57,7 +61,7 @@ def write_feed(directory: Path, version: str) -> Path:
         f"sha512: {entries[0][1]}",
         f"releaseDate: {json.dumps(datetime.now(timezone.utc).isoformat())}",
     ]
-    path = directory / "latest-mac.yml"
+    path = directory / (f"latest-mac-{arch}.yml" if arch else "latest-mac.yml")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
@@ -107,7 +111,7 @@ if __name__ == "__main__":
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.version):
         parser.error("Expected a numeric release version")
     if args.write_feed:
-        write_feed(args.write_feed, args.version)
+        write_feed(args.write_feed, args.version, args.arch)
     elif args.arch:
         build(args.directory.resolve(), args.version, args.arch)
     else:

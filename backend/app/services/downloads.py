@@ -1,7 +1,10 @@
 """Native app downloads, fed by the CI release pipeline.
 
-GitHub Actions builds the desktop (Windows/macOS/Linux) and Android apps on
-every push that touches them and publishes a rolling ``apps-latest`` release.
+GitHub Actions builds the desktop (Windows/macOS/Linux), Android and iOS apps on
+every push that touches them; each platform is published the moment it is built
+(.github/scripts/apps_publish.py) into a rolling ``apps-latest`` release, so each
+has its own version (in its file name). iOS is TestFlight: ``ios.json`` there
+says which build and the public link a phone opens.
 The repo is private, so release assets aren't publicly downloadable: the
 backend reads the release with a server-side token, fetches each asset once
 into a local cache, and serves it from disk (range requests, so downloads
@@ -53,6 +56,22 @@ class _NoAuthRedirect(urllib.request.HTTPRedirectHandler):
             new.headers.pop("Authorization", None)
             new.unredirected_hdrs.pop("Authorization", None)
         return new
+
+
+_VERSION_IN_NAME = re.compile(r"-(\d+\.\d+\.\d+)-")
+
+
+def version_of(name: str) -> str:
+    """a build's version, from its file name (my-mate-geny-<version>-…)"""
+    m = _VERSION_IN_NAME.search(name or "")
+    return m.group(1) if m else ""
+
+
+def _vkey(v: str) -> tuple[int, ...]:
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except ValueError:
+        return ()
 
 
 # The desktop app's in-app updater (electron-updater, generic provider) reads its feed from this server
@@ -141,13 +160,18 @@ class DownloadService:
                 "name": a["name"],
                 "size": a["size"],
                 "updated_at": a.get("updated_at"),
+                "version": version_of(a["name"]),
                 "url": f"/api/downloads/asset/{a['id']}/{a['name']}",
                 **kind,
             })
+        ios = self._ios(files.get("ios.json"))
+        newest_version = max((a["version"] for a in assets if a["version"]), key=_vkey, default="")
         out = {
-            "available": bool(assets),
+            "available": bool(assets) or bool(ios),
             "product": PRODUCT_NAME,
-            "version": meta.get("version") or rel.get("name") or rel.get("tag_name"),
+            # (each platform has its own: the newest of them, for a one-line summary)
+            "version": newest_version or meta.get("version") or rel.get("name") or rel.get("tag_name"),
+            "ios": ios,
             "commit": meta.get("commit"),
             "commit_message": meta.get("commit_message"),
             "built_at": meta.get("built_at") or rel.get("published_at"),
@@ -158,6 +182,20 @@ class DownloadService:
             self._meta = (time.monotonic(), out)
             self._files = files
         return out
+
+    def _ios(self, asset: dict[str, Any] | None) -> dict[str, Any] | None:
+        """iOS is TestFlight: ``ios.json`` (version, build, the public link) — read with the release, a few hundred bytes"""
+        if not asset:
+            return None
+        try:
+            path, _ = self._cached(asset)
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, urllib.error.URLError, RuntimeError):
+            return None
+        link = str(doc.get("testflight") or "")
+        return {"version": str(doc.get("version") or ""), "build": str(doc.get("build") or ""),
+                "testflight": link if link.startswith("https://testflight.apple.com/") else "",
+                "updated_at": asset.get("updated_at")}
 
     def asset_path(self, asset_id: int) -> tuple[Path, str]:
         """Local cached file for a release asset (downloaded on first use)."""

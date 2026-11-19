@@ -7,7 +7,7 @@ import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
 const PHONE_QUERY = "(max-width: 639px)"; // Tailwind's `sm` breakpoint
 
-const isNativeApp = () => document.documentElement.classList.contains("native-android");
+const isNativeApp = () => document.documentElement.classList.contains("native-app");
 
 function matches(query: string): boolean {
   return typeof window !== "undefined" && !!window.matchMedia?.(query).matches;

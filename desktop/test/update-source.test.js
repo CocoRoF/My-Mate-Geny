@@ -32,3 +32,40 @@ test('a public repository hands the phone a direct download (the QR code on the 
   await source.catalog(true);assert.equal(repoCalls,1);// (asked once per repository)
  }
 });
+test('each platform goes up on its own: a Mac reads its own architecture\'s feed, and every file says its version',async t=>{
+ const arch=process.arch==='arm64'?'arm64':'x64',other=arch==='arm64'?'x64':'arm64';
+ const assets=[
+  {state:'uploaded',id:11,name:`latest-mac-${arch}.yml`,size:20},{state:'uploaded',id:12,name:`latest-mac-${other}.yml`,size:20},
+  {state:'uploaded',id:13,name:'latest-mac.yml',size:20},{state:'uploaded',id:14,name:'my-mate-geny-1.1.3-windows-x64-setup.exe',size:4},
+  {state:'uploaded',id:15,name:'my-mate-geny-1.1.2-android.apk',size:4}];
+ const source=createUpdateSource({readSettings:()=>({}),writeSettings:()=>{},cliToken:async()=>'',fetcher:async url=>{
+  if(url.endsWith('/tags/apps-latest'))return Response.json({tag_name:'apps-latest',body:'<!-- hrh-meta {"commit":"x"} -->',assets});
+  const id=/\/assets\/(\d+)$/.exec(url)?.[1];if(id)return new Response(`feed ${id}\n`);
+  if(/\/repos\/[^/]+\/[^/]+$/.test(url))return Response.json({private:true});throw Error('unexpected '+url);}});
+ t.after(()=>source.close());
+ const url=await source.feedUrl();
+ assert.equal(await(await fetch(url+'latest-mac.yml')).text(),'feed 11\n');// (this Mac's: published the moment its build was)
+ const versions=Object.fromEntries((await source.catalog()).assets.map(a=>[a.platform,a.version]));
+ assert.deepEqual(versions,{windows:'1.1.3',android:'1.1.2'});
+});
+test('iOS is TestFlight (ios.json), and a phone on the same Wi-Fi gets the Android app from this computer by a link only its QR knows',async t=>{
+ let clock=1_000_000;
+ const assets=[{state:'uploaded',id:21,name:'ios.json',size:80},{state:'uploaded',id:22,name:'my-mate-geny-1.1.3-android.apk',size:4},{state:'uploaded',id:23,name:'latest.yml',size:9}];
+ const source=createUpdateSource({readSettings:()=>({}),writeSettings:()=>{},cliToken:async()=>'',now:()=>clock,network:()=>'127.0.0.1',fetcher:async url=>{
+  if(url.endsWith('/tags/apps-latest'))return Response.json({tag_name:'apps-latest',body:'',assets});
+  if(url.endsWith('/assets/21'))return Response.json({version:'1.1.3',build:'190',testflight:'https://testflight.apple.com/join/AbCd1234'});
+  if(url.endsWith('/assets/22'))return new Response('APK!',{headers:{'content-length':'4'}});
+  if(/\/repos\/[^/]+\/[^/]+$/.test(url))return Response.json({private:true});throw Error('unexpected '+url);}});
+ t.after(()=>source.close());
+ const c=await source.catalog();
+ assert.deepEqual([c.ios.version,c.ios.testflight],['1.1.3','https://testflight.apple.com/join/AbCd1234']);
+ const link=await source.phoneLink('my-mate-geny-1.1.3-android.apk');
+ assert.match(link.url,/^http:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{48}\/my-mate-geny-1\.1\.3-android\.apk$/);
+ assert.equal(await(await fetch(link.url)).text(),'APK!');
+ // nothing else, no other link, and not after half an hour
+ await assert.rejects(source.phoneLink('latest.yml'));
+ assert.equal((await fetch(link.url.replace(/[a-f0-9]{48}/,'0'.repeat(48)))).status,404);
+ assert.equal((await fetch(link.url.replace(/android\.apk$/,'android.apk.x'))).status,404);
+ clock+=31*60000;
+ assert.equal((await fetch(link.url)).status,404);
+});

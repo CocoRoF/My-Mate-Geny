@@ -21,6 +21,8 @@ declare global {
       setup?: {state:()=>Promise<boolean|null>;seen?:()=>Promise<boolean>;complete:()=>Promise<boolean>};
       executionMode?: "local"|"server";
       platform: string;
+      /** the desktop's architecture (x64 / arm64: each Mac architecture is its own build) — apps from 1.1.1 */
+      arch?: string;
       version: string;
       notify?: (title: string, body: string) => void;
       /** desktop: her call rings — the console comes up (restored, in front) and says so (desktop/src/main.js hrh:call-ring) */

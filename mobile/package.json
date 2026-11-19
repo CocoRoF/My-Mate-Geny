@@ -2,16 +2,18 @@
   "name": "hr-harnessor-mobile",
   "version": "1.1.0",
   "private": true,
-  "description": "My Mate Geny — Android app (Capacitor shell around the live console)",
+  "description": "My Mate Geny \u2014 Android and iOS apps (Capacitor shell around the live console)",
   "scripts": {
     "sync": "cap sync android",
     "test": "node --test test/*.test.js",
-    "icons": "capacitor-assets generate --android --assetPath assets"
+    "icons": "capacitor-assets generate --android --ios --assetPath assets",
+    "sync:ios": "cap sync ios"
   },
   "dependencies": {
     "@capacitor/android": "8.6.0",
     "@capacitor/app": "8.1.2",
     "@capacitor/core": "8.6.0",
+    "@capacitor/ios": "8.6.0",
     "@capacitor/local-notifications": "8.3.1",
     "@capacitor/splash-screen": "8.0.2",
     "@capacitor/status-bar": "8.0.4"

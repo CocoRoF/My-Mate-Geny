@@ -70,6 +70,17 @@ const ko: Messages<"downloads"> = {
   noteLinux2: "Debian/Ubuntu: {cmd} 명령으로 설치하면 앱 메뉴에 추가돼요.",
   noteAndroid1: "휴대폰에서 APK를 여세요. 브라우저나 파일 앱에서 설치를 허용할지 Android가 한 번 물어보면, 허용하고 설치하세요.",
   noteAndroid2: "업데이트: 앱의 다운로드 화면에서 진행 상황을 보여 준 뒤 설치 프로그램이 열려요. 서명 키가 같아서 이전 버전 위에 설치되고, 로그인도 그대로예요.",
+  subIos: "iOS · iPadOS 15 이상 · TestFlight로 설치",
+  noteIos1: "먼저 Apple의 TestFlight 앱을 설치한 다음 링크를 열거나 코드를 스캔하면 My Mate Geny가 설치돼요.",
+  noteIos2: "업데이트: 새 빌드가 나오면 TestFlight가 알아서 알려 줘요. 서버와 로그인은 그대로예요.",
+  testflight: "TestFlight에서 받기",
+  testflightSub: "빌드 {build} · TestFlight로 열려요",
+  iosNoLink: "iPhone 앱을 TestFlight에 준비하고 있어요. 조금 뒤에 다시 확인해 주세요.",
+  scanHintIos: "iPhone 카메라로 스캔하면 TestFlight 링크가 열려요.",
+  phoneShow: "휴대폰으로 받기",
+  phoneHintLan: "이 컴퓨터와 같은 Wi-Fi에 있는 휴대폰으로 스캔하세요. 앱이 이 컴퓨터에서 바로 받아져요 (링크는 30분 동안 유효).",
+  phoneNoLan: "휴대폰이 닿을 수 있는 네트워크(Wi-Fi나 LAN)에 이 컴퓨터가 연결되어 있지 않아요.",
+  phoneFailed: "휴대폰용 링크를 만들지 못했어요. 다시 시도해 주세요.",
 
   // ---- download progress card
   readyToInstall: "다운로드 완료 — 설치할 수 있어요",
@@ -84,7 +95,7 @@ const ko: Messages<"downloads"> = {
 
   // ---- page
   title: "My Mate Geny 받기",
-  intro: "이 콘솔을 데스크톱과 Android 앱으로도 쓸 수 있어요. 알림과 전용 창을 쓸 수 있고 로그인도 유지돼요. 데스크톱에서는 메이트가 화면 위에 떠 있고, 빠른 채팅 단축키도 쓸 수 있어요. 앱은 이 콘솔을 실시간으로 불러와서 UI 업데이트가 바로 반영되고, 새 앱 빌드는 푸시할 때마다 여기에 자동으로 올라와요.",
+  intro: "이 콘솔을 데스크톱, Android, iPhone 앱으로도 쓸 수 있어요. 알림과 전용 창을 쓸 수 있고 로그인도 유지돼요. 데스크톱에서는 메이트가 화면 위에 떠 있고, 빠른 채팅 단축키도 쓸 수 있어요. 앱은 이 콘솔을 실시간으로 불러와서 UI 업데이트가 바로 반영되고, 새 앱 빌드는 푸시할 때마다 여기에 자동으로 올라와요.",
   iosHint: "iPhone/iPad: Safari에서 이 사이트를 열고 공유 → “홈 화면에 추가”를 누르면 앱처럼 쓸 수 있어요.",
   releaseVersion: "버전 {version}",
   builtFrom: "{commit}에서 빌드",

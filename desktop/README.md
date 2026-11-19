@@ -159,11 +159,12 @@ electron-updater): check → *Download & install* — the download with progress
 (percent, speed, time left, Cancel), then the install at once and the app back
 in the new version, one press; errors say why, with Retry. The state lives in
 the main process, so a reloaded page shows the running download. The feed is
-the connected server's `/api/downloads/update/` (it serves `latest.yml` /
-`latest-linux.yml` and the installers from the `apps-latest` release, which CI
-uploads alongside the installers). Windows (NSIS) and Linux AppImage replace
+the app's own update source (`src/update-source.js`: `latest.yml` /
+`latest-linux.yml` / this Mac's `latest-mac-<arch>.yml` and the installers from
+the `apps-latest` release, where CI puts each platform the moment it is built —
+docs/apps.md). Windows (NSIS) and Linux AppImage replace
 themselves, a .deb installs through a password prompt; a signed macOS build
-replaces itself from its zip (`latest-mac.yml`), one built without the certificate
+replaces itself from its zip, one built without the certificate
 cannot (the page offers the .dmg). A background check runs 30 s after start
 and every 6 h (it only tells; downloading is the user's call). Help → *Check
 for updates…*.
@@ -263,9 +264,10 @@ Now:
   build must be the one running (in Local execution and on the connect screen).
 - The Android app's update flow in a browser (stand-in Capacitor bridge):
   `node test/e2e/apk-update-browser.js <server> <password> <app version>`.
-- Builds: CI (`.github/workflows/apps.yml`) on every push touching `desktop/`,
-  published to the `apps-latest` release and the console's Download page
-  (`my-mate-geny-<version>-…`).
+- Builds: CI (`.github/workflows/apps.yml`) on a push that changes what the
+  desktop is made of (`desktop/`, `backend/app/`, `frontend/`), each platform
+  published to the `apps-latest` release and the console's Download page the
+  moment it is built (`my-mate-geny-<version>-…`; docs/apps.md).
 - Local Linux build: `npm run dist:linux` (or in `electronuserland/builder`).
 - Signing: macOS release builds are signed with a Developer ID and notarized
   (`build/macos-sign.py`, entitlements in `build/entitlements.mac.plist`; the secrets

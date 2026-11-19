@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
 import { useConfigStore } from "../../stores/configStore";
 import UpdateSource from "./UpdateSource";
-import { detectPlatform, getDownloads, type AppAsset, type AppRelease } from "../../api/downloads";
+import { detectPlatform, getDownloads, phoneLink, type AppAsset, type AppRelease } from "../../api/downloads";
 import { formatBytes } from "../attachments/fileMeta";
 import { absTime, relTime } from "../admin/format";
 import Icon from "../ui/Icon";
@@ -10,11 +10,12 @@ import { ProgressBar, progressLine, useUpdateState } from "./UpdateCard";
 import { isAndroidApp, useAndroidDownload, useBrowserDownload, type Progress } from "../../lib/downloadProgress";
 import { tr, useT, type MsgKey } from "../../i18n";
 
-const PLATFORMS: readonly { id: "windows" | "macos" | "linux" | "android"; name: string; sub: MsgKey }[] = [
+const PLATFORMS: readonly { id: "windows" | "macos" | "linux" | "android" | "ios"; name: string; sub: MsgKey }[] = [
   { id: "windows", name: "Windows", sub: "downloads.subWindows" },
   { id: "macos", name: "macOS", sub: "downloads.subMacos" },
   { id: "linux", name: "Linux", sub: "downloads.subLinux" },
   { id: "android", name: "Android", sub: "downloads.subAndroid" },
+  { id: "ios", name: "iPhone · iPad", sub: "downloads.subIos" },
 ];
 
 /** Install hints. Builds since 0.3 are `my-mate-geny-*` ("My Mate Geny.app");
@@ -33,6 +34,7 @@ const notes = (legacy: boolean): Record<string, string[]> => {
     tr("downloads.noteLinux2", { cmd: `sudo apt install ./${file}-*.deb` }),
   ],
   android: [tr("downloads.noteAndroid1"), tr("downloads.noteAndroid2")],
+  ios: [tr("downloads.noteIos1"), tr("downloads.noteIos2")],
   };
 };
 
@@ -197,6 +199,21 @@ export default function DownloadsView() {
   // what a phone scans for the Android app: this page on a server; the desktop app (local execution) hands it the APK
   // straight from GitHub (a public repository only — the phone can't reach this computer's own download address)
   const phoneUrl = (list: AppAsset[]) => (local ? list.find((a) => a.public_url)?.public_url : pageUrl);
+  // (the desktop app with a private repository: the phone gets the APK from this computer, over the same Wi-Fi, on request)
+  const [lanLink, setLanLink] = useState<{ url: string; until: number } | null>(null);
+  const [lanError, setLanError] = useState("");
+  const askLan = async (list: AppAsset[]) => {
+    const apk = list.find((a) => a.kind === "apk");
+    if (!apk) return;
+    setLanError("");
+    try {
+      setLanLink(await phoneLink(apk.name));
+    } catch (e: any) {
+      setLanError(String(e?.message || e).includes("noLan") ? t("downloads.phoneNoLan") : t("downloads.phoneFailed"));
+    }
+  };
+  const androidQr = (list: AppAsset[]) => phoneUrl(list) || lanLink?.url;
+  const ios = rel?.ios;
   const legacy = assets.some((a) => a.name.startsWith("hr-harnessor")) && !assets.some((a) => a.name.startsWith("my-mate-geny"));
   const NOTES = notes(legacy);
 
@@ -231,11 +248,15 @@ export default function DownloadsView() {
                     <AssetButton a={a} onPick={onPick} />
                   </div>
                 ))}
-            {platform === "ios" && (
-              <p className="text-[13px] text-content-dim">
-                {t("downloads.iosHint")}
-              </p>
-            )}
+            {platform === "ios" &&
+              (ios?.testflight ? (
+                <a href={ios.testflight} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl bg-accent-grad px-3.5 py-2.5 text-white shadow-glow" data-testid="ios-testflight-primary">
+                  <Icon name="download" size={16} />
+                  <span className="text-[13.5px] font-medium">{t("downloads.testflight")}</span>
+                </a>
+              ) : (
+                <p className="text-[13px] text-content-dim">{t("downloads.iosHint")}</p>
+              ))}
           </div>
 
           {androidDl.active || (androidApp && androidDl.progress.status !== "idle") ? (
@@ -285,20 +306,37 @@ export default function DownloadsView() {
           {PLATFORMS.map((p) => {
             const list = forPlatform(p.id);
             const isMine = p.id === platform;
+            // (each platform is published the moment it is built: its own version)
+            const version = p.id === "ios" ? ios?.version : list.map((a) => a.version || "").sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))[0];
+            if (p.id === "ios" && !ios) return null;
             return (
               <section key={p.id} className={`card min-w-0 p-4 ${isMine ? "ring-1 ring-accent/40" : ""}`}>
                 <div className="flex flex-wrap items-start gap-3">
                   <div className="min-w-0 flex-1 basis-[8rem]">
                     <h2 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold">
                       {p.name}
+                      {version && <span className="font-mono text-[11.5px] font-normal text-content-faint" data-testid={`platform-version-${p.id}`}>v{version}</span>}
                       {isMine && <span className="pill bg-accent-soft text-accent">{t("downloads.thisDevice")}</span>}
                     </h2>
                     <p className="text-[12px] text-content-faint">{t(p.sub)}</p>
                   </div>
-                  {p.id === "android" && platform !== "android" && phoneUrl(list) && <Qr text={phoneUrl(list)!} />}
+                  {p.id === "android" && platform !== "android" && androidQr(list) && <Qr text={androidQr(list)!} />}
+                  {p.id === "ios" && platform !== "ios" && ios?.testflight && <Qr text={ios.testflight} />}
                 </div>
                 <div className="mt-3 space-y-2">
-                  {list.length ? (
+                  {p.id === "ios" ? (
+                    ios?.testflight ? (
+                      <a href={ios.testflight} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-border bg-surface-2/60 px-3.5 py-2.5 text-content transition hover:border-border-strong hover:bg-surface-3" data-testid="asset-ios-testflight">
+                        <Icon name="external" size={16} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13.5px] font-medium">{t("downloads.testflight")}</span>
+                          <span className="block text-[11px] text-content-faint">{t("downloads.testflightSub", { build: ios.build || "—" })}</span>
+                        </span>
+                      </a>
+                    ) : (
+                      <p className="text-[12px] text-content-faint" data-testid="ios-no-link">{t("downloads.iosNoLink")}</p>
+                    )
+                  ) : list.length ? (
                     list.map((a) => <AssetButton key={a.id} a={a} onPick={onPick} />)
                   ) : (
                     <p className="text-[12px] text-content-faint">{rel?.available ? t("downloads.noBuild") : "—"}</p>
@@ -312,9 +350,18 @@ export default function DownloadsView() {
                     </li>
                   ))}
                 </ul>
-                {p.id === "android" && platform !== "android" && phoneUrl(list) && (
-                  <p className="mt-2 text-[11px] text-content-faint">{t(local ? "downloads.scanHintLocal" : "downloads.scanHint")}</p>
+                {p.id === "android" && platform !== "android" && androidQr(list) && (
+                  <p className="mt-2 text-[11px] text-content-faint">{t(lanLink && !phoneUrl(list) ? "downloads.phoneHintLan" : local ? "downloads.scanHintLocal" : "downloads.scanHint")}</p>
                 )}
+                {p.id === "android" && platform !== "android" && local && !androidQr(list) && list.some((a) => a.kind === "apk") && (
+                  <div className="mt-2">
+                    <button type="button" className="btn-soft !px-3 !py-1.5 text-[12px]" onClick={() => void askLan(list)} data-testid="android-phone-link">
+                      <Icon name="smartphone" size={13} /> {t("downloads.phoneShow")}
+                    </button>
+                    {lanError && <p className="mt-1 text-[11px] text-danger">{lanError}</p>}
+                  </div>
+                )}
+                {p.id === "ios" && platform !== "ios" && ios?.testflight && <p className="mt-2 text-[11px] text-content-faint">{t("downloads.scanHintIos")}</p>}
               </section>
             );
           })}

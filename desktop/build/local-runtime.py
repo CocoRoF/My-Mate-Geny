@@ -67,11 +67,23 @@ def build(output: Path, frontend: Path, cache: Path, python_version: str = "3.12
     print(f"LOCAL_RUNTIME_BUILT {output} ({version}, {platform.machine()})", flush=True)
 
 
+def cache_key(python_version: str) -> str:
+    """what the cached interpreter and its packages (--cache) are made of: not the product's version, which every release
+    line changes in the same file"""
+    requirements = tomllib.loads((ROOT / "backend/pyproject.toml").read_text())["project"]["dependencies"]
+    digest = hashlib.sha256("\n".join([python_version, *requirements]).encode() + Path(__file__).read_bytes())
+    return digest.hexdigest()[:20]
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--output", type=Path, default=ROOT / "desktop/local-runtime")
     p.add_argument("--frontend", type=Path, default=ROOT / "frontend/dist-local")
     p.add_argument("--cache", type=Path, default=ROOT / "desktop/.python-build")
     p.add_argument("--python-version", default="3.12.16")
+    p.add_argument("--cache-key", action="store_true", help="print the --cache directory's key (CI) and stop")
     args = p.parse_args()
+    if args.cache_key:
+        print(cache_key(args.python_version))
+        raise SystemExit(0)
     build(args.output.resolve(), args.frontend.resolve(), args.cache.resolve(), args.python_version)
