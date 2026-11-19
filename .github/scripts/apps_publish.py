@@ -123,7 +123,8 @@ def cmd_begin(line: str, channel: str, platforms: list[str]) -> None:
         log = git("log", "--no-merges", "--format=- %s (%h)", f"{prev}..{sha}").splitlines()
         notes += ["", f"Changes since {prev}:", *log[:40], *(["- …"] if len(log) > 40 else [])]
     title = f"Apps {'test ' if channel == 'test' else ''}{version}"
-    gh("release", "create", tag, "--draft", "--title", title, "--notes-file", "-", "--target", sha, stdin="\n".join(notes) + "\n")
+    test = ["--prerelease"] if channel == "test" else []  # (labelled so in the repository's releases)
+    gh("release", "create", tag, "--draft", *test, "--title", title, "--notes-file", "-", "--target", sha, stdin="\n".join(notes) + "\n")
     print(f"{title} ({tag}) from {sha[:7]}; platforms: {', '.join(platforms)}")
     output(version=version, tag=tag)
 
