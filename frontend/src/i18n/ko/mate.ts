@@ -149,9 +149,6 @@ const ko: Messages<"mate"> = {
   toolFeelPlain: "마음을 살피는 중",
 
   // 관계 패널 (상단 ♥ / 관계 표시 → docs/mate-memory-affinity.md §6.1)
-  relPanelOpen: "기억과 관계",
-  relPanelOpenTitle: "{name}의 기억과 우리 사이",
-  relPanelSub: "나와 {name}",
   relPanelError: "관계를 불러오지 못했어요: {error}",
   relPanelAffinity: "호감도",
   relPanelDaysTogether: { one: "함께한 지 {count}일", other: "함께한 지 {count}일" },
@@ -420,7 +417,6 @@ const ko: Messages<"mate"> = {
   toolStyleChanged: "대화 방식 변경: {what}",
   toolStyleProposed: "대화 방식 변경 제안: {what}",
   toolStyleSame: "대화 방식: 이미 그렇게 돼 있어요",
-  bondTitle: "기억과 관계",
   bondAdjust: "설정",
   notebookAll: "전체",
   notebookPeople: "사람",
