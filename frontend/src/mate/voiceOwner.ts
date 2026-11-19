@@ -136,9 +136,11 @@ export function deviceVoicing(mateId: string): boolean {
 const VOICING_EVERY_MS = 1000;
 const VOICING_GONE_MS = 3000;
 if (typeof window !== "undefined") {
-  setInterval(() => {
+  const voicing = setInterval(() => {
     for (const mateId of localVoicing) post({ type: "voicing", id: pageId, mateId, voicing: true });
   }, VOICING_EVERY_MS);
+  // (Node — the tests — must not stay up for it)
+  (voicing as unknown as { unref?: () => void }).unref?.();
   window.addEventListener("pagehide", () => {
     for (const mateId of localVoicing) post({ type: "voicing", id: pageId, mateId, voicing: false });
   });
@@ -221,12 +223,13 @@ if (channel) {
     peers.set(b.id, next);
     if (!prev || prev.rank !== next.rank || prev.focusAt !== next.focusAt || prev.speaking !== next.speaking || prev.mateId !== next.mateId || prev.hidden !== next.hidden) emit();
   };
-  setInterval(() => {
+  const sweep = setInterval(() => {
     const t = Date.now();
     let gone = false;
     for (const [id, p] of peers) if (t - p.seen > (p.hidden ? GONE_HIDDEN_MS : GONE_MS)) gone = peers.delete(id) || gone;
     if (gone) emit();
   }, 250);
+  (sweep as unknown as { unref?: () => void }).unref?.();
 }
 
 /** the order of candidates: reading now > rank > most recently focused > id (the same answer in every window) */

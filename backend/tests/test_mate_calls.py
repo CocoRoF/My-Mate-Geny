@@ -213,6 +213,159 @@ async def test_a_barge_in_stops_her_and_the_next_message_says_what_was_heard(db,
         await svc.shutdown()
 
 
+class RewindLine(FakeLine):
+    """The call's engine with a conversation it can take back (as the API engine's)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[tuple[str, str]] = []
+
+    async def reply(self, prompt, on_delta):
+        self.messages.append(("user", prompt))
+        try:
+            text = await super().reply(prompt, on_delta)
+        finally:
+            self.messages.append(("assistant", "…"))
+        return text
+
+    def mark(self) -> int:
+        return len(self.messages)
+
+    def rewind(self, mark: int) -> bool:
+        del self.messages[mark:]
+        return True
+
+
+async def test_they_went_on_after_a_pause_and_she_answers_the_whole_once(db, tmp_path, monkeypatch):
+    """The page's turn-taking sent their words at a pause, and they went on (an amend): her answer to the half nobody heard
+    goes — from the call and from her engine's conversation —, and the whole is answered as one."""
+    svc, store, _, calls, _ = _stack(db, tmp_path, monkeypatch)
+    line = RewindLine()
+
+    async def make_engine(call, system):
+        return line
+
+    calls.make_engine = make_engine
+    mate = store.create(name="Haru", persona={"language": "ko"}, llm={"model": "m1"})
+    try:
+        call = await calls.dial(mate["id"])
+        sent: list = []
+        calls.attach(call, sent.append)
+        await _wait(lambda: any(m["type"] == "done" for m in sent))
+        greeted = line.mark()
+        line.hold = asyncio.Event()  # (her answer to the half still being made…)
+        await calls.receive(call, {"type": "say", "text": "그래서 내가 어제 친구를 만났는데"})
+        await _wait(lambda: len(line.prompts) == 2)
+        line.hold = None
+        await calls.receive(call, {"type": "say", "text": "그래서 내가 어제 친구를 만났는데 생각보다 너무 재밌었어.", "amend": True})
+        await calls.settle(call)
+        await _wait(lambda: len(line.prompts) == 3 and call.reply_task.done())
+        assert line.prompts[-1] == "그래서 내가 어제 친구를 만났는데 생각보다 너무 재밌었어."
+        # her engine: the greeting, then their whole turn and her answer to it — the half never happened
+        assert line.messages[greeted:] == [("user", "그래서 내가 어제 친구를 만났는데 생각보다 너무 재밌었어."), ("assistant", "…")]
+        users = [x["text"] for x in call.transcript if x["who"] == "user"]
+        assert users == ["그래서 내가 어제 친구를 만났는데 생각보다 너무 재밌었어."]
+        mine = [x["text"] for x in call.transcript if x["who"] == "mate"]
+        assert len(mine) == 2 and mine[-1].endswith("재밌었어."), mine
+        assert any(d["ev"] == "turn.amend" and d["rewound"] and not d["heard"] for d in call.diag)
+
+        # again — but her answer had begun to play (the page stopped it: a barge with what was heard)
+        line.hold = asyncio.Event()
+        await calls.receive(call, {"type": "say", "text": "근데 있잖아"})
+        await _wait(lambda: len(line.prompts) == 4)
+        rid = [m for m in sent if m["type"] == "reply"][-1]["rid"]
+        await calls.receive(call, {"type": "barge", "rid": rid, "heard": "그렇구나."})
+        line.hold = None
+        await calls.receive(call, {"type": "say", "text": "근데 있잖아 다음 주에 또 보기로 했어", "amend": True, "rid": rid,
+                                   "heard": "그렇구나."})
+        await calls.settle(call)
+        await _wait(lambda: len(line.prompts) == 5 and call.reply_task.done())
+        assert "they heard only “그렇구나.”" in line.prompts[-1] and line.prompts[-1].endswith("근데 있잖아 다음 주에 또 보기로 했어")
+        tail = [(x["who"], x["text"]) for x in call.transcript][-4:]
+        assert tail[:3] == [("user", "근데 있잖아"), ("mate", "그렇구나."), ("user", "다음 주에 또 보기로 했어")], tail
+        await calls.hangup(call.id)
+    finally:
+        await calls.stop()
+        await svc.shutdown()
+
+
+async def test_an_engine_that_cant_take_back_is_told_they_had_not_finished(db, tmp_path, monkeypatch):
+    svc, store, _, calls, line = _stack(db, tmp_path, monkeypatch)
+    mate = store.create(name="Haru", persona={"language": "en"}, llm={"model": "m1"})
+    try:
+        call = await calls.dial(mate["id"])
+        sent: list = []
+        calls.attach(call, sent.append)
+        await _wait(lambda: any(m["type"] == "done" for m in sent))
+        await calls.receive(call, {"type": "say", "text": "so yesterday I met"})
+        await calls.settle(call)
+        await _wait(lambda: len(line.prompts) == 2 and call.reply_task.done())
+        await calls.receive(call, {"type": "say", "text": "so yesterday I met an old friend of mine", "amend": True})
+        await calls.settle(call)
+        await _wait(lambda: len(line.prompts) == 3)
+        assert line.prompts[-1].startswith("[They hadn't finished") and "never heard it" in line.prompts[-1]
+        assert line.prompts[-1].endswith("so yesterday I met an old friend of mine")
+        assert [x["who"] for x in call.transcript].count("user") == 1
+        await calls.hangup(call.id)
+    finally:
+        await calls.stop()
+        await svc.shutdown()
+
+
+async def test_words_said_over_her_are_an_aside_she_judges_and_her_answer_is_made_to_its_end(db, tmp_path, monkeypatch):
+    """Words of theirs over her voice that may not be for her (the page plays her on, turned down): her answer being
+    made isn't stopped; she is asked whether it was for her ([SILENT]: she goes on). Stopping to answer it, the page's
+    barge for what she was saying keeps what was heard — and leaves the next turn no note (her answer knew)."""
+    svc, store, _, calls, line = _stack(db, tmp_path, monkeypatch)
+    mate = store.create(name="Haru", persona={"language": "ko"}, llm={"model": "m1"})
+    try:
+        call = await calls.dial(mate["id"])
+        sent: list = []
+        calls.attach(call, sent.append)
+        await _wait(lambda: any(m["type"] == "done" for m in sent))
+        line.hold = asyncio.Event()  # (her answer still being made as they speak over it…)
+        await calls.receive(call, {"type": "say", "text": "옛날 얘기 해 줘"})
+        await _wait(lambda: len(line.prompts) == 2)
+        over = [m for m in sent if m["type"] == "reply"][-1]["rid"]
+        await calls.receive(call, {"type": "say", "text": "엄마 나 지금 통화 중이야", "aside": True, "over": over,
+                                   "over_heard": "그렇구나.", "seq": 7})
+        await asyncio.sleep(0.05)
+        assert len(line.prompts) == 2, "the aside waits for her answer to be made"
+        line.hold.set()
+        line.hold = None
+        await calls.settle(call)
+        await _wait(lambda: len(line.prompts) == 3 and call.reply_task.done())
+        assert call.replies[over]["done"] and not call.replies[over].get("cut"), "made to its end, never stopped"
+        p = line.prompts[-1]
+        assert p.startswith("[They said this while you were still talking (you had got to “그렇구나.”)") and "[SILENT]" in p
+        assert p.endswith("엄마 나 지금 통화 중이야")
+        assert any(x["who"] == "user" and x.get("aside") for x in call.transcript)
+        assert [m for m in sent if m["type"] == "reply"][-1].get("seq") == 7, "her reply says which of theirs it answers"
+        # she stopped to answer it: what was heard of the answer they spoke over is kept, no note for the next turn
+        await calls.receive(call, {"type": "barge", "rid": over, "heard": "그렇구나.", "aside": True})
+        await calls.settle(call)
+        mine = next(x for x in call.transcript if x.get("rid") == over)
+        assert mine["text"] == "그렇구나.…" and mine["cut"]
+        assert call.cut_note is None
+        await calls.receive(call, {"type": "say", "text": "응 이제 됐어"})
+        await calls.settle(call)
+        await _wait(lambda: len(line.prompts) == 4)
+        assert line.prompts[-1] == "응 이제 됐어"
+        await calls.hangup(call.id)
+    finally:
+        await calls.stop()
+        await svc.shutdown()
+
+
+def test_the_api_line_takes_back_a_turn_nobody_heard_answered():
+    e = ApiEngine("k", "sys")
+    e.messages = [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]
+    m = e.mark()
+    e.messages += [{"role": "user", "content": "half"}, {"role": "assistant", "content": "unheard"}]
+    assert e.rewind(m) and e.messages == [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]
+    assert not e.rewind(9)
+
+
 async def test_a_dropped_line_ends_the_call_and_her_turn_still_comes(db, tmp_path, monkeypatch):
     monkeypatch.setattr(calls_mod, "RESUME_S", 0.05)
     svc, store, mates, calls, line = _stack(db, tmp_path, monkeypatch)

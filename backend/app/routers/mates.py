@@ -838,14 +838,15 @@ async def transcribe(mate_id: str, request: Request, file: UploadFile = File(...
 
 
 @router.post("/{mate_id}/stt/realtime")
-async def realtime_stt(mate_id: str, request: Request, call: bool = False) -> Response:
+async def realtime_stt(mate_id: str, request: Request, call: bool = False, legacy: bool = False) -> Response:
     """A single-use ElevenLabs token for this mate's mic: ``{url, model, sample_rate, language,
     commit_strategy, silence, expires_in, fallback}`` — the page opens ``url`` (wss, the token inside) itself;
     the API key stays here. Failing: 4xx/502 ``{detail, code, fallback}`` (docs/mate.md §5). ``?call=1``: for a
-    phone call (docs/mate-calls.md): a shorter pause ends a sentence."""
+    phone call (docs/mate-calls.md): Scribe v3 Live, the page commits (its turn-taking); ``&legacy=1``: Scribe v2,
+    its own short pause commits (v3 not to be had)."""
     mate = _mate(request, mate_id)
     try:
-        out = await _voice(request).realtime_token(mate, call=call)
+        out = await _voice(request).realtime_token(mate, call=call, legacy=legacy)
     except RealtimeError as exc:
         return JSONResponse({"detail": str(exc), "code": exc.code, "fallback": exc.fallback}, status_code=exc.status,
                             headers={"Cache-Control": "no-store"})

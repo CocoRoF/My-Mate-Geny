@@ -45,19 +45,23 @@ Latency, measured on the test host (Claude Code 2.1.311, Haiku 5.5, the call pro
 characters, `.bench`-style runs of the real CLI): her **first answer of a call 1.4 s** to the first text (hidden behind
 the ring-back); after that, per utterance, **first text 0.53 – 0.58 s, first finished sentence 0.67 – 0.82 s**. A new
 process per utterance would pay the cold 1.4 – 1.9 s every time. The API path was not measured (no key on the test
-host); it skips the CLI's own overhead. End of speech → her first sound is then ≈ the pause that ends a sentence
-(0.7 s with ElevenLabs realtime on a call; 0.65 s of quiet for the VAD, plus the transcription of a recording) + the first
-sentence (≈ 0.7 s) + the first clip of her voice (`/speech`, one sentence). The page measures it on every reply
+host); it skips the CLI's own overhead. End of speech → her first sound is then ≈ the moment their turn goes to her
+(with ElevenLabs realtime on a call 0.4 – 0.8 s after their last word, measured — "Taking turns" below; 0.65 s of quiet
+for the VAD, plus the transcription of a recording) + the first sentence (≈ 0.7 s) + the first clip of her voice
+(`/speech`, one sentence). The page measures it on every reply
 (`metric`: end of their speech → her first sound); the call keeps the median (`latency` in the call's card and the admin
 log line `mate.call`).
 
 ## The voice loop (the page)
 
 - **Listening** (`listen.ts`), as the server's plan says (`plan.stt`, from her voice settings):
-  - **realtime** — her STT engine is ElevenLabs: Scribe v2 Realtime (`mate/stt/realtime.ts`) with a call's shorter pause
-    (`POST /api/mates/{id}/stt/realtime?call=1`: at most `voice.CALL_SILENCE` = 0.7 s), never stopping for quiet, and
-    the names said on the line as key terms (`voice.keyterms`: hers and her given name, theirs, what she calls them).
-    Her echo is filtered by text (`echo.ts`); the user's own words while she speaks are a barge-in at once.
+  - **realtime** — her STT engine is ElevenLabs: on a call **Scribe v3 Live**, committed by the page
+    (`POST /api/mates/{id}/stt/realtime?call=1`: `commit_strategy=manual`, `filter_background_audio=true`; the mate's
+    pause setting doesn't apply — the page's turn-taking says when a turn is over, below), never stopping for quiet. No
+    key terms on it (there it "hears" a key term at the start of any sound, and a short "응" as one — "한"). A key that
+    can't have v3 (`input` before the stream ever listened): Scribe v2 Realtime with its own 0.7 s pause
+    (`&legacy=1`, `voice.CALL_SILENCE`) and the names said on the line as key terms (`voice.keyterms`: hers and her
+    given name, theirs, what she calls them). Her echo is filtered by text (`echo.ts`).
     **It never goes deaf for a hiccup** (a call on 2026-11-17 heard nothing: one token request answered 502, and the
     stream's fallback was a recording transcribed only at the end — of a call, that is never): the server asks
     ElevenLabs once more on a 5xx or a dropped line, the page asks for the token again after 0.4 and 1.2 s
@@ -97,15 +101,64 @@ log line `mate.call`).
   page's AudioContext running, her audio element routed through it, a moment of silence played) — then 300 ms more,
   at most 3 s in all. Each of these, done while her first sentence played (the mic used to open at her first sound,
   her element was routed into the context on its first play), garbled the start of her hello on a phone.
-- **Barge-in**: their own words while she speaks → she stops and the server is told what of the reply was said
-  (`barge {rid, heard}`); a VAD start that may be her echo only turns her down until the transcript says. Her next
-  message starts "[They talked over you; of what you were saying they heard only: “…”]".
+- **Barge-in**: words meant to stop her while she speaks ("잠깐만", "그만", her name, "응?" — "Taking turns") → she
+  stops and the server is told what of the reply was said (`barge {rid, heard}`); a VAD start that may be her echo only
+  turns her down until the transcript says. Her next message starts "[They talked over you; of what you were saying
+  they heard only: “…”]". Other words of theirs over her are an aside (below): she goes on, turned down.
 - **Mute** sends silence (the stream stays open: unmuting is instant). **Speaker**: in the Android app the phone's route
   (below); elsewhere "speaker off" only turns her down.
 - **The line** `/ws/mate-calls/{id}`; a dropped socket reconnects (0.5, 1.5, 3 s) and gets what it missed of the reply
   again; the server keeps the call `RESUME_S` = 10 s; failing that: **연결이 끊겼어요**, the call ends (what was said is
   kept). A page that comes back (reload) finds her ringing again; a call it was on can't go on without its sound and is
   hung up cleanly.
+
+## Taking turns
+
+On the phone the feel is everything: answered the moment they are done, never cut off when they only paused, never
+stopped by an "응" or a word to someone else. A fixed pause can't do it — one long enough for "그래서 어제 친구를
+만났는데…" breathing in makes every "오늘 날씨 어때?" wait, one short enough cuts the first into pieces she answers
+half of. `mate/call/turns.ts` (`TurnTaker`, in `listen.ts`) decides instead, from the recognizer's live words, the
+microphone's level and her voice:
+
+- **The words say how long to wait** (`endState`, Korean endings): a finished sentence ("…어때?", "…했어", "갈게",
+  "입니까", a one-syllable verb said last: "이사 가") goes 0.2 s after their last word; one clearly going on (a
+  connective — 는데, 니까, 고, 서, 면 —, a particle left hanging — 친구를, 집에서 —, a filler, a pronoun said last — "응,
+  나…" —, a word cut off — "재미-") waits 0.8 s; in between ("내일 날씨", "응") 0.4 s (`SEND_MS`). Their voice still in
+  the microphone holds a turn too — words not shown yet — for at most 0.8 s from their last word or from where their
+  voice began again (so steady noise can't hold one open); her voice in the microphone (it can't tell then): 0.35 s
+  more.
+- **Faster than it waits**: at that point their words go to her (`say`) — she starts making her answer — while her
+  voice waits for the end to be sure (`CONFIRM_MS`: 0.25 / 0.6 / 1.3 s). Should they go on meanwhile, or their voice
+  come back before hers began (a **hold**, once a turn), her answer is dropped unheard and their whole turn goes again
+  (`say {amend: true}`): she answers all of it once. The same when they go on within 6 s and she has said less than
+  1.5 s of her answer — it stops, and the server keeps what they heard of it (`heard`).
+- **On the server** (`CallService._amend`): the half and her answer nobody heard go from the call and — the API line —
+  from her engine's conversation (`ApiEngine.mark` / `rewind`): she sees one turn. The CLI line can't take back: it is
+  told "[They hadn't finished — … All they said, to answer as a whole:]".
+- **While she talks**: a backchannel ("응", "맞아 맞아", "아 진짜?", a laugh) is them listening — let be. Words meant to
+  stop her (`addressed`: "잠깐만", "그만", "여보세요", "뭐라고", her name, "응?", "아니 그게…" — not when they began by
+  calling someone else, "엄마, …") stop her once still so 0.15 s later, and so does talking over her for 2 s. Anything
+  else only turns her down and goes to her as an **aside** (`say {aside, over, over_heard}`): the server lets her
+  answer being made finish, then asks her whether it was for her (`_aside`: "[They said this while you were still
+  talking … maybe not to you. If it wasn't for you, reply with exactly [SILENT] …]"). [SILENT]: she goes on where she
+  was, at her volume again; words: what she was saying stops there (`barge {aside: true}`, no note for the next turn)
+  and her answer is said.
+- **Robust to the room and the recognizer**, each measured on the live stream (below): a noise, a tag or a
+  hallucination is nobody's words; a new turn's first words need a sound behind them (the stream just opened: none),
+  and right after a turn a sound after it ended (Scribe v3 "hears" an "음." in the quiet after a last word); a new
+  segment echoing the one just closed ("밥" after "밥 먹었어?") is the recognizer's; a re-punctuated or briefly shortened
+  partial is no more words; a commit is only asked for a segment that showed words (one of a wordless stretch echoes
+  the last); a word cut where a segment closed ("내-" + "내일") is one word; a long stretch far quieter than their turns
+  (a TV across the room: < 0.25 × their usual loudness) is nobody's turn, and their own voice far louder than a turn
+  just sent takes that turn's place.
+
+Measured (2026-11-19, the real `TurnTaker` on a live Scribe v3 Live stream, TTS voices streamed in real time at a
+speaking level — `~/.cache/hrh-e2e/stt-lab`): a question → her turn 0.4 – 0.65 s after the last word; "응." 0.75 s; a
+1.2 s breath after "…만났는데", a 2.2 s pause after "근데 있잖아" (held as her voice was about to begin), a filler pause,
+a list with a pause, fan noise in the pause: each answered once, whole; "응 응", "아 진짜?", "맞아 맞아" over her:
+nothing; "잠깐만", "응?" over her: she stops (≈ 1 s after they began — the recognizer's lag); "엄마 나 지금 통화
+중이야" over her: an aside; dishes clattering after a turn, the quiet start of a call, a soft voice later: no phantom,
+nothing lost. Not solved: a TV heard before they ever spoke is taken for them (nothing to tell it by yet).
 
 ## During the call she only talks — and acts afterwards
 
@@ -340,7 +393,7 @@ is set again from the page only (there is no notice of a change to listen for).
 - `POST /api/mates/{id}/calls {device}` → `{call, plan}` (409 `code: busy`) · `GET /api/mate-calls/active` →
   `{call | null}` · `POST /api/mate-calls/{cid}/accept {device}` → `{call, plan}` · `…/answering` · `…/decline` ·
   `…/hangup` · `GET /api/mate-calls/link?device=` (the app's background link, above).
-- `/ws/mate-calls/{cid}`: client `say {text}`, `barge {rid, heard}`, `metric {rid, first_audio_ms, stt}`,
+- `/ws/mate-calls/{cid}`: client `say {text, amend?, heard?, rid?, aside?, over?, over_heard?}`, `barge {rid, heard, aside?}`, `metric {rid, first_audio_ms, stt}`,
   `diag {ev, t, …}` (a few short values), `hangup`, `ping`; server `state {call}`, `reply {rid, greeting}`, `delta {rid, text}`, `done {rid, text, ttft_ms}`,
   `ended {reason, call}`, `pong`.
 - `/ws/sessions`: `call.ring {call}` (the device she calls), `call.update {call}` (every window), `alarms.changed
@@ -371,7 +424,16 @@ is set again from the page only (there is no notice of a change to listen for).
   tones. `frontend/test/call-listen.test.ts`: what is theirs (overlapping her voice or not, short answers, a
   backchannel), a token refused for a moment, the stream out → a recording per utterance → the stream back, a key that
   fails. `frontend/test/mate-stt.test.ts`: the echo gate (a quick "응" in the tail, a backchannel, a barge-in once).
-- `backend/tests/test_mate_stt_realtime.py`: the token's key terms, a 5xx asked once more.
+- `frontend/test/call-turns.test.ts`: taking turns on a fake clock — the endings, a finished question at once, a pause
+  and more answered whole, a backchannel let be, words that stop her, an aside, a long stretch over her, a hold, and
+  each thing the live stream did (re-punctuation, a shortened partial, a key term alone, the quiet after a last word, an
+  echoed segment, a cut word, a TV). `frontend/test/call-session.test.ts`: the page's line — an aside that wasn't for
+  her (she goes on, at her volume again) and one that was (her answer stops what she was saying), more of an aside, a
+  stop word stopping every reply that is on, a hold. `backend/tests/test_mate_calls.py`: an amend (her answer nobody
+  heard taken back from the call and the engine; heard as she began: kept), the CLI line told, an aside (her answer
+  made to its end, the note, the barge with no note after).
+- `backend/tests/test_mate_stt_realtime.py`: the call's Scribe v3 Live (manual commit, background filtered, no key
+  terms) and v2 for a key without it (its pause, the key terms), a 5xx asked once more.
   `backend/tests/test_mate_calls.py`: the listening's `diag` kept with the call (line down and back, a silent reply).
 - `mobile/test/call.test.js`: the plugin registered, its methods and event named as the page calls them, the manifest,
   the proximity lock, `CallWebView` in Capacitor's layout, the call's wake and Wi-Fi locks.

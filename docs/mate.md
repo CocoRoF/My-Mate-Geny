@@ -984,7 +984,12 @@ captures are deleted and no image bytes are copied into app logs or long-term me
   *before* the gain, so the mouth doesn't depend on volume) → GainNode (the
   volume) → DynamicsCompressorNode (transparent at ≤ 100 %; a limiter above:
   threshold −6 dB, ratio 12) → speakers. Until the AudioContext runs (no gesture
-  yet) the element plays directly at min(volume, 100 %). The browser engine
+  yet) the element plays directly at min(volume, 100 %). The element is routed
+  before a clip plays — never into a clip already playing (`prepareOutput`: the
+  context resumed first, a moment at most, then 120 ms for the output to
+  settle): routed on its first play, with the context resuming as it began, the
+  first words after every page load (an app restart, a redeploy) came out
+  garbled. The browser engine
   (speechSynthesis) can only do 0–100 % (`utterance.volume`, clamped; the Voice
   tab says so). The Voice tab's slider (0–300 %, 100 % marked) is live for
   previews and the voice queue; leaving the tab puts the saved value back.

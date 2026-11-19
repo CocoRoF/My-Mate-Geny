@@ -7,9 +7,11 @@
  *
  * - Her reply streams in as text; every finished sentence goes to her voice at once (one ahead is synthesized while one
  *   plays: mate/audioQueue.ts, a queue of the call's own) and is her caption.
- * - They talk over her: with their own words heard (realtime / Web Speech) she stops at once; a VAD start may be her
- *   echo, so she is only turned down until the transcript says (then she stops, or goes on). The server is told what of
- *   the reply was actually said ("barge"), so she knows what they heard.
+ * - They talk over her: words meant to stop her ("잠깐만", her name — mate/call/turns.ts) stop her at once; other words
+ *   of theirs only turn her down, and go to her as an aside: she judges whether they were for her — an answer with words
+ *   stops what she was saying and is said; [SILENT] and she goes on where she was, at her volume again. A VAD start may
+ *   be her echo, so she is only turned down until the transcript says. The server is told what of a reply was actually
+ *   said ("barge"), so she knows what they heard.
  * - Calling her: the ring-back plays (at least one ring) until her first sound, then a click, then her voice — the clock
  *   starts there. Her calling: her hello was made while it rang, so it comes the moment they pick up.
  * - The line dropping reconnects (the server waits calls.RESUME_S); failing that, "the connection was lost" and the
@@ -62,7 +64,21 @@ interface Reply {
   greeting: boolean;
   metric: { endAt: number; stt: string } | null;
   measured: boolean;
+  /** when its first words played (ms; 0: not yet) */
+  heardFrom: number;
+  /** her answer to an aside (words said over her voice, maybe not to her): words of it stop what she was saying */
+  aside: boolean;
+  /** sentences of it with words, so far (waiting or not) */
+  words: number;
+  /** its sentences gone to her voice, not all begun (a hold takes back the ones not begun) */
+  queued: Sentence[];
 }
+
+/** a turn of theirs sent before its end was sure: her answer waits for it at most this long (mate/call/turns.ts
+ *  confirms long before — this is only so a lost confirm never leaves her mute) */
+const TURN_OPEN_MAX_MS = 4000;
+/** an aside's answer comes within this long, or she goes on (her volume back) as if it were nothing */
+const ASIDE_MAX_MS = 8000;
 
 /** (dialing) her voice waits for at least this much ring-back */
 const RING_AT_LEAST_MS = 1700;
@@ -127,6 +143,20 @@ export class CallSession {
   private micSilent = false;
   private offApp: (() => void) | null = null;
   private diagLater: Record<string, unknown>[] = [];
+  /** their turn went to her before its end was sure (realtime): her answer is made, its voice waits (`confirmTurn`) */
+  private turnOpen = false;
+  /** the reply on before their last turn went (one after it answers that turn) */
+  private answeredBefore = "";
+  private waiting: { r: Reply; s: Sentence }[] = [];
+  private turnTimer: ReturnType<typeof setTimeout> | undefined;
+  /** her answer they spoke over (an aside): it goes on, turned down, until her answer to the aside says */
+  private asideFor: Reply | null = null;
+  private asideTimer: ReturnType<typeof setTimeout> | undefined;
+  /** each "say" numbered (the server's reply to it says which): asides whose answer hasn't come, and those whose
+   *  answer is to go unheard (she was stopped meanwhile) */
+  private seq = 0;
+  private asideSeqs: number[] = [];
+  private orphans = new Set<number>();
   /** her voice on the call is hers in every window of this computer (the overlay's mouth moves with it) */
   private releaseVoice: (() => void) | null = null;
 
@@ -268,7 +298,16 @@ export class CallSession {
         const rid = String(msg.rid || "");
         const r = this.replies.get(rid);
         if (r) r.text = ""; // (sent again after a reconnect: the whole text comes once more)
-        else this.reply(rid, !!msg.greeting);
+        else {
+          const seq = typeof msg.seq === "number" ? msg.seq : -1;
+          this.asideSeqs = this.asideSeqs.filter((x) => x !== seq);
+          const mine = this.reply(rid, !!msg.greeting);
+          // (her answer to an aside, and she was stopped since: it goes unheard)
+          if (this.orphans.delete(seq)) {
+            mine.hushed = true;
+            this.send({ type: "barge", rid, heard: "" });
+          }
+        }
         return;
       }
       case "delta": {
@@ -285,8 +324,13 @@ export class CallSession {
         if (typeof msg.text === "string" && msg.text.startsWith(r.text)) r.text = msg.text;
         for (const s of r.stream.flush(r.text)) this.say(r, s);
         r.done = true;
+        // (an aside that wasn't for her: she goes on where she was)
+        if (r.aside && !r.words && !r.hushed) {
+          this.endAside(false);
+          return;
+        }
         // (she says nothing — silence is hers to keep: the screen shows it, so it isn't taken for a line gone dead)
-        if (!r.lines && !r.hushed && !r.greeting) this.ev.caption("…");
+        if (!r.lines && !r.hushed && !r.greeting && !r.aside && !this.turnOpen && r === this.current) this.ev.caption("…");
         // (a hello with nothing to say aloud: through all the same)
         if (r.greeting && !r.started.length && !this.held.length && !this.queue.getState().current && !this.queue.getState().pending) this.connectNow(Date.now());
         return;
@@ -298,7 +342,7 @@ export class CallSession {
   }
 
   private reply(rid: string, greeting: boolean): Reply {
-    const r: Reply = { rid, text: "", stream: new SentenceStream({ maxChars: 90 }), started: [], lines: 0, hushed: false, done: false, greeting, metric: this.pending, measured: false };
+    const r: Reply = { rid, text: "", stream: new SentenceStream({ maxChars: 90 }), started: [], lines: 0, hushed: false, done: false, greeting, metric: this.pending, measured: false, heardFrom: 0, aside: !greeting && !!this.asideFor, words: 0, queued: [] };
     this.pending = null;
     this.replies.set(rid, r);
     if (this.replies.size > 30) this.replies.delete(this.replies.keys().next().value!);
@@ -337,8 +381,16 @@ export class CallSession {
     }, ms));
   }
 
-  private say(r: Reply, s: Sentence): void {
+  private say(r: Reply, s: Sentence, again = false): void {
     if (r.hushed || this.over) return;
+    if (!again && s.speech && !SILENT.test(s.text)) r.words++;
+    // (their turn's end isn't sure yet: her answer is ready, but waits — they may go on, and then it is never heard)
+    if (this.turnOpen && !r.greeting) {
+      this.waiting.push({ r, s });
+      return;
+    }
+    // (her answer to what they said over her has words: what she was saying stops here)
+    if (r.aside && this.asideFor && s.speech && !SILENT.test(s.text)) this.endAside(true);
     if (s.speech) r.lines++;
     // (the caption is what she says now — when her voice can't play here, what she says at all; never [SILENT] itself)
     const shown = SILENT.test(s.text) ? "" : s.text;
@@ -349,6 +401,7 @@ export class CallSession {
     }
     const level = this.mate.prefs?.emotion ?? 2;
     const item: AudioQueueItem = { text: s.speech, emotion: voiceEmotionAt(level, s.emotion), meta: { rid: r.rid, display: s.text } };
+    r.queued.push(s);
     // (the line isn't ready for her voice yet: her words wait — prepareLine lets them go)
     if (!this.lineReady) {
       this.held.push(item);
@@ -399,6 +452,7 @@ export class CallSession {
     const r = meta?.rid ? this.replies.get(meta.rid) : undefined;
     if (r && r.hushed) return;
     if (r) r.started.push(meta?.display || item.text || "");
+    if (r && !r.heardFrom) r.heardFrom = now;
     this.said = [...this.said.filter((x) => now - x.at < ECHO_MS), { text: item.text || "", at: now }];
     this.ev.speaking(true);
     if (meta?.display) this.ev.caption(meta.display);
@@ -421,24 +475,132 @@ export class CallSession {
   /** she is speaking (her voice playing now) */
   private speakingNow = () => !!this.queue.getState().current;
 
+  /** her voice coming out now, or between two of its sentences — not a reply's first words still being made */
+  private audibleNow = (): boolean => {
+    const it = this.queue.getState().current;
+    if (!it) return false;
+    const rid = (it.meta as { rid?: string } | undefined)?.rid;
+    const r = rid ? this.replies.get(rid) : undefined;
+    return !r || r.started.length > 0;
+  };
+
   private spokenLately = () => {
     const now = Date.now();
     return this.said.filter((x) => now - x.at < ECHO_MS).map((x) => x.text);
   };
 
-  /** they talk over her: she stops; the server hears what of her reply was said */
+  /** they talk over her: she stops; the server hears what of her reply was said (and of the one an aside was said
+   *  over, still going on) */
   private interrupt(): void {
+    const a = this.asideFor;
+    this.asideFor = null;
+    clearTimeout(this.asideTimer);
+    // (her answers to asides not come yet: unheard when they come)
+    for (const x of this.asideSeqs) this.orphans.add(x);
+    this.asideSeqs = [];
     const r = this.current;
     const q = this.queue.getState();
-    if (!r || r.hushed) return;
-    if (!q.current && !q.pending && !this.held.length && r.done) return; // (she was done)
-    r.hushed = true;
+    const voice = !!(q.current || q.pending || this.held.length);
+    const stop = [r, a].filter((x, i, all): x is Reply => !!x && !x.hushed && all.indexOf(x) === i);
+    if (!stop.length || (!voice && stop.every((x) => x.done))) return; // (she was done)
+    for (const x of stop) {
+      x.hushed = true;
+      this.send({ type: "barge", rid: x.rid, heard: x.started.join(" ") });
+    }
     this.held = [];
     this.voiceEndedAt = Date.now();
     this.queue.stop();
     this.unduck();
     this.ev.speaking(false);
-    this.send({ type: "barge", rid: r.rid, heard: r.started.join(" ") });
+  }
+
+  /** her answer to an aside came: with words (`stop`) what she was saying stops there — the server keeps what was
+   *  heard of it; none ([SILENT]: it wasn't for her) and she goes on, at her volume again */
+  private endAside(stop: boolean): void {
+    const a = this.asideFor;
+    this.asideFor = null;
+    clearTimeout(this.asideTimer);
+    if (!a) return;
+    if (!stop) {
+      if (this.current?.aside) this.current = a;
+      this.unduck();
+      this.diag("aside.goon");
+      return;
+    }
+    this.diag("aside.answer");
+    if (a.hushed) return;
+    a.hushed = true;
+    this.held = this.held.filter((it) => (it.meta as { rid?: string } | undefined)?.rid !== a.rid);
+    this.queue.stop();
+    this.unduck();
+    this.send({ type: "barge", rid: a.rid, heard: a.started.join(" "), aside: true });
+  }
+
+  /** (realtime) their voice again after the end seemed sure, before her voice began: her answer waits once more */
+  private holdTurn(): void {
+    const r = this.current;
+    if (!r || r.hushed || r.greeting || r.started.length || this.asideFor) return;
+    this.turnOpen = true;
+    clearTimeout(this.turnTimer);
+    this.turnTimer = setTimeout(() => this.confirmTurn(), TURN_OPEN_MAX_MS);
+    // (her sentences gone to her voice, none begun: back to waiting)
+    const back = r.queued;
+    r.queued = [];
+    r.lines = 0;
+    if (back.length) {
+      this.held = this.held.filter((it) => (it.meta as { rid?: string } | undefined)?.rid !== r.rid);
+      this.queue.stop();
+    }
+    this.waiting = [...back.map((s) => ({ r, s })), ...this.waiting];
+    this.diag("turn.hold", { back: back.length });
+  }
+
+  /** (realtime) the end of their turn is sure: her answer to it may be heard */
+  private confirmTurn(): void {
+    clearTimeout(this.turnTimer);
+    if (!this.turnOpen) return;
+    this.turnOpen = false;
+    const w = this.waiting;
+    this.waiting = [];
+    // (only her answer to this turn: one to a turn they went on from was dropped)
+    for (const x of w) if (x.r === this.current && !x.r.hushed) this.say(x.r, x.s, true);
+    const r = this.current;
+    if (r && r.done && !r.lines && !r.hushed && !r.greeting && !r.aside) this.ev.caption("…");
+    if (r && r.aside && r.done && !r.words && !r.hushed) this.endAside(false);
+  }
+
+  /** (realtime) they went on after their turn went to her: her answer to it goes — unheard if it hadn't begun */
+  private resumeTurn(): void {
+    const r = this.current;
+    this.waiting = [];
+    this.turnOpen = true; // (the whole of it comes as an amend)
+    clearTimeout(this.turnTimer);
+    if (!r || r.hushed) return;
+    // (her answer to an aside not come yet: it will wait; the answer they spoke over goes on)
+    if (this.asideFor && r === this.asideFor) return;
+    const q = this.queue.getState();
+    const playing = (q.current?.meta as { rid?: string } | undefined)?.rid === r.rid;
+    if (r.started.length || playing) {
+      this.interrupt();
+      return;
+    }
+    r.hushed = true;
+    this.held = this.held.filter((it) => (it.meta as { rid?: string } | undefined)?.rid !== r.rid);
+  }
+
+  /** how long her current answer has played (ms) */
+  private heardMs = (): number => {
+    const r = this.current;
+    return r && r.heardFrom && !r.hushed ? Date.now() - r.heardFrom : 0;
+  };
+
+  /** turned down until her answer to an aside says (no timer of its own: the aside's) */
+  private keepDucked(): void {
+    clearTimeout(this.duckTimer);
+    if (!this.ducked) {
+      this.ducked = true;
+      this.applyVolume();
+    }
   }
 
   private duck(): void {
@@ -478,13 +640,23 @@ export class CallSession {
         lang: bcp47(mate.voice.stt.language || mate.persona.language) || undefined,
         plan: this.plan.stt,
         speaking: this.speakingNow,
+        audible: this.audibleNow,
         spoken: this.spokenLately,
         voicedAt: () => (this.speakingNow() ? Date.now() : this.voiceEndedAt),
+        heardMs: this.heardMs,
+        herNames: herNames(mate.name),
         muted: () => this.muted,
       },
       {
-        onUtterance: (text, endAt, how) => {
-          if (!this.muted && !early()) this.utter(text, endAt, how);
+        onUtterance: (text, endAt, how, amend, aside) => {
+          if (!this.muted && !early()) this.utter(text, endAt, how, !!amend, !!aside);
+        },
+        onConfirm: () => this.confirmTurn(),
+        onHold: () => {
+          if (!early()) this.holdTurn();
+        },
+        onResumed: () => {
+          if (!early()) this.resumeTurn();
         },
         onSpeech: (sure) => {
           if (early()) return;
@@ -517,14 +689,50 @@ export class CallSession {
     return this.listener.start();
   }
 
-  /** one finished utterance of theirs goes to her */
-  private utter(text: string, endAt: number, how: string): void {
+  /**
+   * One turn of theirs goes to her. `amend`: the whole of the last one again — they went on after a pause (her answer
+   * to the half was dropped, or stopped as it began: the server answers the whole). A realtime turn goes before its end
+   * is sure: her answer's voice waits for `confirmTurn` (mate/call/turns.ts).
+   */
+  private utter(text: string, endAt: number, how: string, amend = false, aside = false): void {
     if (this.over || !text.trim()) return;
     this.ev.partial("");
     this.ev.userTalking(false);
-    this.interrupt(); // (a whole sentence of theirs while she spoke: theirs wins)
+    const q = this.queue.getState();
+    const voice = !!(q.current || q.pending || this.held.length);
+    // (said over her voice, maybe not to her — or more of such an aside: she goes on, turned down, while she judges)
+    const over = this.asideFor && !this.asideFor.hushed ? this.asideFor : aside && voice && this.current && !this.current.hushed ? this.current : null;
+    if (over && (aside || amend)) {
+      if (amend) this.resumeTurn();
+      this.asideFor = over;
+      this.keepDucked();
+      clearTimeout(this.asideTimer);
+      this.asideTimer = setTimeout(() => this.endAside(false), ASIDE_MAX_MS);
+      this.waiting = [];
+      this.turnOpen = how === "realtime";
+      clearTimeout(this.turnTimer);
+      if (this.turnOpen) this.turnTimer = setTimeout(() => this.confirmTurn(), TURN_OPEN_MAX_MS);
+      this.pending = { endAt, stt: how };
+      const prev = amend && this.current && this.current.aside ? this.current : null;
+      const seq = ++this.seq;
+      if (this.send({ type: "say", seq, text, aside: true, ...(amend ? { amend: true, heard: "", ...(prev ? { rid: prev.rid } : {}) } : {}), over: over.rid, over_heard: over.started.join(" ") }))
+        this.asideSeqs.push(seq);
+      else this.pending = null;
+      return;
+    }
+    // (her answer to the half — what of it they heard, for the server to keep as said)
+    const half = amend && this.current && !this.current.greeting && this.current.rid !== this.answeredBefore ? this.current : null;
+    const heard = half ? half.started.join(" ") : "";
+    if (amend) this.resumeTurn();
+    else this.interrupt(); // (a whole sentence of theirs while she spoke: theirs wins)
+    this.waiting = [];
+    this.turnOpen = how === "realtime";
+    clearTimeout(this.turnTimer);
+    if (this.turnOpen) this.turnTimer = setTimeout(() => this.confirmTurn(), TURN_OPEN_MAX_MS);
     this.pending = { endAt, stt: how };
-    if (!this.send({ type: "say", text })) this.pending = null;
+    if (!amend) this.answeredBefore = this.current?.rid ?? "";
+    const more = amend ? { amend: true, heard, ...(half ? { rid: half.rid } : {}) } : {};
+    if (!this.send({ type: "say", seq: ++this.seq, text, ...more })) this.pending = null;
   }
 
   /** words for her without the mic (checks from the console, browser tests: window.__hrhCall) */
@@ -559,6 +767,8 @@ export class CallSession {
     this.over = true;
     clearTimeout(this.holdTimer);
     clearTimeout(this.duckTimer);
+    clearTimeout(this.turnTimer);
+    clearTimeout(this.asideTimer);
     clearInterval(this.pingTimer);
     this.offApp?.();
     this.offApp = null;
@@ -587,3 +797,11 @@ export class CallSession {
   }
 }
 
+/** her names as they'd be called: the whole, and a Korean given name ("한채린" → "채린") */
+export function herNames(name: string): string[] {
+  const n = (name || "").trim();
+  if (!n) return [];
+  const out = [n];
+  if (/^[\uac00-\ud7a3]{3}$/.test(n)) out.push(n.slice(1));
+  return out;
+}

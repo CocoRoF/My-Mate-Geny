@@ -47,6 +47,8 @@ ELEVEN_REALTIME_MODELS = [
     {"id": "scribe_v2_realtime", "name": "Scribe v2 Realtime",
      "description": "Live transcript while you speak (~150 ms), 90+ languages"},
 ]
+# a phone call's ear (voice.realtime_token(call=True)): Scribe v3 Live, committed by the page's turn-taking
+ELEVEN_CALL_STT = "scribe_v3_live"
 ELEVEN_BATCH_STT = "scribe_v2"
 # the TTS model a mate speaks with when her voice names none (Eleven v4 Turbo)
 ELEVEN_DEFAULT_MODEL = "eleven_v4_turbo"

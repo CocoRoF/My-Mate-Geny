@@ -1316,10 +1316,11 @@ export class RealtimeTokenError extends Error {
 
 /** a single-use ElevenLabs realtime token for this mate's mic (the key never leaves the server); `call`: for a phone call
  *  (a shorter pause ends a sentence — docs/mate-calls.md) */
-export async function realtimeSttToken(id: string, opts: { call?: boolean } = {}): Promise<RealtimeSttToken> {
+export async function realtimeSttToken(id: string, opts: { call?: boolean; legacy?: boolean } = {}): Promise<RealtimeSttToken> {
   let res: Response;
+  const q = [opts.call ? "call=1" : "", opts.legacy ? "legacy=1" : ""].filter(Boolean).join("&");
   try {
-    res = await fetch(`/api/mates/${enc(id)}/stt/realtime${opts.call ? "?call=1" : ""}`, { method: "POST", cache: "no-store" });
+    res = await fetch(`/api/mates/${enc(id)}/stt/realtime${q ? `?${q}` : ""}`, { method: "POST", cache: "no-store" });
   } catch (e) {
     throw new RealtimeTokenError((e as Error).message || String(e), "network", null);
   }
