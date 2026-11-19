@@ -29,7 +29,8 @@ def test_each_engine_gets_its_own_search_and_none_when_off(db, tmp_path, monkeyp
     codex = mates.conversation(sol["id"])["session"]
     req = _req(claude, tmp_path)
     mates.configure_engine(claude, req)
-    assert req.tools == ["WebSearch"] and set(req.allowed_tools) == {"mcp__mate", "WebSearch"} and not req.web_search
+    # (and the pages it finds: the latest of anything is on its official page, not in the snippets)
+    assert req.tools == ["WebSearch", "WebFetch"] and set(req.allowed_tools) == {"mcp__mate", "WebSearch", "WebFetch"} and not req.web_search
     assert "## Searching the web" in open(req.system_prompt_file).read()
     assert "HRH_MATE_SEARCH" not in req.mcp_config["mcpServers"]["mate"]["env"]  # (it has its own)
     on_key = req.prompt_key
@@ -73,3 +74,14 @@ async def test_the_servers_search_is_refused_when_off(db, tmp_path, monkeypatch)
     store.update_settings({"web_search": False})
     out, err, _ = await mates.call_tool_full({"mate_id": m["id"], "session_id": "s"}, "search_web", {"query": "서울 날씨"})
     assert err and "switched off" in out
+
+
+def test_a_search_reply_closing_list_of_pages_is_shown_not_said():
+    from app.mate.voice import speakable_text
+
+    reply = ("오빠, 공식 포럼 패치 노트를 보니 3.27 리그가 이번 주 금요일에 열려요.\n\nSources:\n"
+             "- [Path of Exile 3.27 patch notes](https://www.pathofexile.com/forum/view-thread/1)\n- https://poe.ninja\n")
+    assert speakable_text(reply) == "오빠, 공식 포럼 패치 노트를 보니 3.27 리그가 이번 주 금요일에 열려요."
+    assert speakable_text("**출처:**\n1. [a](https://a.example)") == ""
+    # (a "sources" in the middle of what she says is words)
+    assert speakable_text("출처: 공식 포럼이에요. 오늘 열렸대요.") == "출처: 공식 포럼이에요. 오늘 열렸대요."

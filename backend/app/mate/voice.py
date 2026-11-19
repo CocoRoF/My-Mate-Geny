@@ -76,9 +76,14 @@ _RULE = re.compile(r"^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$", re.M)
 _SYMBOLS = re.compile(r"[*_#>|`\[\]]")
 
 
+# a reply's closing list of the pages a web search used ("Sources:" / "출처:" and its links): shown, never said
+_SOURCES = re.compile(r"\n[ \t]*(?:\*\*|__)?(?:sources?|references?|출처|참고(?: ?자료)?)(?:\*\*|__)?[ \t]*[:：]?(?:\*\*|__)?[ \t]*\n"
+                      r"(?:[ \t]*(?:[-*+•]|\d{1,3}[.)])?[ \t]*\S.*(?:\n|$)|[ \t]*\n)+\Z", re.I)
+
+
 def speakable_text(text: str) -> str:
     """Text for a TTS engine without markdown: what a person would say."""
-    s = (text or "").replace("\r\n", "\n")
+    s = _SOURCES.sub("\n", "\n" + (text or "").replace("\r\n", "\n")).lstrip("\n")
     if not re.search(r"[`~|<>\[\]*_#]|https?://|www\.|-{3}|^[ \t]*(?:[-+]|\d{1,3}[.)])[ \t]", s, re.M):
         return s.strip()
     s = _FENCE.sub(" ", s)

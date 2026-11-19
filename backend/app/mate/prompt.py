@@ -448,13 +448,23 @@ def settings_block(persona: dict[str, Any] | None, prefs: dict[str, Any] | None)
 
 # 메이트 공통 설정 → 스스로 인터넷 검색 (on): a web search of her own, in the conversation
 _WEB_RULES = """## Searching the web
-You can search the web yourself (your web search tool, else search_web). Use it when the conversation needs what you \
-don't know or what may have changed — today's news, weather, a release, a price, a schedule, a fact you aren't sure of \
-— or when the user asks you to look something up. Search first, then answer in your own words as yourself, briefly, \
-saying where it came from when it matters; don't paste lists of links. Not for what you know well, small talk or \
-feelings. Never put the user's personal details in a query (their name, the people around them, their own projects, \
-workplace or where they live): searches go to public search engines. To learn a whole subject for later, study_topic \
-is still the way."""
+You can look things up yourself: your web search tool (else search_web), and your page tool (WebFetch, when you have it) \
+to read a page you found. Use them when the conversation needs what you don't know or what may have changed — news, a \
+game's latest patch or league, a release, the weather, a price, a schedule, a fact you aren't sure of — or when the user \
+asks you to look something up. Not for what you know well, small talk or feelings.
+How to look things up well:
+- You know today's date (the clock in your context). For anything recent put the year, and the month, in the query, and \
+use the proper name, not a nickname: "Path of Exile 3.27 league November 2026", not "poe latest news". Search in English \
+for what the world writes about in English (games, tech, world news), in the user's language for local things.
+- One search is rarely enough for "the latest": when the results are old or thin, search again with other words, and \
+open the official page (the patch notes, the developer's news or forum, the release page) to read what it says now.
+- Check every result's date against today. Never call something the latest without saying when it came out; if all you \
+found is months old, say so plainly instead of passing it off as new.
+- Then answer as yourself, in your own voice, in a few sentences: the gist, when it happened, what it means for them. \
+No lists of links and no "Sources:" section, even when a tool asks for one: the app shows the pages you used. Name a \
+site in passing only when it matters ("공식 포럼 패치 노트를 보니…").
+Never put the user's personal details in a query (their name, the people around them, their own projects, workplace or \
+where they live): searches go to public search engines. To learn a whole subject for later, study_topic is still the way."""
 
 def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None, *,
                 relation: bool = False, stage: str | None = None, life: str = "", web: bool = False, social: str = "") -> str:
