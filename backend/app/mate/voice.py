@@ -34,7 +34,7 @@ from urllib.parse import quote, urlencode
 
 from app.mate import files, netio
 from app.mate import state as S
-from app.mate.providers import (ELEVEN_BATCH_STT, ELEVEN_DEFAULT_MODEL, ELEVEN_REALTIME_MODELS, Providers, elevenlabs_api,
+from app.mate.providers import (ELEVEN_BATCH_STT, ELEVEN_CALL_STT, ELEVEN_DEFAULT_MODEL, ELEVEN_REALTIME_MODELS, Providers, elevenlabs_api,
                                 openai_api, openai_voices)
 from app.mate.store import MateError, MateStore, normalize_voice
 from app.voicehost import nonverbal
@@ -45,7 +45,7 @@ log = logging.getLogger(__name__)
 OPENAI_TTS_DEFAULT = "gpt-4o-mini-tts"
 OPENAI_STT_DEFAULT = "gpt-4o-mini-transcribe"
 MINT_PER_MINUTE = 20      # realtime STT tokens per mate and minute (a client stuck reconnecting can't loop)
-CALL_SILENCE = 0.7        # a phone call's end of a sentence: this much quiet at most (realtime_token(call=True))
+CALL_SILENCE = 0.7        # a phone call's end of a sentence on Scribe v2 (realtime_token(call=True, legacy=True))
 MAX_TEXT = 4000
 MAX_AUDIO_IN = 25 * 1024 * 1024   # the OpenAI transcription limit
 CACHE_MAX_BYTES = 300 * 1024 * 1024
@@ -602,15 +602,18 @@ class VoiceService:
             return "google"
         return None
 
-    async def realtime_token(self, mate: dict[str, Any], *, call: bool = False) -> dict[str, Any]:
+    async def realtime_token(self, mate: dict[str, Any], *, call: bool = False, legacy: bool = False) -> dict[str, Any]:
         """A single-use ElevenLabs token for the mate's mic (Scribe v2 Realtime, docs/mate.md §5).
 
         The page connects to ElevenLabs itself with the returned ``url`` (the token rides in it; it is consumed
         on use and expires after 15 minutes): the API key never leaves this server, and is never logged. Every
         (re)connect asks for a fresh token. Failure → :class:`RealtimeError` with a ``code`` (``missing`` /
         ``auth`` / ``quota`` / ``busy`` / ``network`` / ``upstream``) and the ``fallback`` engine to use.
-        ``call``: for a phone call (app/mate/calls.py) — the end of a sentence is told sooner (at most
-        :data:`CALL_SILENCE` s of quiet), so she answers like on the phone."""
+        ``call``: for a phone call (app/mate/calls.py, docs/mate-calls.md "Taking turns") — Scribe v3 Live, committed
+        by the page (``commit_strategy`` "manual": its turn-taking tells the end of a turn by the words, in a quarter
+        second or a second and more, not by a fixed pause), background voices and noise filtered out; the mate's
+        pause setting doesn't apply. ``legacy``: a call on Scribe v2 instead (v3 not to be had with this key) —
+        its own pause ends a stretch (:data:`CALL_SILENCE` s at most)."""
         stt = mate["voice"]["stt"]
         if (stt.get("engine") or "browser") != "elevenlabs":
             raise MateError("this mate's speech recognition is not ElevenLabs realtime")
@@ -651,19 +654,27 @@ class VoiceService:
         self._minted[mate["id"]] = recent
         language = (stt.get("language") or mate["persona"].get("language") or "").split("-")[0].lower()
         silence = float(stt.get("silence") or 1.2)
-        if call:
-            silence = min(silence, CALL_SILENCE)
-        query: dict[str, Any] = {"model_id": ELEVEN_REALTIME_MODELS[0]["id"], "token": token, "audio_format": "pcm_16000",
-                                 "commit_strategy": "vad", "vad_silence_threshold_secs": f"{silence:g}"}
+        if call and not legacy:
+            silence = 0.0
+            query: dict[str, Any] = {"model_id": ELEVEN_CALL_STT, "token": token, "audio_format": "pcm_16000",
+                                     "commit_strategy": "manual", "filter_background_audio": "true"}
+        else:
+            if call:
+                silence = min(silence, CALL_SILENCE)
+            query = {"model_id": ELEVEN_REALTIME_MODELS[0]["id"], "token": token, "audio_format": "pcm_16000",
+                     "commit_strategy": "vad", "vad_silence_threshold_secs": f"{silence:g}"}
         if language:
             query["language_code"] = language
-        terms = keyterms(mate)
+        # (her name and theirs, as said on the line: heard as names, not as words like them — not on a call's Scribe v3
+        # Live: there it "hears" a key term at the start of any sound, and a short "응" as one — "한")
+        terms = keyterms(mate) if not (call and not legacy) else []
         if terms:
-            query["keyterms"] = terms  # (her name and theirs, as said on the line: heard as names, not as words like them)
+            query["keyterms"] = terms
         ws = re.sub(r"^http", "ws", elevenlabs_api()) + "/speech-to-text/realtime?" + urlencode(query, doseq=True)
-        log.info("mate %s: realtime speech-to-text token issued (lang=%s)", mate["id"], language or "auto")
+        log.info("mate %s: realtime speech-to-text token issued (%s, lang=%s)", mate["id"], query["model_id"],
+                 language or "auto")
         return {"url": ws, "model": query["model_id"], "sample_rate": 16000, "language": language,
-                "commit_strategy": "vad", "silence": silence, "expires_in": 900,
+                "commit_strategy": query["commit_strategy"], "silence": silence, "keyterms": terms, "expires_in": 900,
                 "fallback": self.stt_fallback()}
 
     async def transcribe(self, mate: dict[str, Any], audio: bytes, filename: str, content_type: str,

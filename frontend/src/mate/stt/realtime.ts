@@ -28,6 +28,11 @@ export interface RealtimeToken {
   sample_rate?: number;
   language?: string;
   fallback?: string | null;
+  /** "manual": the page commits (a call's turn-taking); "vad": the stream does, after `silence` s of quiet */
+  commit_strategy?: string;
+  silence?: number;
+  /** the names it was told to expect (her name, theirs) */
+  keyterms?: string[];
 }
 
 export class TokenError extends Error {
@@ -81,6 +86,8 @@ export interface RealtimeCallbacks {
   onPartial?: (text: string) => void;
   /** a finished utterance (committed by ElevenLabs' VAD, by stop(), or transcribed by the fallback) */
   onSegment?: (text: string, how: "realtime" | "fallback") => void;
+  /** every committed text as it comes — the user's words of it, "" when none (a call's turn-taking: mate/call/turns.ts) */
+  onCommitted?: (text: string) => void;
   /** the user started talking while she speaks (barge-in on) */
   onBargeIn?: () => void;
   /** a committed text the echo filter took for hers (or for them listening), not passed on */
@@ -88,8 +95,8 @@ export interface RealtimeCallbacks {
   onNotice?: (n: RealtimeNotice) => void;
   /** the session ended with a failure (start / mic / no fallback) */
   onError?: (code: SttFailure, message: string, serverFallback: string | null) => void;
-  /** mic level 0..1 (per chunk) */
-  onLevel?: (level: number) => void;
+  /** mic level 0..1 (per chunk); `raw`: the same, unclipped (a loud voice above 1) */
+  onLevel?: (level: number, raw: number) => void;
 }
 
 const OPEN = 1;
@@ -167,6 +174,24 @@ export class RealtimeStt {
     this.armIdle();
   }
 
+  /**
+   * The final text of what was heard so far, now (a call's turn-taking decided they finished: mate/call/turns.ts) — it
+   * comes as a committed transcript (≈ 0.25 s). Before the stream is up, the commit goes with its first audio.
+   */
+  commitNow(): void {
+    if (this.done || this.mode !== "live") return;
+    if (this.ws && this.ws.readyState === OPEN && this.started) {
+      this.flushPending();
+      this.send(new Int16Array(0), true);
+    } else this.commitPending = true;
+  }
+
+  private commitPending = false;
+  /** the stream's own pause before it commits (0: it doesn't — the page does) */
+  commitSilenceMs = 700;
+  /** the names the stream was told to expect */
+  keyterms: string[] = [];
+
   /** the microphone error object of the last mic failure (for the page's wording) */
   micError: unknown = null;
 
@@ -191,7 +216,7 @@ export class RealtimeStt {
     let s = 0;
     for (let i = 0; i < pcm.length; i += 4) s += pcm[i] * pcm[i];
     const loud = Math.sqrt(s / Math.max(1, pcm.length / 4));
-    this.cb.onLevel?.(muted ? 0 : Math.min(1, loud / 8000));
+    this.cb.onLevel?.(muted ? 0 : Math.min(1, loud / 8000), muted ? 0 : loud / 8000);
     // (a recording has no transcript to tell speech from quiet: its loudness does)
     if (this.mode === "record" && loud > 600 && !muted) this.lastSpeech = now;
     // (the fallback hears what the stream would have)
@@ -201,7 +226,8 @@ export class RealtimeStt {
     if (this.mode !== "live") return;
     if (this.ws && this.ws.readyState === OPEN && this.started) {
       this.flushPending();
-      this.send(out);
+      this.send(out, this.commitPending);
+      this.commitPending = false;
     } else {
       this.pending.push(out);
       if (this.pending.length > MAX_BUFFERED) this.pending.shift();
@@ -239,6 +265,8 @@ export class RealtimeStt {
     }
     if (this.done || gen !== this.connectGen) return;
     this.serverFallback = tok.fallback ?? null;
+    this.commitSilenceMs = tok.commit_strategy === "manual" ? 0 : Math.round((tok.silence ?? 0.7) * 1000);
+    this.keyterms = Array.isArray(tok.keyterms) ? tok.keyterms.filter((x) => typeof x === "string") : [];
     const ws = (this.d.newSocket ?? ((u: string) => new WebSocket(u) as unknown as WsLike))(tok.url);
     this.ws = ws;
     this.started = false;
@@ -288,6 +316,7 @@ export class RealtimeStt {
       case "committed": {
         const mine = this.gate.committed(ev.text, this.d.spoken(), now);
         if (!mine && ev.text.trim()) this.cb.onDropped?.(ev.text.trim());
+        this.cb.onCommitted?.(mine?.trim() || "");
         const text = mine?.trim() || this.carry;
         this.carry = "";
         this.partialText = "";

@@ -204,6 +204,7 @@ export function getAudioContext(): AudioContext | null {
  * later touch/click so a context re-suspended in the background comes back on the next interaction.
  */
 export function unlockAudio(): void {
+  resumeStalled = false;
   const c = getAudioContext();
   if (c && c.state !== "running") void c.resume().catch(() => {});
   if (gestureHooked || typeof document === "undefined") return;
@@ -313,6 +314,38 @@ export async function routeOutput(el: HTMLMediaElement): Promise<boolean> {
   return graphFor(el) !== null;
 }
 
+let resumeStalled = false; // (the context's resume waited for and never came: no gesture yet — not waited for again)
+
+/**
+ * Before a clip plays on `el`: the element routed through Web Audio now, while it is quiet — never once a clip is
+ * playing (an element routed into the context mid-clip, the context just resumed, garbles that clip: a page's first
+ * words after it loaded always came out wrong). The context is resumed first and waited for a moment at most (a page
+ * the browser lets play: at once, then a moment for the output to settle; one it doesn't yet: the clip plays as it is).
+ */
+export async function prepareOutput(el: HTMLMediaElement, waitMs = 400): Promise<void> {
+  if (elementGraphs.has(el)) return;
+  const c = getAudioContext();
+  if (!c) return;
+  if (c.state !== "running") {
+    if (resumeStalled) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      c.resume().catch(() => {}),
+      new Promise<void>((done) => {
+        timer = setTimeout(done, waitMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    if ((c.state as AudioContextState) !== "running") {
+      resumeStalled = true;
+      return;
+    }
+    await new Promise<void>((done) => setTimeout(done, 120)); // (the output device opening)
+  }
+  if (!el.paused) return;
+  graphFor(el);
+}
+
 function graphFor(el: HTMLMediaElement): AnalyserNode | null {
   const known = elementGraphs.get(el);
   if (known) return known.an;
@@ -398,11 +431,14 @@ export function attachAudio(target: HTMLMediaElement | AudioNode, id = `voice-${
   }
 
   const el = target as HTMLMediaElement;
-  const play = () => {
+  const play = (e?: Event) => {
     if (el.dataset.mateSilent) return; // an autoplay unlock playing silence
     const c = getAudioContext();
     if (c && c.state !== "running") void c.resume().catch(() => {});
-    an = graphFor(el);
+    // (routed now only as it begins, the context already running: never into a clip already playing — that garbles it;
+    // the queue routes its element before a clip, prepareOutput)
+    const begins = e?.type === "play" && el.currentTime < 0.05;
+    an = elementGraphs.get(el)?.an ?? (begins ? graphFor(el) : null);
     data = an ? new Uint8Array(an.frequencyBinCount) : null;
     start(id);
     run();

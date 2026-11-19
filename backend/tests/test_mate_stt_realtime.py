@@ -169,8 +169,18 @@ def test_token_names_on_the_line_and_a_moment_of_failure(client, http):
     assert out.status_code == 200, out.text
     assert len([c for c in http.calls if is_token(c["method"], c["url"])]) == 2, "asked once more"
     q = parse_qs(urlparse(out.json()["url"]).query)
-    assert q["keyterms"] == ["한채린", "장하렴", "자기야", "채린"]
-    assert q["vad_silence_threshold_secs"] == ["0.7"]
+    # (not on a call's Scribe v3 Live: there key terms are "heard" in any sound)
+    assert "keyterms" not in q
+    # a call: Scribe v3 Live, committed by the page's turn-taking (no pause setting), background filtered
+    assert q["model_id"] == ["scribe_v3_live"] and q["commit_strategy"] == ["manual"]
+    assert q["filter_background_audio"] == ["true"] and "vad_silence_threshold_secs" not in q
+    assert out.json()["commit_strategy"] == "manual"
+    # (v3 not to be had: Scribe v2, its own short pause)
+    http.on(is_token, _json(200, {"token": TOKEN}))
+    old = client.post(f"/api/mates/{mid}/stt/realtime?call=1&legacy=1").json()
+    q = parse_qs(urlparse(old["url"]).query)
+    assert q["model_id"] == ["scribe_v2_realtime"] and q["vad_silence_threshold_secs"] == ["0.7"]
+    assert old["commit_strategy"] == "vad" and q["keyterms"] == ["한채린", "장하렴", "자기야", "채린"]
 
 
 def test_token_needs_the_engine_and_is_rate_limited(client, http):

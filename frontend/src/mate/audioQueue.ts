@@ -19,6 +19,7 @@ import {
   level as voiceLevel,
   MAX_VOLUME,
   outputGain,
+  prepareOutput,
   routeOutput,
   setOutputVolume,
   start as voiceStart,
@@ -279,6 +280,9 @@ export class MateAudioQueue {
     this.publish();
     const clip = await this.resolve(job);
     this.prefetchAhead();
+    if (this.playing !== job || job.abort.signal.aborted) return;
+    // (its element routed through Web Audio before the clip plays — never as it plays: that garbled a page's first clip)
+    if (clip) await prepareOutput(this.element()).catch(() => {});
     if (this.playing !== job || job.abort.signal.aborted) return;
     try {
       if (clip) await this.playClip(job, clip);

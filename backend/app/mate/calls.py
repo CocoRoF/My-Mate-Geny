@@ -54,6 +54,7 @@ RESUME_S = 10                     # a dropped call socket may come back this lon
 MAX_CALL_S = 60 * 60              # an hour at most
 MAX_REPLY_TOKENS = 400
 MAX_TEXT = 2000                   # one utterance
+ASIDE_WAIT_S = 10                 # words said over her: her answer being made is made to its end first, this long at most
 MAX_TRANSCRIPT = 400              # lines kept
 DIAG_KEEP = 150                   # the page's listening diagnostics kept with a call (calls.CallService._diag)
 RECENT_MESSAGES = 16              # of the chat, for the call's prompt
@@ -204,6 +205,18 @@ class ApiEngine:
             self.messages.append({"role": "assistant", "content": text or "…"})
         return text
 
+    def mark(self) -> int:
+        """Where the conversation is now (:meth:`rewind` goes back to it)."""
+        return len(self.messages)
+
+    def rewind(self, mark: int) -> bool:
+        """The conversation as it was at ``mark``: a turn they hadn't finished, and her answer to it nobody heard, gone
+        — the whole of it comes as one."""
+        if not 0 <= mark <= len(self.messages):
+            return False
+        del self.messages[mark:]
+        return True
+
     async def close(self) -> None:
         if self._release is not None:
             release, self._release = self._release, None
@@ -343,12 +356,17 @@ class Call:
     send: Callable[[dict[str, Any]], None] | None = None
     socket: str = ""
     cut_note: str | None = None
+    #: their last turn as it went to her engine — to take back when they went on (an amend): the engine, where its
+    #: conversation was before it (its ``mark``), the note it came with
+    last_turn: dict[str, Any] | None = None
     restarted: bool = False
     tool_attempts: int = 0    # times the model reached for a tool it doesn't have (never run)
     local_models: list[str] = field(default_factory=list)  # her local voice models held on the GPU for this call
     tasks: set[asyncio.Task] = field(default_factory=set)
     timers: list[asyncio.TimerHandle] = field(default_factory=list)
     reply_task: asyncio.Task | None = None
+    reply_rid: str = ""       # the reply reply_task is making
+    say_seq: int | None = None  # the page's number for the "say" being answered (its reply says it)
     ready: asyncio.Event = field(default_factory=asyncio.Event)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     answering: bool = False   # picked up on the phone's ringing; the app is coming up to take it
@@ -582,9 +600,15 @@ class CallService:
         listening: a hang-up is never stuck behind a reply)."""
         kind = msg.get("type")
         if kind == "say":
-            self._spawn(call, self._in_order(call, self._say(call, str(msg.get("text") or ""))))
+            heard, seq = msg.get("heard"), msg.get("seq")
+            self._spawn(call, self._in_order(call, self._say(
+                call, str(msg.get("text") or ""), amend=bool(msg.get("amend")),
+                heard=str(heard) if isinstance(heard, str) else None, rid=str(msg.get("rid") or ""),
+                aside=bool(msg.get("aside")), over=str(msg.get("over") or ""), over_heard=str(msg.get("over_heard") or ""),
+                seq=seq if isinstance(seq, int) and not isinstance(seq, bool) else None)))
         elif kind == "barge":
-            self._spawn(call, self._in_order(call, self._barge(call, str(msg.get("rid") or ""), str(msg.get("heard") or ""))))
+            self._spawn(call, self._in_order(call, self._barge(call, str(msg.get("rid") or ""), str(msg.get("heard") or ""),
+                                                               aside=bool(msg.get("aside")))))
         elif kind == "metric":
             m = {k: msg[k] for k in ("rid", "first_audio_ms", "stt_ms", "stt") if k in msg}
             r = call.replies.get(str(m.get("rid") or ""))
@@ -761,18 +785,19 @@ class CallService:
 
     async def _start_reply(self, call: Call, prompt: str, *, greeting: bool = False) -> None:
         rid = "r" + secrets.token_hex(4)
-        task = asyncio.create_task(self._reply(call, prompt, rid, greeting=greeting))
+        task = asyncio.create_task(self._reply(call, prompt, rid, greeting=greeting, seq=None if greeting else call.say_seq))
         call.reply_task = task
+        call.reply_rid = rid
         call.tasks.add(task)
         task.add_done_callback(call.tasks.discard)
 
-    async def _reply(self, call: Call, prompt: str, rid: str, *, greeting: bool = False) -> None:
+    async def _reply(self, call: Call, prompt: str, rid: str, *, greeting: bool = False, seq: int | None = None) -> None:
         r = {"rid": rid, "text": "", "done": False, "t0": time.monotonic(), "ttft": None, "greeting": greeting,
              "delivered": False}
         call.replies[rid] = r
         while len(call.replies) > 40:
             call.replies.pop(next(iter(call.replies)))
-        self._send(call, {"type": "reply", "rid": rid, "greeting": greeting})
+        self._send(call, {"type": "reply", "rid": rid, "greeting": greeting, **({"seq": seq} if seq is not None else {})})
 
         async def delta(t: str) -> None:
             if r["ttft"] is None:
@@ -797,7 +822,7 @@ class CallService:
                 call.restarted = True
                 self.mates._log("warning", f"call engine failed, restarting: {exc}", code="mate.call_engine")
                 if await self._restart(call):
-                    await self._reply(call, prompt, rid + "b", greeting=greeting)
+                    await self._reply(call, prompt, rid + "b", greeting=greeting, seq=seq)
                     return
             await self.end(call, "failed", error=str(exc)[:300])
             return
@@ -850,9 +875,11 @@ class CallService:
             pass
         return next((r for r in reversed(list(call.replies.values())) if r.get("cut")), None)
 
-    async def _barge(self, call: Call, rid: str, heard: str) -> None:
-        """They talked over her: she stops; what they heard of it is what she said."""
-        await self._stop_reply(call)
+    async def _barge(self, call: Call, rid: str, heard: str, *, aside: bool = False) -> None:
+        """They talked over her: she stops; what they heard of it is what she said. ``aside``: she stopped to answer
+        what they said over her (that answer already knows what they had heard: no note for the next turn)."""
+        if call.reply_rid == rid:
+            await self._stop_reply(call)
         r = call.replies.get(rid)
         heard = spoken(heard)
         if r is None:
@@ -869,15 +896,28 @@ class CallService:
                 call.transcript.remove(line)
         elif text:
             self._line(call, "mate", text, rid=rid, cut=cut)
-        if cut:
+        if cut and not aside:
             call.cut_note = said
 
-    async def _say(self, call: Call, text: str) -> None:
+    async def _say(self, call: Call, text: str, *, amend: bool = False, heard: str | None = None, rid: str = "",
+                   aside: bool = False, over: str = "", over_heard: str = "", seq: int | None = None) -> None:
+        """One turn of theirs. ``amend``: the whole of their last turn again — they went on after a pause (the page's
+        turn-taking, docs/mate-calls.md "Taking turns"): her answer to the first part (``rid``) was never heard (it goes,
+        from the call and from her engine's conversation) or they heard only its beginning (``heard``); she answers all
+        of it, once. ``aside``: said over her voice, maybe not to her (the page lets her go on, turned down, meanwhile):
+        her answer is [SILENT] if it wasn't for her — she goes on —, else words that stop what she was saying (``over``:
+        that reply; ``over_heard``: what of it they had heard). ``seq``: the page's number for it — her reply says it."""
+        call.say_seq = seq
         text = clip(text, MAX_TEXT)
         if not text or call.status != "active":
             return
         await call.ready.wait()
         if call.engine is None or call.status != "active":
+            return
+        if amend and await self._amend(call, text, heard, rid):
+            return
+        if aside:
+            await self._aside(call, text, over, over_heard)
             return
         cut = await self._stop_reply(call)
         if cut is not None and not any(x.get("rid") == cut["rid"] for x in call.transcript) and spoken(cut["text"]):
@@ -885,13 +925,93 @@ class CallService:
             self._line(call, "mate", spoken(cut["text"]) + "…", rid=cut["rid"], cut=True)
             call.cut_note = call.cut_note if call.cut_note is not None else spoken(cut["text"])
         self._line(call, "user", text)
-        prompt = text
+        prompt, note = text, ""
         if call.cut_note is not None:
-            note = clip(call.cut_note, 300)
-            prompt = (f"[They talked over you; of what you were saying they heard only: “{note}”]\n{text}" if note
-                      else f"[They talked over you before you said anything.]\n{text}")
+            cn = clip(call.cut_note, 300)
+            note = (f"[They talked over you; of what you were saying they heard only: “{cn}”]" if cn
+                    else "[They talked over you before you said anything.]")
+            prompt = f"{note}\n{text}"
             call.cut_note = None
+        self._turn(call, note)
         await self._start_reply(call, prompt)
+
+    def _turn(self, call: Call, note: str, *, aside: bool = False) -> None:
+        """(their turn about to go to her engine) what to take back should they go on"""
+        mark = getattr(call.engine, "mark", None)
+        call.last_turn = {"engine": call.engine, "mark": mark() if callable(mark) else None, "note": note, "aside": aside}
+
+    async def _aside(self, call: Call, text: str, over: str, over_heard: str) -> None:
+        """Words of theirs over her voice, maybe not to her: her answer to what she is saying is made to its end (the
+        page plays it on, turned down), then she judges them."""
+        task = call.reply_task
+        if task is not None and not task.done():
+            if call.reply_rid == over:
+                await asyncio.wait({task}, timeout=ASIDE_WAIT_S)
+            if not task.done():
+                await self._stop_reply(call)
+        self._line(call, "user", text, aside=True)
+        got = clip(spoken(over_heard), 200)
+        so_far = f" (you had got to “{got}”)" if got else ""
+        note = (f"[They said this while you were still talking{so_far} — maybe not to you. If it wasn't for you (to someone "
+                f"beside them, a mumble, a word half heard), reply with exactly [SILENT]: you go on where you were. If it "
+                f"was, answer it — what you were saying stops there.]")
+        if call.cut_note is not None:
+            cn = clip(call.cut_note, 300)
+            note = (f"[They talked over you; of what you were saying they heard only: “{cn}”]\n" if cn else
+                    "[They talked over you before you said anything.]\n") + note
+            call.cut_note = None
+        self._turn(call, note, aside=True)
+        await self._start_reply(call, f"{note}\n{text}")
+
+    async def _amend(self, call: Call, text: str, heard_now: str | None, rid: str) -> bool:
+        """They went on: their last turn, whole (``text``), in place of the half she was answering (``rid``; what of it
+        they heard: ``heard_now``, else what a barge said). -> False: no last turn of theirs to amend (it is a turn of
+        its own then)."""
+        users = [i for i, x in enumerate(call.transcript) if x["who"] == "user"]
+        last = call.last_turn
+        if not users or last is None:
+            return False
+        await self._stop_reply(call)
+        at = users[-1]
+        before = call.transcript[at]["text"]
+        heard = spoken(heard_now if heard_now is not None else (call.cut_note or ""))
+        call.cut_note = None
+        # her answer to the half: nobody heard it — it goes; heard as she began — what they heard of it, as said
+        after = call.transcript[at + 1:]
+        mine = next((x for x in reversed(after) if x["who"] == "mate"), None)
+        call.transcript[at + 1:] = [x for x in after if x["who"] != "mate"]
+        if heard:
+            r = call.replies.get(rid) or call.replies.get(str((mine or {}).get("rid") or "")) or {}
+            full = spoken(r.get("text") or "")
+            cutoff = bool(full) and spoken(heard) != full
+            self._line(call, "mate", heard + ("…" if cutoff else ""), rid=r.get("rid") or (mine or {}).get("rid"), cut=cutoff)
+            more = text[len(before):].strip() if text.startswith(before) else text
+            self._line(call, "user", more or text)
+        else:
+            call.transcript[at]["text"] = text
+        engine = call.engine
+        rewound = (last["engine"] is engine and last["mark"] is not None and callable(getattr(engine, "rewind", None))
+                   and engine.rewind(last["mark"]))
+        note = last["note"]
+        if rewound:
+            # (her engine never saw the half: their turn as one, with what was said on the line meanwhile)
+            if heard:
+                note = (note + "\n" if note else "") + (f"[You had begun to answer before they were done — they heard only "
+                                                         f"“{clip(heard, 300)}” — and they went on.]")
+        else:
+            # (her engine has the half and her answer to it: what really happened)
+            note = (last["note"] + "\n" if last.get("aside") else "") + (f"[They hadn't finished — they went on as you began; of your answer they heard only “{clip(heard, 300)}”. "
+                    f"All they said, to answer as a whole:]" if heard else
+                    "[They hadn't finished — they went on before your answer was heard (they never heard it). All they "
+                    "said, to answer as a whole:]")
+        self._diag(call, "turn.amend", {"heard": bool(heard), "rewound": bool(rewound), "chars": len(text)})
+        # (should they go on again: the same again, from here)
+        if rewound:
+            call.last_turn = {**last, "note": note}
+        else:
+            self._turn(call, note, aside=bool(last.get("aside")))
+        await self._start_reply(call, f"{note}\n{text}" if note else text)
+        return True
 
     # ---- the end ----
 

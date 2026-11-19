@@ -29,11 +29,20 @@ import { Resampler, STT_RATE, wavFromPcm } from "../stt/pcm";
 import { RealtimeStt, TokenError, type RealtimeDeps, type RealtimeToken } from "../stt/realtime";
 import type { SttFailure } from "../stt/scribe";
 import { Framer, Vad } from "./vad";
+import { TurnTaker } from "./turns";
 import type { CallPlan } from "../../api/calls";
 
 export interface ListenCallbacks {
-  /** one finished utterance of theirs (their words only); `endAt`: when they stopped talking (ms, Date.now) */
-  onUtterance: (text: string, endAt: number, how: string) => void;
+  /** one finished utterance of theirs (their words only); `endAt`: when they stopped talking (ms, Date.now). With
+   *  realtime listening, a turn as it stands — sent before its end is sure (`onConfirm` says when it is), and `amend`:
+   *  the whole of the last one again, they went on (mate/call/turns.ts) */
+  onUtterance: (text: string, endAt: number, how: string, amend?: boolean, aside?: boolean) => void;
+  /** (realtime) the end of their turn is sure: her answer may be heard */
+  onConfirm?: () => void;
+  /** (realtime) their voice again after the end seemed sure, before her voice began: her answer waits once more */
+  onHold?: () => void;
+  /** (realtime) they went on after their turn was sent: her answer to it waits, or stops if it began */
+  onResumed?: () => void;
   /** they started talking — `sure`: their own words (talk over her at once), else perhaps her echo (turn her down) */
   onSpeech: (sure: boolean) => void;
   /** what seemed like speech wasn't (a blip, her echo): her volume back */
@@ -53,17 +62,25 @@ export interface ListenDeps {
   plan: CallPlan["stt"];
   /** she is speaking on the call now */
   speaking: () => boolean;
+  /** her voice actually coming out now (or between two of its sentences) — not her first words still being made:
+   *  the turn-taking's "her voice" (default: `speaking`) */
+  audible?: () => boolean;
   /** what she said lately on the call (the echo filter) */
   spoken: () => string[];
   /** when her voice last played (ms, Date.now; 0: not yet) — now, while it plays */
   voicedAt?: () => number;
+  /** how long her current answer has played (ms; 0: not yet) */
+  heardMs?: () => number;
+  /** her names (called, they stop her) */
+  herNames?: string[];
   muted: () => boolean;
   /** (tests) the server, the microphone and the page's recognition, as given */
   io?: Partial<ListenIO>;
 }
 
 export interface ListenIO {
-  token: (mateId: string) => Promise<RealtimeToken>;
+  /** `legacy`: Scribe v2 with its own pause, for when Scribe v3 Live can't be had */
+  token: (mateId: string, legacy?: boolean) => Promise<RealtimeToken>;
   transcribe: (mateId: string, wav: Blob, engine?: string) => Promise<{ text: string; engine?: string }>;
   openMic: (onFrames: (samples: Float32Array, rate: number) => void) => Promise<MicHandle>;
   webSpeech: () => any;
@@ -71,7 +88,7 @@ export interface ListenIO {
 }
 
 const IO: ListenIO = {
-  token: (mateId) => realtimeSttToken(mateId, { call: true }),
+  token: (mateId, legacy) => realtimeSttToken(mateId, { call: true, legacy }),
   transcribe: (mateId, wav, engine) => transcribe(mateId, wav, engine),
   openMic: (onFrames) => openMic(onFrames),
   webSpeech: () => webSpeechRecognition(),
@@ -227,19 +244,37 @@ const FINAL: ReadonlySet<string> = new Set(["auth", "quota", "missing", "busy"])
 
 function realtimeListener(d: ListenDeps, cb: ListenCallbacks): Listener {
   const io = ioOf(d);
-  let lastVoice = 0;
   let stopped = false;
   let session: RealtimeStt | null = null;
   let inner: Listener | null = null; // (the stream out: each utterance recorded for the server's engine)
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let tries = 0; // the stream given up this many times in a row
   let herAt = 0;
+  let legacy = false; // Scribe v3 Live refused: v2, with its own pause
+  let heardOnce = false; // a stream got as far as listening
+  let ticker: ReturnType<typeof setTimeout> | undefined;
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // whose turn it is: their words say when they have finished (mate/call/turns.ts) — the stream only hears
+  const turns = new TurnTaker(
+    {
+      send: (text, endAt, amend, aside) => cb.onUtterance(text, endAt, "realtime", amend, aside),
+      confirm: () => cb.onConfirm?.(),
+      hold: () => cb.onHold?.(),
+      resumed: () => cb.onResumed?.(),
+      barge: () => cb.onSpeech(true),
+      // (words of theirs, not a backchannel, while she talks: she softens until it is clear whether they mean it)
+      duck: () => cb.onSpeech(false),
+      commit: () => session?.commitNow(),
+      ignored: (text, why) => cb.onDiag?.("ignored", { text: text.slice(0, 60), why }),
+    },
+    { herVoice: () => (d.audible ?? d.speaking)(), heardMs: () => d.heardMs?.() ?? 0 },
+  );
+  turns.herNames = d.herNames ?? [];
 
   const getToken = async () => {
     for (let i = 0; ; i++) {
       try {
-        return await io.token(d.mateId);
+        return await io.token(d.mateId, legacy);
       } catch (e) {
         const te = e instanceof RealtimeTokenError ? new TokenError(e.message, e.code as SttFailure, e.fallback) : new TokenError((e as Error)?.message || String(e), "network", null);
         cb.onDiag?.("token.error", { code: te.code, error: te.message.slice(0, 120), try: i + 1 });
@@ -303,36 +338,62 @@ function realtimeListener(d: ListenDeps, cb: ListenCallbacks): Listener {
           if (st === "listening") {
             if (tries) cb.onNotice(null);
             tries = 0;
+            heardOnce = true;
           }
           if (st === "listening" || st === "reconnecting") cb.onDiag?.("stream." + st);
         },
-        onPartial: (text) => cb.onPartial(text),
+        onPartial: (text) => {
+          cb.onPartial(text);
+          turns.keyterms = s.keyterms;
+          turns.partial(text, Date.now());
+        },
+        onCommitted: (text) => {
+          turns.commitSilenceMs = s.commitSilenceMs;
+          turns.keyterms = s.keyterms;
+          turns.committed(text, Date.now());
+        },
         onSegment: (text, how) => {
           if (how === "fallback") {
             // (the stream's own recording, transcribed by the server's engine: nothing filtered it yet)
             const mine = theirs(text, d.spoken(), true, d.speaking());
             if (mine) cb.onUtterance(mine, Date.now(), "record");
-            return;
           }
-          const at = lastVoice && Date.now() - lastVoice < 4000 ? lastVoice : Date.now();
-          cb.onUtterance(text, at, "realtime");
+          // (realtime: the turn-taking sends the turn — when their words say it is over, not when the stream pauses)
         },
-        onBargeIn: () => cb.onSpeech(true),
+        // (whether they talk over her is the turn-taking's to say: a backchannel isn't)
+        onBargeIn: () => {},
         onDropped: (text) => cb.onDiag?.("dropped", { text: text.slice(0, 80), how: "realtime" }),
-        onLevel: (v) => {
+        onLevel: (v, raw) => {
           const now = Date.now();
-          if (d.speaking()) herAt = now;
-          else if (v > 0.04 && now - herAt > HER_TAIL_MS) lastVoice = now;
+          if ((d.audible ?? d.speaking)()) herAt = now;
+          turns.level(now - herAt > HER_TAIL_MS ? (raw ?? v) : -1, now);
           cb.onLevel(v);
         },
         onNotice: (n) => {
           if (s !== session) return;
+          // (Scribe v3 Live not to be had with this key: v2 then, before a recording)
+          if (n.kind === "fallback" && n.code === "input" && !legacy && !heardOnce) {
+            legacy = true;
+            cb.onDiag?.("stream.legacy", { error: n.reason.slice(0, 120) });
+            session = null;
+            setTimeout(() => void s.cancel(), 0);
+            void startStream();
+            return;
+          }
           // (the stream went to a recording kept until the end — no good on a call: one per utterance instead)
           if (n.kind === "fallback") toRecording(n.engine, n.code, n.reason);
           else if (n.kind === "reconnected") cb.onNotice(null);
         },
         onError: (code, message, serverFallback) => {
           if (stopped || s !== session) return;
+          // (Scribe v3 Live not to be had with this key: v2 then, before anything else)
+          if (code === "input" && !legacy && !heardOnce) {
+            legacy = true;
+            cb.onDiag?.("stream.legacy", { error: message.slice(0, 120) });
+            session = null;
+            void startStream();
+            return;
+          }
           if (code === "mic") {
             cb.onDiag?.("mic.error", { error: message.slice(0, 120) });
             session = null;
@@ -351,9 +412,20 @@ function realtimeListener(d: ListenDeps, cb: ListenCallbacks): Listener {
 
   return {
     mode: "realtime",
-    start: () => startStream(),
+    start: () => {
+      // (the turn-taking's clock: a timer chain — never holds a page or a test open)
+      const loop = () => {
+        if (stopped) return;
+        turns.tick(Date.now());
+        ticker = setTimeout(loop, 50);
+        (ticker as unknown as { unref?: () => void }).unref?.();
+      };
+      loop();
+      return startStream();
+    },
     stop: () => {
       stopped = true;
+      clearTimeout(ticker);
       clearTimeout(retryTimer);
       session?.cancel();
       session = null;
