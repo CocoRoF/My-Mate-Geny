@@ -163,6 +163,7 @@ class CodexAppAccumulator(CodexJsonAccumulator):
         self._summaries: dict[str, dict[int, str]] = {}
         self._usage_total: dict | None = None
         self._turn_usage: dict[str, int] = {}
+        self._child_totals: dict[str, dict] = {}  # (each sub-agent thread's running total: what it spent counts for this turn)
         self._finalized: set[str] = set()
         self._spawns: dict[str, set[str]] = {}
         self._unbound_children: dict[str, list[dict]] = {}
@@ -247,7 +248,8 @@ class CodexAppAccumulator(CodexJsonAccumulator):
                 self._unbound_children.setdefault(child["id"], [])
             return
         thread = p.get("threadId")
-        self._parent = self.parents.get(thread)
+        # (the turn's own thread is nobody's child, whatever a sub-agent said about it: its turn/completed ends the turn)
+        self._parent = None if thread == self.thread_id else self.parents.get(thread)
         self._time = obj.get("_received_at")
         ms = (
             p.get("startedAtMs")
@@ -279,6 +281,20 @@ class CodexAppAccumulator(CodexJsonAccumulator):
             if status == "active":
                 yield from self._agent_state(thread, {"status": "running"})
             return
+        if method == "thread/tokenUsage/updated" and self._parent:
+            # A sub-agent spends on the same account, for this turn: its thread's total, as deltas (the first update of
+            # a resumed one is only its last call, like the turn's own)
+            usage = p.get("tokenUsage") or {}
+            total = usage.get("total") or {}
+            before = self._child_totals.get(thread)
+            delta = ({k: max(0, int(v or 0) - int(before.get(k, 0) or 0)) for k, v in total.items()} if before is not None
+                     else usage.get("last", {}))
+            if total != before:
+                for k, v in delta.items():
+                    self._turn_usage[k] = self._turn_usage.get(k, 0) + int(v or 0)
+                self._child_totals[thread] = total
+                self.usage = self._usage_now()
+            return
         if method == "thread/tokenUsage/updated" and not self._parent:
             usage = p.get("tokenUsage") or {}
             total = usage.get("total") or {}
@@ -296,12 +312,7 @@ class CodexAppAccumulator(CodexJsonAccumulator):
                 if total != self._usage_total:
                     for k, v in delta.items():
                         self._turn_usage[k] = self._turn_usage.get(k, 0) + int(v or 0)
-                self.usage = {
-                    "input_tokens": self._turn_usage.get("inputTokens", 0),
-                    "cached_input_tokens": self._turn_usage.get("cachedInputTokens", 0),
-                    "output_tokens": self._turn_usage.get("outputTokens", 0),
-                    "reasoning_output_tokens": self._turn_usage.get("reasoningOutputTokens", 0),
-                }
+                self.usage = self._usage_now()
                 last = usage.get("last") or {}
                 yield self._ev(
                     "context.update",
@@ -316,7 +327,7 @@ class CodexAppAccumulator(CodexJsonAccumulator):
         if method == "turn/completed":
             yield from self._response(thread, False)
             turn = p.get("turn") or {}
-            if self._parent:
+            if self._parent and not (self.turn_id and turn.get("id") == self.turn_id):
                 yield from self._agent_state(
                     thread,
                     {
@@ -377,6 +388,10 @@ class CodexAppAccumulator(CodexJsonAccumulator):
                 return
             if kind == "subAgentActivity":
                 child = item.get("agentThreadId")
+                # A sub-agent reports talking to the agent above it too ("interacted", agentPath "/root"): that one is
+                # its parent, not a new child. Only an agent below this thread is one.
+                if child and (child == self.thread_id or child in self._ancestors(thread) or item.get("agentPath") == "/root"):
+                    return
                 if child and child not in self.parents:
                     self.parents[child] = key
                     self._agent_descriptions[child] = item.get("agentPath") or "Codex"
@@ -493,6 +508,24 @@ class CodexAppAccumulator(CodexJsonAccumulator):
                 },
             )
 
+    def _usage_now(self) -> dict[str, int]:
+        """This turn's tokens so far, its sub-agents' included (Codex's own names: cached input is inside input)."""
+        return {"input_tokens": self._turn_usage.get("inputTokens", 0),
+                "cached_input_tokens": self._turn_usage.get("cachedInputTokens", 0),
+                "output_tokens": self._turn_usage.get("outputTokens", 0),
+                "reasoning_output_tokens": self._turn_usage.get("reasoningOutputTokens", 0)}
+
+    def _ancestors(self, thread: str | None) -> set[str]:
+        """The threads above ``thread``: its parent's thread, that one's, … up to the turn's own (``parents``: child -> the
+        ``thread:item`` that started it)."""
+        out: set[str] = set()
+        while thread and thread in self.parents and len(out) < 64:
+            thread = self.parents[thread].split(":", 1)[0]
+            out.add(thread)
+        if self.thread_id:
+            out.add(self.thread_id)
+        return out
+
     def _collab(self, item: dict, key: str, done: bool) -> Iterator[ProviderEvent]:
         action = str(item.get("tool", ""))
         spawn = action in ("spawnAgent", "resumeAgent")
@@ -519,7 +552,7 @@ class CodexAppAccumulator(CodexJsonAccumulator):
             else:
                 self._spawns.setdefault(sender, set()).add(key)
         for child in children:
-            if spawn:
+            if spawn and child != self.thread_id:  # (never the turn's own thread)
                 self.parents[child] = key
                 self._agent_descriptions[child] = inp["description"]
             state = (item.get("agentsStates") or {}).get(child) or {"status": "running"}

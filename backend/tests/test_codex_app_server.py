@@ -437,3 +437,50 @@ async def test_a_codex_that_goes_away_says_why(tmp_path):
     with pytest.raises(RpcError) as got:
         await connection.start()
     assert "exit 3" in str(got.value) and "unsupported model: gpt-x" in str(got.value)
+
+
+def _spawned(acc, child="child"):
+    spawn = {"type": "collabAgentToolCall", "id": "spawn", "tool": "spawnAgent", "senderThreadId": "root",
+             "receiverThreadIds": [], "agentsStates": {}, "status": "inProgress", "prompt": "Check the release"}
+    notify(acc, "item/started", item=spawn)
+    notify(acc, "thread/started", thread={"id": child, "parentThreadId": "root"})
+    notify(acc, "item/completed", item={**spawn, "status": "completed", "receiverThreadIds": [child],
+                                         "agentsStates": {child: {"status": "running"}}})
+
+
+def test_a_sub_agent_talking_to_the_root_does_not_make_the_root_its_child():
+    # (seen on 0.170: a forked sub-agent's send_message to "/root" comes as a subAgentActivity naming the root thread;
+    # taking that for a new child made the root's own turn/completed look like a child's, and the turn hung until the
+    # timeout with its answer shown as the sub-agent's)
+    acc = accumulator()
+    _spawned(acc)
+    talk = {"type": "subAgentActivity", "id": "call_1", "agentThreadId": "root", "agentPath": "/root", "kind": "interacted"}
+    assert not notify(acc, "item/completed", threadId="child", item=talk)
+    assert "root" not in acc.parents
+    answer = notify(acc, "item/completed", item={"id": "final", "type": "agentMessage", "text": "Deployed 7.8.2."})
+    assert not any(e.type == "subagent.text" for e in answer) and acc.final_text == "Deployed 7.8.2."
+    notify(acc, "turn/completed", turn={"id": "turn", "status": "completed"})
+    assert acc.completed and not acc.failed
+
+
+def test_the_turns_own_completion_ends_it_even_if_its_thread_was_ever_taken_for_a_child():
+    acc = accumulator()
+    acc.parents["root"] = "elsewhere:call"  # (a wrong mapping from before the fix, or one a new protocol might make)
+    notify(acc, "turn/completed", turn={"id": "turn", "status": "completed"})
+    assert acc.completed
+    acc2 = accumulator()
+    _spawned(acc2)
+    notify(acc2, "turn/completed", threadId="child", turn={"id": "child-turn", "status": "completed"})
+    assert not acc2.completed, "a child's turn is not the turn"
+
+
+def test_a_sub_agents_tokens_count_for_the_turn():
+    acc = accumulator()
+    notify(acc, "thread/tokenUsage/updated", tokenUsage={"total": {"inputTokens": 1000, "outputTokens": 100}, "last": {"inputTokens": 1000, "outputTokens": 100}})
+    _spawned(acc)
+    child = {"total": {"inputTokens": 400, "outputTokens": 40, "cachedInputTokens": 300}, "last": {"inputTokens": 400, "outputTokens": 40, "cachedInputTokens": 300}}
+    notify(acc, "thread/tokenUsage/updated", threadId="child", turnId="child-turn", tokenUsage=child)
+    notify(acc, "thread/tokenUsage/updated", threadId="child", turnId="child-turn", tokenUsage=child)  # (repeated: once)
+    more = {"total": {"inputTokens": 900, "outputTokens": 70, "cachedInputTokens": 700}, "last": {"inputTokens": 500}}
+    notify(acc, "thread/tokenUsage/updated", threadId="child", turnId="child-turn", tokenUsage=more)
+    assert acc.usage == {"input_tokens": 1900, "cached_input_tokens": 700, "output_tokens": 170, "reasoning_output_tokens": 0}

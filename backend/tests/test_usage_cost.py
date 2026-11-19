@@ -221,3 +221,19 @@ def test_default_claude_model_is_opus_5_5(db, tmp_path):
     codex = svc.create(provider="codex", model="", workspace_path=str(tmp_path))
     assert codex["model"] == "gpt-6.1-sol"  # codex: GPT-6.1-Sol ("default" = the account's own default)
     assert svc.update(codex["id"], provider="claude", model="")["model"] == "claude-opus-5-5"
+
+
+def test_codex_tokens_split_their_cache_and_turns_get_an_api_equivalent_where_there_is_a_price():
+    from app.services.turn_cost import costed, estimate, tokens
+
+    usage = {"input_tokens": 1_000_000, "cached_input_tokens": 900_000, "output_tokens": 10_000, "reasoning_output_tokens": 2000}
+    assert tokens(usage) == {"input": 100_000, "cache_read": 900_000, "cache_write": 0, "output": 10_000}
+    assert tokens({"input_tokens": 5, "cache_read_input_tokens": 3, "output_tokens": 1}) == {"input": 5, "cache_read": 3, "cache_write": 0, "output": 1}
+    price = {"input": 2.0, "output": 10.0, "cache_read": 0.1}
+    assert estimate({"usage": usage}, price) == pytest.approx((100_000 * 2 + 900_000 * 0.1 + 10_000 * 10) / 1e6)
+    assert estimate({"usage": usage}, None) is None, "no price: tokens, never a guessed amount"
+    codex = {"provider": "codex", "model": "gpt-6.1-sol", "cost_usd": 0.0, "cost_kind": "none", "usage": usage}
+    cost, est = costed(codex, lambda model: price if model == "gpt-6.1-sol" else None)
+    assert est and cost == pytest.approx(estimate(codex, price))
+    assert costed({**codex, "model": "gpt-6.2-sol"}, lambda model: None) == (None, False)
+    assert costed({"provider": "claude", "cost_usd": 1.5, "cost_kind": "turn"}, lambda m: None) == (1.5, False)

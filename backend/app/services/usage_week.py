@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from app.services.turn_cost import TurnCostNormalizer, engine_of, turn_cost
+from app.services.turn_cost import Prices, TurnCostNormalizer, costed, engine_of, tokens as token_kinds
 
 # Project usage/attribution fields, never assistant text or tool output.
 FIELDS = """e.id,e.session_id,e.type,e.created_at,
@@ -18,8 +18,6 @@ json_extract(e.data,'$.model') AS turn_model,json_extract(e.data,'$.usage_source
 #: what was spent: the chats' events, and those of turns rewound away (services/session_timeline.py)
 SPENT = """(SELECT id,session_id,type,data,created_at FROM events
 UNION ALL SELECT id,session_id,type,data,created_at FROM rewound_usage)"""
-KEYS = ('input', 'output', 'cache_read', 'cache_write')
-TOKENS = ('input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens')
 
 
 def empty():
@@ -66,6 +64,7 @@ def week(db, tz='UTC', *, now=None):
         for row in prior:
             norms[sid].feed(data_of(row))
 
+    prices = Prices(db)
     totals = empty()
     groups = {key: {'source': key, **empty(), 'items': {}} for key in ('chat', 'mate', 'internal')}
     daily = {str(first + timedelta(days=i)): {'day': str(first + timedelta(days=i)),
@@ -78,13 +77,10 @@ def week(db, tz='UTC', *, now=None):
         usage = json.loads(row['usage']) if isinstance(row['usage'], str) else {}
         if not isinstance(usage, dict):
             usage = {}
-        values = {}
-        for key, token in zip(KEYS, TOKENS):
-            try:
-                values[key] = max(0, int(usage.get(token, 0) or 0))
-            except (ValueError, TypeError, OverflowError):
-                values[key] = 0
-        cost = turn_cost(data)
+        values = token_kinds(usage)  # (Codex: its cached input split out of input)
+        model = row['turn_model'] or row['model'] or 'unknown'
+        cost = costed({**data, 'usage': usage, 'model': model,
+                       'provider': row['engine'] or engine_of(model) or row['provider']}, prices)[0]
         if cost is not None and (not math.isfinite(cost) or cost < 0):
             cost = None
         tokens = sum(values.values())
@@ -105,7 +101,6 @@ def week(db, tz='UTC', *, now=None):
             'session_id': row['session_id'], 'mate_id': row['mate_id'] if is_mate else None,
             'models': set(), **empty(),
         })
-        model = row['turn_model'] or row['model'] or 'unknown'
         engine = row['engine'] or engine_of(model) or row['provider'] or 'unknown'
         item['models'].add((engine, model))
         for target in (totals, group, item, daily[date][source]):
