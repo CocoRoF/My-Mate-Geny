@@ -1,0 +1,17 @@
+# (temporary, this branch only) what the App Store Connect account has for the iOS app — read only
+name: ios-probe
+on:
+  push:
+    branches: [ci/apps-per-platform]
+    paths: [".github/scripts/asc.py", ".github/workflows/ios-probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q cryptography
+      - run: python .github/scripts/asc.py probe
+        env:
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
