@@ -243,3 +243,12 @@ test("speakable: plain chat sounds exactly as before", () => {
   ]);
   for (const l of lines) assert.equal(speakable(l), v1.speakable(l), l);
 });
+
+test("a closing list of sources is never said", () => {
+  const reply = "3.27 리그가 금요일에 열려요. 기대되네요!\n\nSources:\n- [patch notes](https://www.pathofexile.com/forum/view-thread/1)\n";
+  assert.deepEqual(splitSentences(reply).map((s) => s.speech), ["3.27 리그가 금요일에 열려요.", "기대되네요!"]);
+  // streaming: the heading's line is not said either
+  const st = new SentenceStream();
+  const said = [...st.push("열려요.\n\nSources:\n"), ...st.push("열려요.\n\nSources:\n- [p](https://a.example)\n"), ...st.flush("열려요.\n\nSources:\n- [p](https://a.example)\n")];
+  assert.deepEqual(said.map((s) => s.speech), ["열려요."]);
+});

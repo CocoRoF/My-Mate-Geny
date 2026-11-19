@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
-import {
+import { splitSources,
   closeInline,
   imageSource,
   plainPreview,
@@ -405,4 +405,20 @@ test("withoutCode: fenced code goes (an unclosed fence to the end)", () => {
   assert.equal(withoutCode("a [joy]\n```\n[sad]\n```\nb"), "a [joy]\n\nb");
   assert.equal(withoutCode("a\n```\n[sad] still code"), "a\n");
   assert.equal(withoutCode("no code [joy]"), "no code [joy]");
+});
+
+test("a web search's closing list of sources: off the bubbles, as links (only at the end, under its heading)", () => {
+  const reply = "오빠, 공식 포럼 패치 노트를 보니 3.27 리그가 금요일에 열려요.\n\nSources:\n- [3.27 patch notes](https://www.pathofexile.com/forum/view-thread/1)\n- https://poe.ninja/stats\n";
+  const { body, sources } = splitSources(reply);
+  assert.equal(body, "오빠, 공식 포럼 패치 노트를 보니 3.27 리그가 금요일에 열려요.");
+  assert.deepEqual(sources.map((s) => [s.label, s.host]), [["3.27 patch notes", "pathofexile.com"], ["poe.ninja", "poe.ninja"]]);
+  assert.equal(splitSources("**출처:**\n1. [위키](https://namu.wiki/w/x)").sources[0].host, "namu.wiki");
+  // the heading alone while it streams in: already off; once done with no link under it, it is words
+  assert.equal(splitSources("좋아요.\n\nSources:", { streaming: true }).body, "좋아요.");
+  assert.equal(splitSources("좋아요.\n\n출처:").body, "좋아요.\n\n출처:");
+  // not at the end, or no heading: nothing taken
+  assert.equal(splitSources("출처:\n- [a](https://a.example)\n\n그리고 더 말할게요.").sources.length, 0);
+  assert.equal(splitSources("여기 봐요\nhttps://a.example").sources.length, 0);
+  // only http(s)
+  assert.equal(splitSources("ok\n\nSources:\n- [x](javascript:alert(1))\n- [y](https://y.example)").sources.length, 1);
 });

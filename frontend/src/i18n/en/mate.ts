@@ -469,4 +469,13 @@ export default {
   editTitle: "Change everything about {name}: name, personality, style, temperament, look, voice",
   status: "Status",
   statusTitle: "{name}'s status: how she feels, the two of you, her day",
+  toolSearching: "Looking it up…",
+  toolSearchingFor: "Looking up “{query}”…",
+  toolSearched: "Looked it up",
+  toolSearchedFor: "Looked up “{query}”",
+  toolReadingPage: "Reading {site}…",
+  toolReadingAPage: "Reading a page…",
+  toolReadPage: "Read {site}",
+  toolReadAPage: "Read a page",
+  sourcesLabel: "Where I looked",
 };

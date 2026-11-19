@@ -95,8 +95,8 @@ async def test_mate_engine_flags_and_delegation_roundtrip(db, tmp_path, monkeypa
         assert any(m["type"] == "turn.complete" and m["data"]["text"] == "echo[m1]: hello" for m in seen)
         argv = _mate_calls(tmp_path)[-1]["argv"]
         # no built-in tools but a web search of her own (메이트 공통 설정 → 스스로 인터넷 검색, on by default)
-        assert argv[argv.index("--tools") + 1] == "WebSearch"
-        assert argv[argv.index("--allowedTools") + 1] == "mcp__mate,WebSearch"
+        assert argv[argv.index("--tools") + 1] == "WebSearch,WebFetch"
+        assert argv[argv.index("--allowedTools") + 1] == "mcp__mate,WebSearch,WebFetch"
         assert "--append-system-prompt" not in argv  # (no wait guide for mates)
         assert argv[argv.index("--system-prompt-snapshot") + 1] == "off"
         assert "--strict-mcp-config" in argv and "--disable-slash-commands" in argv

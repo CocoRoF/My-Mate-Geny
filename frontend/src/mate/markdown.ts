@@ -566,6 +566,50 @@ export function speechText(text: string): string {
   return /[\p{L}\p{N}]/u.test(s) ? s : "";
 }
 
+// ── the pages a web search used ───────────────────────────────────────────
+
+/** "Sources:" / "출처:" on a line of its own (bold or not): the web search tool asks her to close with such a list */
+const SOURCES_HEAD = /^[ \t]*(?:\*\*|__)?(?:sources?|references?|출처|참고(?: ?자료)?)(?:\*\*|__)?[ \t]*[:：]?[ \t]*(?:\*\*|__)?[ \t]*$/i;
+const SOURCE_ITEM = /^[ \t]*(?:[-*+•]|\d{1,3}[.)])(?:[ \t]|$)/;
+const LINK_OR_URL = /\[[^\]\n]*\]\([^)\n]*\)?|<?\bhttps?:\/\/[^\s<>)]+/i;
+
+export interface ReplySource {
+  label: string;
+  url: string;
+  host: string;
+}
+
+/**
+ * A reply without its closing list of sources, and the sources: the list is shown as small links under her bubbles,
+ * never as a bubble of its own and never read aloud. Only a list at the very end, under its heading; while it streams
+ * in, the heading alone is already taken off (its links are on their way). A heading with no link under it, once the
+ * reply is done, is words and stays.
+ */
+export function splitSources(text: string, opts: { streaming?: boolean } = {}): { body: string; sources: ReplySource[] } {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  let i = lines.length - 1;
+  while (i >= 0 && (!lines[i].trim() || SOURCE_ITEM.test(lines[i]) || LINK_OR_URL.test(lines[i].trim()) && lines[i].trim().length < 400)) i--;
+  if (i < 0 || !SOURCES_HEAD.test(lines[i])) return { body: text, sources: [] };
+  const sources: ReplySource[] = [];
+  const seen = new Set<string>();
+  for (const line of lines.slice(i + 1)) {
+    const md = /\[([^\]\n]*)\]\(([^)\s]+)[^)]*\)/.exec(line);
+    const raw = md ? md[2] : /https?:\/\/[^\s<>)]+/i.exec(line)?.[0];
+    const url = raw ? safeHref(raw.replace(/[.,;]+$/, "")) : null;
+    if (!url || !/^https?:/i.test(url) || seen.has(url)) continue;
+    seen.add(url);
+    let host = "";
+    try {
+      host = new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      continue;
+    }
+    sources.push({ label: (md?.[1] || "").replace(/[*_`]/g, "").trim() || host, url, host });
+  }
+  if (!sources.length && !opts.streaming) return { body: text, sources: [] };
+  return { body: lines.slice(0, i).join("\n").replace(/\s+$/, ""), sources };
+}
+
 /** the text without fenced code (an unclosed fence: to the end) — emotion tags in code are not feelings */
 export function withoutCode(text: string): string {
   if (!text.includes("```") && !text.includes("~~~")) return text;

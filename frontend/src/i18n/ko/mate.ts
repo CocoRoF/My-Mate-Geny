@@ -460,5 +460,14 @@ const ko: Messages<"mate"> = {
   editTitle: "{name}의 이름·성격·말투·기질·모습·목소리를 바꿔요",
   status: "상태 보기",
   statusTitle: "{name}의 상태 — 지금 기분, 우리 사이, 하루",
+  toolSearching: "찾아보는 중…",
+  toolSearchingFor: "‘{query}’ 찾아보는 중…",
+  toolSearched: "찾아봤어요",
+  toolSearchedFor: "‘{query}’ 찾아봤어요",
+  toolReadingPage: "{site} 읽는 중…",
+  toolReadingAPage: "페이지 읽는 중…",
+  toolReadPage: "{site} 읽어 봤어요",
+  toolReadAPage: "페이지를 읽어 봤어요",
+  sourcesLabel: "찾아본 곳",
 };
 export default ko;

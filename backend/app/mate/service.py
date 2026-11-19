@@ -707,9 +707,11 @@ class MateService:
             req.engine_home = str(files.mate_dir(mate_id) / "codex")
         # (a file: persona + 200 memories can outgrow one argv string)
         req.system_prompt_file = files.engine_file(mate_id, "prompt", "md", prompt)
-        # no Bash/Read/Edit/WebFetch… — it can't do the work itself; a web search of her own when that is on
-        req.tools = ["WebSearch"] if web and engine == "claude" else []
-        req.allowed_tools = ["mcp__mate"] + (["WebSearch"] if web and engine == "claude" else [])  # + all bridge tools
+        # no Bash/Read/Edit… — it can't do the work itself; a web search of her own when that is on, and reading the
+        # pages it finds (the latest of anything is on its official page, not in a search's snippets)
+        own = ["WebSearch", "WebFetch"] if web and engine == "claude" else []
+        req.tools = own
+        req.allowed_tools = ["mcp__mate"] + own  # + all bridge tools
         req.web_search = web and engine == "codex"
         req.sealed = True
         req.mode = "agent"

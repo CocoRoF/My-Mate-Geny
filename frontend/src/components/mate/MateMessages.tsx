@@ -8,7 +8,7 @@ import type { FlowItem, MessageMeta, ToolActivity, Turn } from "../../stores/cha
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore } from "../../stores/uiStore";
 import { parseEmotionText } from "../../mate/emotion";
-import { segmentReply } from "../../mate/markdown";
+import { segmentReply, splitSources, type ReplySource } from "../../mate/markdown";
 import { currentSurface, desktopMate } from "../../mate/desktop";
 import Icon, { type IconName } from "../ui/Icon";
 import MateReply from "./MateReply";
@@ -126,10 +126,65 @@ export function describeTool(t: ToolActivity): { icon: IconName; label: string; 
         icon: "monitor",
         label: t.durationMs === undefined ? tr("mate.toolSeeingScreen") : t.isError ? tr("mate.toolScreenNotShared") : tr("mate.toolSawScreen"),
       };
+    // (her own web search and the pages she reads: the engine's tools — Claude WebSearch / WebFetch, Codex web_search —
+    // or the bridge's search_web; what she looked up, in her words, never the tool's name)
+    case "WebSearch":
+    case "web_search":
+    case "search_web": {
+      const q = short(String(input.query || input.q || ""), 40);
+      if (t.durationMs === undefined) return { icon: "search", label: q ? tr("mate.toolSearchingFor", { query: q }) : tr("mate.toolSearching") };
+      return { icon: "search", label: q ? tr("mate.toolSearchedFor", { query: q }) : tr("mate.toolSearched") };
+    }
+    case "WebFetch":
+    case "web_fetch": {
+      let site = "";
+      try {
+        site = new URL(String(input.url || "")).hostname.replace(/^www\./, "");
+      } catch {
+        /* no address: no site name */
+      }
+      if (t.durationMs === undefined) return { icon: "eye", label: site ? tr("mate.toolReadingPage", { site }) : tr("mate.toolReadingAPage") };
+      return { icon: "eye", label: site ? tr("mate.toolReadPage", { site }) : tr("mate.toolReadAPage") };
+    }
     default:
       return { icon: "bolt", label: name };
   }
 }
+
+/** the pages her web search used, as small links under her bubbles (never a bubble of links, never read aloud) */
+function SourcesRow({ sources }: { sources: ReplySource[] }) {
+  const t = useT();
+  const [all, setAll] = useState(false);
+  const shown = all ? sources : sources.slice(0, 3);
+  return (
+    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1 pl-1" data-testid="mate-sources">
+      <span className="mr-0.5 text-[11px] text-content-faint">{t("mate.sourcesLabel")}</span>
+      {shown.map((s) => (
+        <a
+          key={s.url}
+          href={s.url}
+          target="_blank"
+          rel="noreferrer noopener"
+          title={s.label}
+          className="inline-flex max-w-[11rem] items-center gap-1 rounded-full border border-border bg-surface-2/70 px-2 py-[1px] text-[11px] text-content-dim transition hover:border-border-strong hover:text-content"
+          data-testid="mate-source"
+        >
+          <Icon name="external" size={9} className="shrink-0 opacity-60" />
+          <span className="truncate">{s.host}</span>
+        </a>
+      ))}
+      {!all && sources.length > 3 && (
+        <button type="button" className="rounded-full px-1.5 text-[11px] text-content-faint hover:text-content" onClick={() => setAll(true)} data-testid="mate-sources-more">
+          +{sources.length - 3}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** what the app says about its engines (which one caught up on what) is the app's business, not hers: not in her
+ *  conversation — the reset divider stays */
+const engineNotice = (code?: string) => !!code && code.startsWith("context.") && code !== "context.reset";
 
 /** her own change of the conversation style: what changed, with Undo (applied) or Apply / Dismiss (proposed) */
 function StyleChip({ tool }: { tool: ToolActivity }) {
@@ -321,17 +376,21 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
   const lastText = turn.flow.reduce((n, f, i) => (f.kind === "text" ? i : n), -1);
   const lastSteer = turn.flow.reduce((n, f, i) => f.kind === "steer" ? i : n, -1);
   const items: JSX.Element[] = [];
+  const sources: ReplySource[] = [];
   turn.flow.forEach((f: FlowItem, i) => {
     if (f.kind === "text") {
       const streaming = running && i === lastText && i > lastSteer;
-      if (segmentReply(f.text, { streaming }).length)
-        items.push(<MateReply key={i} keyPrefix={`${i}.`} text={f.text} streaming={streaming} compact={compact} />);
+      // (a closing list of sources: the links go under her bubbles)
+      const own = splitSources(f.text, { streaming });
+      for (const s of own.sources) if (!sources.some((x) => x.url === s.url)) sources.push(s);
+      if (segmentReply(own.body, { streaming }).length)
+        items.push(<MateReply key={i} keyPrefix={`${i}.`} text={own.body} streaming={streaming} compact={compact} />);
     } else if (f.kind === "tool") {
       const t = toolsById.get(f.toolId);
       if (t) items.push(<ActivityChip key={i} tool={t} />);
     } else if (f.kind === "steer") {
       items.push(<UserBubble key={i} text={f.text} attachments={f.attachments} pending={f.pending} collecting={!!f.meta?.speech_pending} compact={compact} messageId={f.messageId} meta={f.meta} />);
-    } else if (f.kind === "notice") {
+    } else if (f.kind === "notice" && !engineNotice(f.code)) {
       items.push(
         <div key={i} className={`text-[11.5px] ${f.level === "warning" ? "text-warning" : "text-content-faint"}`}>
           {noticeText(f.code, f.data, f.message)}
@@ -344,6 +403,7 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
   // [SILENT] / empty completed turns have no row at all: a zero-height wrapper
   // would still add the parent's flex gap for every autonomous silence.
   if (!running && !items.length && !turn.error && turn.status !== "interrupted") return null;
+  if (sources.length) items.push(<SourcesRow key="sources" sources={sources} />);
   return (
     <div className="flex w-full min-w-0 flex-col items-start gap-1.5 animate-fade-in" data-testid="mate-turn">
       {items}
@@ -391,6 +451,7 @@ export default function MateMessages({
               return <UserBubble key={t.key} text={t.text} attachments={t.attachments} collecting={!!t.meta?.speech_pending} compact={compact} messageId={t.messageId} meta={t.meta} />;
             }
             if (t.role === "system") {
+              if (engineNotice(t.code)) return null;
               const reset = t.code === "context.reset";
               return (
                 <div key={t.key} className="flex items-center gap-3 py-1 text-[11px] text-content-faint">

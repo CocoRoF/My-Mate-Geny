@@ -16,7 +16,7 @@
  * run is cut exactly where char-by-char streaming would cut it.
  */
 import { parseEmotionText, type Emotion } from "./emotion.ts";
-import { closesFence, fenceOf, plainText, speechText, startsTable } from "./markdown.ts";
+import { closesFence, fenceOf, plainText, speechText, splitSources, startsTable } from "./markdown.ts";
 
 export { plainText } from "./markdown.ts";
 
@@ -407,14 +407,14 @@ export class SentenceStream {
     return out.map(toSentence).filter((s) => s.text);
   }
 
-  /** the sentences completed since the last call */
+  /** the sentences completed since the last call (a closing list of sources is shown, never said) */
   push(full: string): Sentence[] {
-    return this.coalesce(this.take(full, false), false);
+    return this.coalesce(this.take(splitSources(full, { streaming: true }).body, false), false);
   }
 
   /** end of the turn: everything not returned yet */
   flush(full: string): Sentence[] {
-    const out = this.coalesce(this.take(full, true), true);
+    const out = this.coalesce(this.take(splitSources(full).body, true), true);
     this.reset();
     return out;
   }
