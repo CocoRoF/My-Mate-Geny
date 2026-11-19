@@ -52,7 +52,7 @@ const NAV_BAR = 48;
     const cdp = await ctx.newCDPSession(page);
     await cdp.send("Emulation.setSafeAreaInsetsOverride", { insets: { top: 36, left: 0, bottom: NAV_BAR, right: 0 } });
 
-    step("the outfit's studio opens on the Agent tab");
+    step("the outfit's studio opens on the Guide tab");
     await page.goto(`${SERVER}/?view=mate`);
     await page.waitForSelector('[data-testid="mate-more"]');
     await page.click('[data-testid="mate-more"]');
@@ -95,7 +95,9 @@ const NAV_BAR = 48;
     });
     assert(moved > 0, "the row moves sideways");
 
-    step("the message box clears the navigation bar");
+    step("the AI tab: the message box clears the navigation bar");
+    await page.waitForSelector('[data-testid="studio-guide"][data-mode="outfit"]');
+    await page.click('[data-testid="studio-tab-agent"]');
     await page.waitForSelector('[data-testid="avatar-input"]');
     const box = async () =>
       page.evaluate(() => {
@@ -190,13 +192,19 @@ const NAV_BAR = 48;
     await page.click('[data-testid="mate-settings-open"]');
     await page.waitForSelector('[data-testid="mate-settings"]');
     assert.equal(await page.locator('[data-testid="mate-switcher"]').count(), 0, "her header gives its room to the panel");
-    const top = await page.$eval('[data-testid="node-sheet-close"]', (el) => el.getBoundingClientRect().top);
+    const top = await page.$eval('[data-testid="mate-settings-close"]', (el) => el.getBoundingClientRect().top);
     assert(top >= 36, `the close button is under the status bar: ${top}`);
 
-    step("the Save bar: only with something to save, on the bottom edge (메이트 편집 → 대화 방식)");
-    await page.click('[data-testid="node-sheet-close"]');
+    step("the Save bar: only with something to save, on the bottom edge (메이트 편집 → 대화 방식, a window over the whole screen)");
+    await page.click('[data-testid="mate-settings-edit"]');
+    await page.waitForSelector('[data-testid="studio-guide"][data-mode="edit"]', { timeout: 20000 });
     await page.click('[data-testid="guide-step-style-toggle"]');
     await page.click('[data-testid="guide-style-open"]');
+    await page.waitForSelector('[data-testid="node-sheet"][data-node="style"]');
+    // (it comes in with a short fade and lift: measured once it is in place)
+    await page.waitForFunction(() => document.querySelector('[data-testid="node-sheet"]').getAnimations().length === 0);
+    const winTop = await page.$eval('[data-testid="node-sheet-close"]', (el) => el.getBoundingClientRect().top);
+    assert(winTop >= 36, `the window's close button is under the status bar: ${winTop}`);
     assert.equal(await page.locator('[data-testid="mate-settings-savebar"]').count(), 0);
     const seg = await page.$eval('[role="radiogroup"]', (el) => ({ display: getComputedStyle(el).display, h: el.querySelector('[role="radio"]').offsetHeight }));
     assert.equal(seg.display, "grid");

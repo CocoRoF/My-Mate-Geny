@@ -102,9 +102,10 @@ async function desktop(browser, lang, theme) {
   step(`${tag}: Settings — the groups, and Mate / Screen sharing under 메이트`);
   await settingsAt(page, "mate");
   const tabIds = await page.$$eval('[role="tab"]', (xs) => xs.map((x) => x.id.replace("settings-tab-", "")));
-  assert.deepEqual(tabIds, ["updates", "account", "language", "appearance", "notifications", "mate", "providers", "media", "mcp", "connections", "usage", "admin"]);
+  assert.deepEqual(tabIds, ["updates", "account", "devices", "language", "appearance", "notifications", "mate", "providers", "media", "mcp", "connections", "usage", "admin", "voice-studio", "image-studio"]);
   assert.equal(await page.textContent('[data-testid="settings-tab-appearance"]').then((s) => s.includes(ko ? "테마" : "Theme")), true, "the look is 테마, not 화면");
-  for (const id of ["mate-default-select", "mate-device-voice", "mate-volume-slider", "proactive-enabled", "settings-builtins", "settings-mate-services"])
+  // (the default mate is the one picked: no select since 11-12)
+  for (const id of ["mate-device-voice", "mate-volume-slider", "proactive-enabled", "settings-builtins", "settings-mate-services"])
     assert.equal(await count(page, `[data-testid="${id}"]`), 1, id);
   assert.equal(await count(page, '[data-testid="proactive-mate"]'), 0, "who: only once it is on");
   await shot(page, `${tag}-settings-mate`);

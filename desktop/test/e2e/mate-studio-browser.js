@@ -111,8 +111,31 @@ async function say(page, text) {
 
 /** a node of the canvas → its sheet */
 async function openNode(page, key) {
-  await page.click(`[data-testid="sc-node-${key}"] .scn-hit`);
+  // (a node's window covers the canvas: the one open closes first)
+  const open = page.locator('[data-testid="node-sheet"]');
+  if ((await open.count()) && (await open.getAttribute("data-node")) !== key) {
+    await page.click('[data-testid="node-sheet-close"]');
+    if (await page.locator('[data-testid="confirm-dialog"]').isVisible().catch(() => false)) await page.click('[data-testid="confirm-ok"]');
+    await open.waitFor({ state: "detached" });
+  }
+  if (!(await page.locator(`[data-testid="node-sheet"][data-node="${key}"]`).count())) await page.click(`[data-testid="sc-node-${key}"] .scn-hit`);
   await page.waitForSelector(`[data-testid="node-sheet"][data-node="${key}"]`);
+}
+
+/** a node's window closed, if one is open (it covers the canvas and the AI's tab) */
+async function closeSheet(page) {
+  if (!(await page.locator('[data-testid="node-sheet"]').count())) return;
+  await page.click('[data-testid="node-sheet-close"]');
+  if (await page.locator('[data-testid="confirm-dialog"]').isVisible().catch(() => false)) await page.click('[data-testid="confirm-ok"]');
+  await page.locator('[data-testid="node-sheet"]').waitFor({ state: "detached" });
+}
+
+/** this run follows the AI: its tab (the Guide is the first; the choice is remembered in this browser) */
+async function toAi(page) {
+  await page.waitForSelector('[data-testid="studio-side-agent"], [data-testid="studio-tab-agent"]', { timeout: 30000 });
+  const side = page.locator('[data-testid="studio-side-agent"]');
+  if (await side.count()) await side.click();
+  else await page.click('[data-testid="studio-tab-agent"]');
 }
 
 const liveCard = (kind) => `[data-testid="avatar-question"][data-live="1"][data-kind="${kind}"]`;
@@ -127,6 +150,7 @@ async function newMate(page) {
   await page.click('[data-testid="mate-switcher"]');
   await page.click('[data-testid="mate-new"]');
   await page.waitForSelector('[data-testid="mate-studio"][data-kind="create"]');
+  await toAi(page);
   await until("the draft's address", async () => /create=mate_/.test(page.url()));
   await page.waitForSelector(liveCard("concepts"), { timeout: 30000 });
   await idle(page);
@@ -163,6 +187,7 @@ async function main() {
   await shot(page, "00-picker-new-mate-dark-en");
   await page.click('[data-testid="mate-new"]');
   await page.waitForSelector('[data-testid="mate-studio"][data-kind="create"][data-layout="split"]');
+  await toAi(page);
   await until("the draft's address", async () => /\?view=mate&create=mate_/.test(page.url()));
   const draft = draftIdOf(page);
   assert.equal(await page.locator('[data-testid="studio-title"]').innerText(), "New mate");
@@ -184,6 +209,7 @@ async function main() {
   assert.equal(new URL(page.url()).search, "?view=mate");
   await page.goForward();
   await page.waitForSelector('[data-testid="mate-studio"]');
+  await toAi(page);
   assert.equal(draftIdOf(page), draft);
   await page.reload();
   await page.waitForSelector(liveCard("concepts"), { timeout: 30000 });
@@ -199,8 +225,8 @@ async function main() {
   await shot(page, "02-filled-on-canvas-dark-en");
   await openNode(page, "profile");
   assert.equal(await page.inputValue('[data-testid="studio-name"]'), "Harin");
-  await page.waitForSelector('[data-testid="studio-filled-badge"][data-field="name"]');
-  await page.waitForSelector('.studio-glow');
+  await page.waitForSelector('[data-testid="node-sheet"] [data-testid="studio-filled-badge"][data-field="name"]');
+  await page.waitForSelector('[data-testid="node-sheet"] .studio-glow');
   await sleep(250);
   await shot(page, "02b-profile-sheet-dark-en");
   assert.match(await page.locator('[data-testid="studio-draft-name"]').innerText(), /Harin/);
@@ -213,18 +239,19 @@ async function main() {
   assert.equal(p.studio.mate.persona.personality, "Calm, attentive and warm, with a gentle teasing streak.");
   assert.ok(p.studio.filled["persona.description"] && p.studio.filled["concept.pitch"]);
   assert.equal(p.studio.concept.voice, "soft, warm, a little low");
-  await page.waitForSelector('[data-testid="guide-step-concept"][data-state="done"]');
+  await page.waitForSelector('[data-testid="guide-step-concept"][data-state="done"]', { state: "attached" });  // (the Guide tab, behind the AI's)
 
   step("the user edits a field in the sheet → saved, no badge; the agent sees it next turn");
   await page.fill('[data-testid="studio-persona-personality"]', "Cheerful and blunt, but kind.");
   await until("saved", async () => (await projectOf(ctx, pid)).studio.mate.persona.personality === "Cheerful and blunt, but kind.", 10000);
-  await until("badge gone", async () => (await page.locator('[data-testid="studio-filled-badge"][data-field="persona.personality"]').count()) === 0);
+  await until("badge gone", async () => (await page.locator('[data-testid="node-sheet"] [data-testid="studio-filled-badge"][data-field="persona.personality"]').count()) === 0);
   // undo one of the agent's fields: back to what was there (empty)
-  await page.click('[data-testid="studio-filled-badge"][data-field="persona.greeting"] [data-testid="studio-undo"]');
+  await page.click('[data-testid="node-sheet"] [data-testid="studio-filled-badge"][data-field="persona.greeting"] [data-testid="studio-undo"]');
   await until("undone", async () => (await projectOf(ctx, pid)).studio.mate.persona.greeting === "", 10000);
   assert.equal(await page.inputValue('[data-testid="studio-persona-greeting"]'), "");
   await shot(page, "03-user-edit-dark-en");
-  // answer the speech-level card: the agent's turn starts with what it was told changed
+  // answer the speech-level card: the agent's turn starts with what it was told changed (the window over the screen first)
+  await closeSheet(page);
   await page.click(`${liveCard("choice")} [data-value="haeyo"]`);
   await until("the agent's next turn", async () => /SAW studio_update:/.test(await lastAgentText(page)), 30000);
   const seen = await lastAgentText(page);
@@ -280,7 +307,7 @@ async function main() {
   r = await api(ctx, "POST", `/api/avatar/projects/${pid}/redo`, { item: "design" });
   assert.equal(r.status, 409, "a redo before the confirmation is refused");
   assert.equal(jobs().length, 0, "still no job");
-  await page.click('[data-testid="node-sheet-close"]');
+  await closeSheet(page);
   await shot(page, "04-estimate-on-canvas-dark-en");
   await page.click('[data-testid="sc-estimate-open"]');
   await page.waitForSelector('[data-testid="node-sheet"][data-node="estimate"] [data-testid="avatar-estimate"]');
@@ -340,6 +367,7 @@ async function main() {
   await shot(page, "08-avatar-ready-dark-en");
 
   step("Create mate → she is in the picker and the Mate view");
+  await closeSheet(page);
   await page.click('[data-testid="studio-create"]');
   await page.waitForSelector('[data-testid="mate-view"]');
   await until("her name in the header", async () => (await page.locator('[data-testid="mate-switcher"]').innerText()).includes("Harin"));
@@ -356,9 +384,10 @@ async function main() {
   assert.ok((await page.locator('[data-testid="mate-switcher-item"]').allInnerTexts()).some((x) => x.includes("Harin")));
   await page.keyboard.press("Escape");
 
-  step("the existing mate's ✨ → the same layout, her finished avatar in the mate node");
+  step("the existing mate's 메이트 편집 → the same layout, her finished avatar in the mate node");
   await page.click('[data-testid="mate-edit"]');
   await page.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"][data-layout="split"]');
+  await toAi(page);
   assert.match(page.url(), /\?view=mate&avatar=/);
   await page.waitForSelector('[data-testid="sc-node-mate"].is-ready');
   await openNode(page, "mate");
@@ -372,6 +401,7 @@ async function main() {
   await page.evaluate((id) => localStorage.setItem("hrh_mate_active", id), other.id);
   await page.goto(`${SERVER}/?view=mate&avatar=${other.id}`);
   await page.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"]');
+  await toAi(page);
   await page.waitForSelector(liveCard("upload"), { timeout: 30000 });
   await idle(page);
   await shot(page, "11-existing-mate-start-dark-en");
@@ -408,9 +438,11 @@ async function main() {
   await shot(page, "12-picker-drafts-dark-en");
   await page.locator('[data-testid="mate-draft-item"]', { hasText: "Bomi" }).click();
   await page.waitForSelector('[data-testid="mate-studio"]');
+  await toAi(page);
   assert.equal(draftIdOf(page), d2);
   await openNode(page, "profile");
   await until("resumed", async () => (await page.inputValue('[data-testid="studio-name"]').catch(() => "")) === "Bomi", 20000);
+  await closeSheet(page);
   await page.click('[data-testid="studio-more"]');
   await page.click('[data-testid="studio-discard"]');
   await page.click('[data-testid="confirm-ok"]'); // (the app's confirm dialog)
@@ -433,6 +465,7 @@ async function main() {
         const dd = draftIdOf(pg);
         if (phone) {
           await pg.waitForSelector('[data-testid="mate-studio"][data-layout="tabs"]');
+          await toAi(pg);
           await shot(pg, `20-concepts-${tag}`);
           await pg.locator('[data-testid="studio-concept-option"]').first().click();
           await pg.waitForSelector('[data-testid="studio-canvas-badge"]', { timeout: 30000 });
@@ -463,6 +496,7 @@ async function main() {
         // the finished mate's avatar studio (Harin)
         await pg.goto(`${SERVER}/?view=mate&avatar=${draft}`);
         await pg.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"]');
+        await toAi(pg);
         if (phone) await pg.click('[data-testid="studio-tab-canvas"]');
         await pg.waitForSelector('[data-testid="sc-node-mate"].is-ready');
         await sleep(800);

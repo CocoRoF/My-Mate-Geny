@@ -60,13 +60,23 @@ const get = async (ctx, url) => (await ctx.request.get(SERVER + url)).json();
 
 async function openTab(p) {
   await p.goto(`${SERVER}/?view=mate`);
-  await p.waitForSelector('[data-testid="mate-settings-open"]', { timeout: 30000 });
   // (her wardrobe is in 메이트 편집 → 모습 → 옷장·세부 설정)
-  await p.waitForSelector('[data-testid="mate-edit"]', { timeout: 30000 });
-  await p.click('[data-testid="mate-edit"]');
+  // (a phone has it in ⋯)
+  await p.waitForSelector('[data-testid="mate-settings-open"]', { timeout: 30000 });
+  if (await p.locator('[data-testid="mate-edit"]').first().isVisible()) await p.click('[data-testid="mate-edit"]');
+  else {
+    await p.click('[data-testid="mate-more"]');
+    await p.click('[data-testid="mate-more-menu"] [data-testid="mate-edit"]');
+  }
   await p.click('[data-testid="guide-step-look-toggle"]');
   await p.locator('[data-testid="look-wardrobe"], [data-testid="guide-look-wardrobe"]').first().click();
   await p.waitForSelector('[data-testid="outfit-wardrobe"]');
+}
+/** the wardrobe's window closed and the studio left: back on the Mate view */
+async function closeTab(p) {
+  await p.click('[data-testid="node-sheet-close"]');
+  await p.click('[data-testid="studio-back"]');
+  await p.waitForSelector('[data-testid="mate-view"]');
 }
 const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id}"]`);
 
@@ -125,7 +135,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.ok((await setAffinity(59)).ok());
     await until("59 shown", async () => (await p.textContent('[data-testid="outfit-locked-hint"]')).includes("59"));
     assert.equal(await tile(p, GRAY).getAttribute("data-locked"), "true");
-    await p.click('[data-testid="mate-settings-close"]');
+    await closeTab(p);
     assert.ok((await setAffinity(60)).ok());
     await p.waitForSelector('[data-testid="mate-info"]');
     assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("크롭탑"));
@@ -148,7 +158,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     await until("locked again", async () => (await tile(p, GRAY).getAttribute("data-locked")) === "true");
 
     step("the value set by hand opens it just the same, with word of it over the panel");
-    await p.click('[data-testid="mate-settings-close"]');
+    await closeTab(p);
     await p.click('[data-testid=\"mate-status-open\"]'); await p.click('[data-testid=\"stage-status-more\"]');
     await p.click('[data-testid="mate-relation-panel-adjust"]');
     const set = p.locator('[data-testid="mate-relation-set"]');
@@ -248,6 +258,8 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     step("the finished project goes into its outfit, and Wear puts the whole video set on her");
     const made = (await get(boot, "/api/avatar/projects")).find((x) => x.outfit?.id === empty.id);
     await p.goto(`${SERVER}/?view=mate&avatar=${chaerin.id}&project=${made.id}`);
+    // (the guide's last step: 입히기 opens the finished set's window)
+    await p.click('[data-testid="guide-draw-apply"]', { timeout: 30000 });
     await p.waitForSelector('[data-testid="outfit-finish"]', { timeout: 30000 });
     assert.equal(await p.locator('[data-testid="avatar-new-name"], [data-testid="avatar-apply-mate"], [data-testid="avatar-restore"]').count(), 0);
     await p.click('[data-testid="outfit-wear"]');
@@ -365,8 +377,11 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       await until("keeping it up makes her angry", async () => (await stateOf()).label === "angry" && (await stateOf()).level >= 0.7, 30000);
       await until("the panel says why", async () => (await row("angry").textContent()).includes("거친 말을 들어서"));
       await here.screenshot({ path: path.join(SHOTS, "state-angry-ko-dark.png") });
+      // (owning it right after the rude words takes off a part of it, not all: app/mate/state.py TOO_SOON_RUDE_WORTH)
+      const angryNow = async () => (await stateOf()).top.find((f) => f.emotion === "angry")?.v ?? 0;
+      const before = await angryNow();
       await say("미안해 내가 잘못했어");
-      await until("an apology helps", async () => (await stateOf()).top.find((f) => f.emotion === "angry")?.v < 0.75, 30000);
+      await until("an apology helps", async () => (await angryNow()) < before - 0.1, 30000);
       const poked = await mine.request.post(`${SERVER}/api/mates/${chaerin.id}/state/poke`);
       assert.ok(poked.ok() && (await poked.json()).top, "a tap counts");
       await change("default");
@@ -383,16 +398,30 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
           return { x: set.left + f[0] * set.width, y: set.top + f[1] * set.height, h: f[2] * set.height, box: [box.left, box.top, box.width, box.height] };
         }, frame.face);
       };
+      // (in her box's own measure: a wider set widens the box evenly on both sides, and on a narrow stage the whole box —
+      // her with it — is a little smaller; her face stays at the same place in it, the same size: mate/avatar/framing.ts)
+      const inBox = (f) => ({ x: (f.x - (f.box[0] + f.box[2] / 2)) / f.box[3], y: (f.y - f.box[1]) / f.box[3], h: f.h / f.box[3] });
       const sameSpot = (a, b, where) => {
-        assert.ok(Math.abs(a.x - b.x) < 1.5 && Math.abs(a.y - b.y) < 1.5, `${where}: her face moved ${JSON.stringify([a, b])}`);
-        assert.ok(Math.abs(a.h - b.h) / a.h < 0.02, `${where}: her face changed size ${JSON.stringify([a, b])}`);
-        assert.deepEqual(a.box, b.box, `${where}: the box moved`);
+        const [p, q] = [inBox(a), inBox(b)];
+        assert.ok(Math.abs(p.x - q.x) < 0.004 && Math.abs(p.y - q.y) < 0.004, `${where}: her face moved ${JSON.stringify([a, b])}`);
+        assert.ok(Math.abs(p.h - q.h) / p.h < 0.02, `${where}: her face changed size ${JSON.stringify([a, b])}`);
+        assert.ok(Math.abs(a.box[1] + a.box[3] - (b.box[1] + b.box[3])) < 1.5, `${where}: she stands on the same spot ${JSON.stringify([a.box, b.box])}`);
       };
       const idle = (page) => until("the fade to end", async () => (await page.locator(".mate-outfit-out, .mate-outfit-in").count()) === 0);
-      const picture = (page) => page.evaluate(() => document.querySelector("[data-mate-set] img")?.src ?? "");
-      const showing = (page, what) => until(`${what} on the screen`, async () => what.test(await picture(page)) && (await page.locator(".mate-outfit-out, .mate-outfit-in").count()) === 0);
-      const USUAL = /chaerin\/neutral/;
+      // (her set's still; none while a clip is drawn — upset as she still is, a sad idle)
+      const picture = (page) => page.evaluate(() => {
+        const set = document.querySelector("[data-mate-set]");
+        return set?.querySelector("img")?.src || "";
+      });
+      const USUAL = /chaerin\/(?!outfits\/)/;
       const CROP_TOP = /crop-top/;
+      // (settled in that set: its still on the screen, or — a clip drawn, no still to look at — the set she wears)
+      const showing = (page, what) => until(`${what} on the screen`, async () => {
+        if ((await page.locator(".mate-outfit-out, .mate-outfit-in").count()) > 0 || !(await page.locator("[data-mate-set]").count())) return false;
+        const pic = await picture(page);
+        if (/^https?:/.test(pic)) return what.test(pic);
+        return (await mateNow()).outfits.worn === (what === CROP_TOP ? GRAY : "default");
+      });
       await until("in her usual clothes", async () => (await mateNow()).outfits.worn === "default");
       await showing(here, USUAL);
       const usual = await faceOn(here);
@@ -421,7 +450,9 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       assert.ok(during("out").some((x) => x.opacity > 0 && x.opacity < 1), `it fades away: ${JSON.stringify(during("out").map((x) => x.opacity))}`);
       assert.ok(during("in").some((x) => x.opacity > 0 && x.opacity < 1), `it fades in: ${JSON.stringify(during("in").map((x) => x.opacity))}`);
       assert.ok(during("out").every((x) => !/crop-top/.test(x.pic)), "the new set only shows once the old one is gone");
-      assert.ok(during("in").every((x) => /crop-top/.test(x.pic)), "and it is there when she comes back");
+      // (a moment with a clip playing has no still to look at: only the stills shown count)
+      const stillsIn = during("in").filter((x) => x.pic);
+      assert.ok(stillsIn.length > 0 && stillsIn.every((x) => /crop-top/.test(x.pic)), "and it is there when she comes back");
       assert.equal(await here.evaluate(() => Number(getComputedStyle(document.querySelector("[data-mate-kind]")).opacity)), 1);
       await showing(here, CROP_TOP);
       sameSpot(usual, await faceOn(here), "desktop");
@@ -435,12 +466,17 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
         await showing(here, USUAL);
         await sleep(300);
         const a = await faceOn(here);
-        await wear(GRAY);
-        await showing(here, CROP_TOP);
+        // (the server has it on at once; the screen a moment later: wait for the change to start, then to end)
+        const changeTo = async (id, what) => {
+          await wear(id);
+          await until("the change starts", async () => (await here.locator(".mate-outfit-out, .mate-outfit-in").count()) > 0 || what.test(await picture(here)), 8000);
+          await showing(here, what);
+          await sleep(300);
+        };
+        await changeTo(GRAY, CROP_TOP);
         sameSpot(a, await faceOn(here), label);
         await here.screenshot({ path: path.join(SHOTS, `frame-crop-top-${size.width}.png`) });
-        await wear("default");
-        await showing(here, USUAL);
+        await changeTo("default", USUAL);
       }
       await mine.close();
     }

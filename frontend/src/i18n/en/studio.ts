@@ -500,4 +500,6 @@ export default {
   mapBrowse: "Look through the model",
   mapBrowseHelp: "Look at the model's own expressions and motions first: press one to see it on her. Then choose below which goes with each emotion.",
   cvIdleEdit: "Pick what to change in the Guide, or tell the AI",
+  gDrawReadySays: "All made. Look at it, then put it on her.",
+  gDrawReadyOutfit: "All made. Look at the new outfit, then put it on her.",
 };

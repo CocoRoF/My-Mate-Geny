@@ -459,11 +459,11 @@ export default function MateStudio() {
     if (!project) return;
     setSheet(nodeOfSection(id, project));
   };
-  // 메이트 편집 opened on one of its windows (her wardrobe from the outfits window, …): once she is there
+  // another project (an outfit's, from her wardrobe; one from Projects ▾): the open window was the last one's. 메이트 편집
+  // opened on one of its windows (her wardrobe from the outfits window, …): that one, once she is there
   useEffect(() => {
     if (!pid) return;
-    const n = useStudio.getState().takeNode();
-    if (n) setSheet(n);
+    setSheet(useStudio.getState().takeNode());
   }, [pid]);
   const guide = useGuideState(pid);
 
