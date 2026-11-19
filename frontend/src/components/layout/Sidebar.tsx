@@ -229,7 +229,6 @@ export default function Sidebar({ collapsible = false }: { collapsible?: boolean
           <div className="text-[15px] font-semibold tracking-tight">
             My Mate <span className="text-gradient">Geny</span>
           </div>
-          <div className="text-[10px] text-content-faint">{t("nav.tagline")}</div>
         </div>
         <button
           onClick={refresh}

@@ -11,8 +11,8 @@ import type { AvatarProject, ClipCheck } from "../../../../api/avatar";
 
 export type SlotState = "empty" | "queued" | "running" | "processing" | "done" | "failed";
 export type SetKey = "faces" | "idle" | "talk" | "react" | "away";
-export type InputKey = "concept" | "profile" | "style" | "refs" | "voice" | "model";
-export type NodeKey = InputKey | "brief" | "estimate" | "candidates" | "home" | `set:${SetKey}` | "check" | "mate";
+export type InputKey = "concept" | "profile" | "style" | "temperament" | "refs" | "voice" | "model";
+export type NodeKey = InputKey | "brief" | "estimate" | "candidates" | "home" | `set:${SetKey}` | "check" | "mate" | "import" | "motions";
 
 export const SETS: SetKey[] = ["faces", "idle", "talk", "react", "away"];
 /** clip kinds of each set (the faces are stills) */
@@ -188,7 +188,7 @@ export function nodesOfTool(name: string, input: unknown): NodeKey[] {
   if (tool === "estimate") return ["estimate"];
   if (tool === "look") return ["candidates", "home"];
   if (tool === "regenerate" || tool === "extend") return ["estimate"];
-  if (tool === "map_avatar_emotions") return ["mate"];
+  if (tool === "map_avatar_emotions") return ["motions", "mate"];
   return [];
 }
 
@@ -269,6 +269,33 @@ export interface LineState {
   /** inputs that go to the mate along the bottom (who she is, how she talks, her voice and model) */
   direct: InputKey[];
   hasCheck: boolean;
+}
+
+/** her look from a file (a Live2D model, a LivLiv package, a clip pack): the file → her emotions matched → the mate,
+ *  and who she is straight to the mate along the bottom */
+export function fileLinesOf(b: Record<string, Box>, o: { worldH: number; has: boolean; mapped: boolean; direct: InputKey[] }): Line[] {
+  const out: Line[] = [];
+  const right = (k: string): [number, number] | null => (b[k] ? [b[k].x + b[k].w, b[k].y + b[k].h / 2] : null);
+  const left = (k: string): [number, number] | null => (b[k] ? [b[k].x, b[k].y + b[k].h / 2] : null);
+  const link = (id: string, from: string, to: string, tone: Tone) => {
+    const a = right(from);
+    const c = left(to);
+    if (a && c) out.push({ id, d: curve(a[0], a[1], c[0], c[1]), tone });
+  };
+  link("concept-import", "concept", "import", o.has ? "accent" : "faint");
+  link("import-motions", "import", "motions", o.has ? "accent" : "faint");
+  link("motions-mate", "motions", "mate", o.mapped ? "ok" : o.has ? "accent" : "faint");
+  const m = b.mate;
+  if (m) {
+    const y = o.worldH - 18;
+    const inX = m.x - 22;
+    const to: [number, number] = [m.x, m.y + m.h - 30];
+    o.direct.forEach((k, i) => {
+      const a = right(k);
+      if (a) out.push({ id: `${k}-mate`, d: rounded([[a[0], a[1]], [a[0] + 14 + i * 3, a[1]], [a[0] + 14 + i * 3, y - i * 4], [inX, y - i * 4], [inX, to[1]], to]), tone: "faint" });
+    });
+  }
+  return out;
 }
 
 /** the connectors between the measured boxes (`data-g` keys: node keys, `tile:<key>`, `cand:<id>`) */

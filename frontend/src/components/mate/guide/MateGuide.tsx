@@ -392,8 +392,8 @@ function AvatarStep({
     return (
       <div className="space-y-3 rounded-xl border border-border bg-surface/50 p-4 text-[12.5px] text-content-dim" data-testid="mate-guide-avatar-none">
         <p>{t("guide.avatarNone", { name: mate.name })}</p>
-        <button type="button" className="btn-soft" onClick={() => useStudio.getState().openAvatar(mate.id)}>
-          <Icon name="sparkles" size={13} /> {t("avatar.createWithAiBtn")}
+        <button type="button" className="btn-soft" onClick={() => useStudio.getState().openEdit(mate.id, "look")} data-testid="mate-guide-avatar-edit">
+          <Icon name="pencil" size={13} /> {t("guide.avatarEdit")}
         </button>
       </div>
     );

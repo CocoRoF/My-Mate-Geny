@@ -1,7 +1,7 @@
 // Image Studio (docs/local-image.md "Image Studio"): Settings → Local model hosting → Image Studio.
 export default {
   tab: "Image Studio",
-  hint: "Picture and clip models on this machine's own GPU: set up here, used by the avatar maker",
+  hint: "Picture and clip models on this machine's own GPU: set up here, used by Mate Create",
   gatePill: "{name} · {used} / {total} GB",
   notHere: "Not on this machine",
 
@@ -43,7 +43,7 @@ export default {
   queueIdle: "Nothing is running.",
   cancel: "Cancel",
 
-  ovAvatar: "In the avatar maker",
+  ovAvatar: "In Mate Create",
   ovAvatarHint:
     "Each stage of making an avatar can run on this computer (0 credits) instead of Higgsfield, when its model is installed. You choose per stage on the estimate.",
   stage_design: "Candidates",
@@ -80,7 +80,7 @@ export default {
   step_finishing: "Finishing",
   step_masking: "Finding the character",
   step_animating: "Animating",
-  src_avatar: "Avatar maker",
+  src_avatar: "Mate Create",
   src_studio: "Image Studio",
 
   // models
@@ -199,10 +199,10 @@ export default {
   save: "Save",
   reset: "Reset",
   setModels: "The model each use takes",
-  setModelsHint: "What the avatar maker and Try use. Automatic: the first installed in the recommended order.",
+  setModelsHint: "What Mate Create and Try use. Automatic: the first installed in the recommended order.",
   setAuto: "Automatic ({name})",
   setNone: "None installed",
-  setAvatar: "Avatar maker: where each stage starts",
+  setAvatar: "Mate Create: where each stage starts",
   setAvatarHint:
     "The engine a new estimate starts with, stage by stage. On the estimate you can still switch a stage; a stage whose model isn't installed runs on Higgsfield.",
   setRecipe: "{name}: settings",

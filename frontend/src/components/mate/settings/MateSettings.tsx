@@ -1,46 +1,49 @@
 /**
- * Mate settings (docs/settings.md): Profile · Conversation style · Avatar and outfits · Voice · Language model ·
- * Relationship and memory (this mate) · State (her Geny-State-System: how she feels and why, what she is told, her
- * temperament and a scenario simulator) · Common (every mate: the same as Settings → 메이트 — her on the desktop, reading
- * aloud, speaking first, screen sharing, Live2D; done by the mate picked here) · Delete. The header's 가이드 opens her
- * step-by-step guide again (guide/MateGuide).
+ * Mate settings (docs/settings.md): Relationship and memory (this mate) · Common (every mate: the same as Settings →
+ * 메이트 — her on the desktop, reading aloud, speaking first, screen sharing, Live2D; done by the mate picked here) ·
+ * Delete. Who she is — profile, conversation style, temperament, look and outfits, voice, language model — is set in
+ * 메이트 편집 (the studio, studio/MateStudio), where she was made: the card on top opens it. The header's 가이드 opens
+ * her step-by-step guide again (guide/MateGuide).
  */
 import { useEffect, useRef, useState } from "react";
 import type { Mate } from "../../../api/mates";
-import type { MateConversation } from "../../../mate/useMateConversation";
-import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
 import ScrollRow from "../../ui/ScrollRow";
 import { BuiltinBadge } from "../MateStage";
-import ProfileTab from "./ProfileTab";
-import StyleTab from "./StyleTab";
-import AvatarTab from "./AvatarTab";
-import ModelTab from "./ModelTab";
-import VoiceTab from "./VoiceTab";
 import { SaveBarSlot } from "./ui";
 import BondTab from "./BondTab";
-import TemperamentTab from "./TemperamentTab";
 import DangerTab from "./DangerTab";
 import MateTab from "../../settings/MateTab";
 import { openAppSettings } from "../../../lib/openAppSettings";
 import { useT, type MsgKey } from "../../../i18n";
 
-export type Tab = "profile" | "style" | "avatar" | "voice" | "model" | "bond" | "state" | "common" | "danger";
+export type Tab = "bond" | "common" | "danger";
 
 const TABS: { id: Tab; label: MsgKey }[] = [
-  { id: "profile", label: "mateSettings.tabProfile" },
-  { id: "style", label: "mateSettings.tabStyle" },
-  { id: "avatar", label: "mateSettings.tabAvatar" },
-  { id: "voice", label: "mateSettings.voiceVoice" },
-  { id: "model", label: "mateSettings.modelTitle" },
   { id: "bond", label: "mateSettings.tabBond" },
-  { id: "state", label: "mateSettings.tabState" },
   // (what holds for every mate — the same as Settings → 메이트, here too)
   { id: "common", label: "mateSettings.tabCommon" },
   { id: "danger", label: "mateSettings.tabDanger" },
 ];
 
-export default function MateSettings({ mate, conv, onClose, initialTab = "profile", onGuide }: { mate: Mate; conv: MateConversation; onClose: () => void; initialTab?: Tab; onGuide?: () => void }) {
+/** who she is is changed where she was made: a card that opens 메이트 편집 */
+function EditCard({ mate, onEdit }: { mate: Mate; onEdit: () => void }) {
+  const t = useT();
+  return (
+    <button type="button" onClick={onEdit} className="flex w-full items-center gap-3 rounded-xl border border-accent/30 bg-accent-soft/40 px-3.5 py-3 text-left transition hover:bg-accent-soft/70" data-testid="mate-settings-edit">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+        <Icon name="pencil" size={16} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13.5px] font-semibold text-content">{t("mateSettings.editCard", { name: mate.name })}</span>
+        <span className="block text-[11.5px] text-content-dim">{t("mateSettings.editCardSub")}</span>
+      </span>
+      <Icon name="chevron" size={15} className="shrink-0 text-content-faint" />
+    </button>
+  );
+}
+
+export default function MateSettings({ mate, onClose, initialTab = "bond", onGuide, onEdit }: { mate: Mate; onClose: () => void; initialTab?: Tab; onGuide?: () => void; onEdit: () => void }) {
   const t = useT();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [saveSlot, setSaveSlot] = useState<HTMLDivElement | null>(null);
@@ -49,10 +52,6 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
   useEffect(() => {
     body.current?.scrollTo(0, 0);
   }, [tab]);
-  // the voice tab needs to know which voice services work; refresh it whenever settings open
-  useEffect(() => {
-    void useMateStore.getState().loadProviders();
-  }, []);
 
   return (
     <div className="flex h-full flex-col" data-testid="mate-settings">
@@ -100,14 +99,9 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
       <SaveBarSlot.Provider value={saveSlot}>
       <div ref={body} className="fit-fields scrollbar-stable min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
+          {tab !== "common" && <EditCard mate={mate} onEdit={onEdit} />}
           {/* key: a different mate starts from its own values */}
-          {tab === "profile" && <ProfileTab key={mate.id} mate={mate} onOpenStyle={() => setTab("style")} />}
-          {tab === "style" && <StyleTab key={mate.id} mate={mate} conv={conv} />}
-          {tab === "avatar" && <AvatarTab key={mate.id} mate={mate} conv={conv} />}
-          {tab === "model" && <ModelTab key={mate.id} mate={mate} />}
-          {tab === "voice" && <VoiceTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "bond" && <BondTab key={mate.id} mate={mate} />}
-          {tab === "state" && <TemperamentTab key={mate.id} mate={mate} />}
           {tab === "common" && <MateTab />}
           {tab === "danger" && <DangerTab key={mate.id} mate={mate} onDeleted={onClose} />}
         </div>

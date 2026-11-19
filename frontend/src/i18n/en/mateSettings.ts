@@ -399,8 +399,6 @@ export default {
   dangerRestoreBtn: "Restore built-in mates",
 
   // MateSettings
-  tabProfile: "Profile",
-  tabStyle: "Conversation style",
   relTitle: "Relationship",
   relHint: "How close you and {name} are grows with the time you spend together, and cools a little when you're away for a while. It shows in her tone — never as guilt or pressure, and she helps just as fully at every stage.",
   relEnabled: "Relationship",
@@ -500,7 +498,6 @@ export default {
   styleAvoid: "Topics to avoid",
   styleAvoidHint: "She declines them kindly and changes the subject.",
   styleAvoidPh: "e.g. politics, my ex",
-  tabAvatar: "Avatar & outfits",
   outfitWardrobe: "Outfits",
   outfitWardrobeHint: "Pick an outfit and the settings below apply to it. Wearing it changes the whole set at once, expressions and motions included.",
   outfitDefault: "Default",
@@ -700,4 +697,6 @@ export default {
   tabState: "Temperament",
   tabCommon: "Common",
   deskShowsPicked: "{name} — the mate picked in the Mate view.",
+  editCard: "Edit {name}",
+  editCardSub: "Name, personality, style, temperament, look, voice and model are changed in Edit mate",
 };

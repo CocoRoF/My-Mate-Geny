@@ -86,7 +86,7 @@ export default {
   langSaving: "Saving…",
   langSaved: "Saved — your other devices follow.",
   langLocal: "Changed on this device. It couldn't be saved to your account (the server didn't answer).",
-  mateLangNote: "A mate replies in her own language (Mate settings → Conversation style).",
+  mateLangNote: "A mate replies in her own language (Edit mate → Conversation style).",
 
   // appearance (light / dark)
   appearanceHint: "Light, dark, or this device's setting — applied at once in every open window.",
@@ -141,7 +141,7 @@ export default {
   phoneAllow: "Allow",
   mateServices: "Image & voice services",
   yourName: "Your name for your mates",
-  yourNameHint: "Every mate knows you by this name. How each one calls you (“Hyunsuk-ssi”, “boss”) is in her Mate settings → Conversation style.",
+  yourNameHint: "Every mate knows you by this name. How each one calls you (“Hyunsuk-ssi”, “boss”) is in Edit mate → Conversation style.",
   yourNamePh: "e.g. Alex",
   yourNameSaved: "Saved — every mate knows it now.",
   localAccountHint: "Local execution: this app signs you in on its own, so there is no username or password to manage. Your name is shown below the menu and is what your mates call you.",

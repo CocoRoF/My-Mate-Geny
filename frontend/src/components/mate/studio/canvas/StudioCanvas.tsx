@@ -19,6 +19,7 @@ import { swatchesOf } from "../fields";
 import {
   candidatesOf,
   checksOf,
+  fileLinesOf,
   going,
   homeState,
   linesOf,
@@ -67,6 +68,8 @@ export interface StudioCanvasProps {
   onApprove: () => void;
   /** Create mate (a new one, when nothing is missing) */
   onCreate?: () => void;
+  /** her look comes from a file the user has (a Live2D model, …): the file and her emotions matched to it, nothing drawn */
+  fileMode?: boolean;
 }
 
 // ── words that land ──
@@ -248,7 +251,7 @@ const SET_WHEN: Record<SetKey, MsgKey> = { faces: "studio.setFacesWhen", idle: "
 const SET_RULE: Record<SetKey, MsgKey> = { faces: "studio.setFacesRule", idle: "studio.setIdleRule", talk: "studio.setTalkRule", react: "studio.setReactRule", away: "studio.setAwayRule" };
 
 /** the voice's engine and voice in a few words */
-function voiceLine(m: Mate, t: ReturnType<typeof useT>): string {
+export function voiceLine(m: Mate, t: ReturnType<typeof useT>): string {
   const v = m.voice.tts;
   if (!v.engine || v.engine === "off") return t("studio.cvVoiceOff");
   if (v.engine === "browser") return t("studio.cvVoiceBrowser");
@@ -258,7 +261,7 @@ function voiceLine(m: Mate, t: ReturnType<typeof useT>): string {
 
 // ── the canvas ──
 
-export default function StudioCanvas({ project: p, mate, creating, activity, open, busy, onOpen, onApprove, onCreate }: StudioCanvasProps) {
+export default function StudioCanvas({ project: p, mate, creating, activity, open, busy, onOpen, onApprove, onCreate, fileMode = false }: StudioCanvasProps) {
   const t = useT();
   const view = useCanvas();
   const [boxes, setBoxes] = useState<Record<string, Box>>({});
@@ -283,6 +286,9 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
       concept: JSON.stringify(concept),
       profile: [mate.name, mate.persona.personality, mate.persona.greeting, mate.persona.description].join("|"),
       style: [prefs.formality, prefs.speech_style, prefs.address, mate.persona.language].join("|"),
+      temperament: JSON.stringify(prefs.temperament ?? null),
+      import: JSON.stringify(mate.avatar.kind === "live2d" ? [mate.avatar.live2d.model, mate.avatar.live2d.scale, mate.avatar.live2d.x, mate.avatar.live2d.y] : mate.avatar.kind),
+      motions: JSON.stringify(mate.avatar.kind === "live2d" ? [mate.avatar.live2d.emotions, mate.avatar.live2d.emotion_motions] : mate.avatar.kind === "livliv" ? mate.avatar.livliv.emotions : null),
       refs: p.files.refs.map((r) => r.name).join("|") + p.brief.reference.mode,
       voice: voiceLine(mate, t),
       model: `${mate.llm.provider}/${mate.llm.model}`,
@@ -332,11 +338,16 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
       ro.disconnect();
       imgs.forEach((i) => i.removeEventListener("load", again));
     };
-  }, [p, mate, rows, cands, measure, view]);
+  }, [p, mate, rows, cands, measure, view, fileMode]);
 
-  const direct: InputKey[] = outfit ? [] : ["profile", "style", "voice", "model"];
+  const direct: InputKey[] = outfit ? [] : ["profile", "style", "temperament", "voice", "model"];
+  const av = mate.avatar;
+  const fileHas = av.kind === "live2d" || av.kind === "livliv" || ((av.kind === "video" || av.kind === "photo") && !!av.rig.home);
+  const fileMap = av.kind === "live2d" ? { ...(av.live2d.emotions ?? {}), ...(av.live2d.emotion_motions ?? {}) } : av.kind === "livliv" ? av.livliv.emotions ?? {} : {};
+  const fileMapped = Object.values(fileMap).filter((v) => v !== "" && v !== undefined).length;
   const lines: Line[] = useMemo(
     () =>
+      fileMode ? fileLinesOf(boxes, { worldH, has: fileHas, mapped: fileMapped > 0, direct }) :
       linesOf(boxes, shownRows, {
         worldH,
         looks: { concept: !!(concept.look || concept.style || concept.pitch), refs: p.files.refs.length > 0 },
@@ -349,11 +360,12 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
         hasCheck: !!checks,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [boxes, shownRows, worldH, concept, p, confirmed, plan, cands, home, checks, outfit],
+    [boxes, shownRows, worldH, concept, p, confirmed, plan, cands, home, checks, outfit, fileMode, fileHas, fileMapped],
   );
 
   // ── the camera follows what matters: what waits for the user, else what the agent works on, else what is drawn ──
   const target = useMemo(() => {
+    if (fileMode) return fileHas ? null : "import";
     if (wait === "estimate" || wait === "extra" || wait === "cap") return "estimate";
     if (wait === "pick") return "candidates";
     if (wait === "home") return "home";
@@ -367,7 +379,7 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
     // all made: the mate at the end, playing
     if (p.status === "ready" || p.status === "applied") return "mate";
     return null;
-  }, [wait, activity.working, rows, cands, home, p.status]);
+  }, [wait, activity.working, rows, cands, home, p.status, fileMode, fileHas]);
   useEffect(() => {
     if (!target) return;
     const id = window.setTimeout(() => view.focus(target), 120);
@@ -398,7 +410,7 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
   return (
     <div className="relative min-h-0 min-w-0 flex-1" data-testid="studio-canvas">
       <div ref={view.canvas} className="sc-canvas" tabIndex={0} aria-label={t("studio.cvLabel")}>
-        <div ref={view.world} className="sc-world">
+        <div ref={view.world} className={`sc-world${fileMode ? " is-file" : ""}`}>
           <svg className="sc-lines" aria-hidden="true">
             {lines.map((l) => (
               <path key={l.id} d={l.d} className={`scl scl-${l.tone}${l.flow ? " is-flow" : ""}${l.thick ? " is-thick" : ""}`} />
@@ -406,7 +418,7 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
           </svg>
 
           {/* the column heads */}
-          {(["cvColInput", "cvColLook", "cvColBase", "cvColSets", "cvColMake", "cvColCheck", "cvColDone"] as const).map((k, i) => (
+          {(fileMode ? (["cvColInput", "cvColFile", "cvColMap", "cvColDone"] as const) : (["cvColInput", "cvColLook", "cvColBase", "cvColSets", "cvColMake", "cvColCheck", "cvColDone"] as const)).map((k, i) => (
             <div key={k} className="sc-col-h" style={{ gridColumn: i + 1 }}>
               <b>{t(`studio.${k}` as MsgKey)}</b>
               <small>{t(`studio.${k}Sub` as MsgKey)}</small>
@@ -433,7 +445,7 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
                     </div>
                   )}
                 </Node>
-                <Node g="profile" title={t("studio.secProfile")} onOpen={() => onOpen("profile")} working={work("profile")} lit={lit.profile} open={isOpen("profile")}>
+                <Node g="profile" title={t("studio.gProfile")} onOpen={() => onOpen("profile")} working={work("profile")} lit={lit.profile} open={isOpen("profile")}>
                   <Row k={t("studio.cvName")} v={mate.name} lit={!!lit.profile} empty={empty} />
                   <Row k={t("studio.cvPersonality")} v={mate.persona.personality} lit={!!lit.profile} empty={empty} />
                 </Node>
@@ -441,9 +453,12 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
                   <Row k={t("studio.cvFormality")} v={t(`studio.formality_${prefs.formality}` as MsgKey)} lit={!!lit.style} empty={empty} />
                   <Row k={t("studio.cvHabits")} v={prefs.speech_style} lit={!!lit.style} empty={empty} />
                 </Node>
+                <Node g="temperament" title={t("studio.secTemperament")} onOpen={() => onOpen("temperament")} lit={lit.temperament} open={isOpen("temperament")}>
+                  <p className="scn-text">{prefs.temperament ? t("studio.gTemperamentOwn") : t("studio.gTemperamentAuto")}</p>
+                </Node>
               </>
             )}
-            <Node g="refs" title={t("studio.cvRefs")} side={p.files.refs.length ? String(p.files.refs.length) : undefined} onOpen={() => onOpen("refs")} working={work("refs")} lit={lit.refs} open={isOpen("refs")}>
+            {!fileMode && <Node g="refs" title={t("studio.cvRefs")} side={p.files.refs.length ? String(p.files.refs.length) : undefined} onOpen={() => onOpen("refs")} working={work("refs")} lit={lit.refs} open={isOpen("refs")}>
               {p.files.refs.length ? (
                 <div className="scn-cands">
                   {p.files.refs.slice(0, 4).map((r) => (
@@ -456,7 +471,7 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
                 <p className="scn-text is-empty">{t("studio.cvRefsEmpty")}</p>
               )}
               {p.brief.reference.mode !== "none" && <p className="scn-note">{t(`studio.cvRefMode_${p.brief.reference.mode}` as MsgKey)}</p>}
-            </Node>
+            </Node>}
             {!outfit && (
               <>
                 <Node g="voice" title={t("studio.secVoice")} side={studio?.voice_ok ? <Icon name="check" size={11} /> : undefined} sideTone="ok" onOpen={() => onOpen("voice")} working={work("voice")} lit={lit.voice} open={isOpen("voice")}>
@@ -469,242 +484,291 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
             )}
           </div>
 
-          {/* 2 · what she will look like, and what it costs */}
-          <div className="sc-stack" style={{ gridColumn: 2, ...span }}>
-            <Node g="brief" title={t("studio.cvBrief")} onOpen={() => onOpen("brief")} working={work("brief")} lit={lit.brief} open={isOpen("brief")} off={skipped}>
-              <p className={`scn-text${p.brief.design.prompt || concept.look ? "" : " is-empty"}`}>
-                <Reveal text={p.brief.design.prompt || concept.look || t("studio.cvBriefEmpty")} lit={!!lit.brief} />
-              </p>
-              {(p.brief.clips.length > 0 || p.status !== "interview") && (
-                <div className="scn-chips">
-                  <span>{p.brief.aspect === "9:16" ? t("studio.cvAspectTall") : t("studio.cvAspectSquare")}</span>
-                  <span>{t(`studio.cvTier_${p.brief.tier}` as MsgKey)}</span>
-                  <span>{t("studio.cvCounts", { clips: p.brief.clips.length, stills: p.brief.stills.length })}</span>
-                </div>
-              )}
-              {skipped && <p className="scn-note is-warn">{t("studio.avatarSkipped")}</p>}
-            </Node>
-            <Node
-              g="estimate"
-              title={t("studio.cvEstimate")}
-              side={confirmed ? t("studio.cvConfirmed") : plan ? t("studio.cvToConfirm") : undefined}
-              sideTone={confirmed ? "ok" : plan ? "warn" : undefined}
-              onOpen={() => onOpen("estimate")}
-              working={work("estimate")}
-              lit={lit.estimate}
-              wait={wait === "estimate" || wait === "extra" || wait === "cap"}
-              open={isOpen("estimate")}
-              off={skipped}
-            >
-              {confirmed ? (
-                <>
-                  <div className="scn-count">
-                    <span>{t("studio.cvSpent")}</span>
-                    <b>
-                      {fmt(p.credits.committed)} / {fmt(p.credits.cap)}
-                    </b>
-                  </div>
-                  <div className="scn-bar">
-                    <i style={{ width: `${p.credits.cap ? Math.min(100, (p.credits.committed / p.credits.cap) * 100) : 0}%` }} />
-                  </div>
-                </>
-              ) : plan ? (
-                <>
-                  <div className="scn-count">
-                    <span>{t("studio.cvTotal")}</span>
-                    <b>{t("studio.cvCredits", { n: fmt(plan.total) })}</b>
-                  </div>
-                  <div className="scn-count">
-                    <span>{t("studio.cvMinutes")}</span>
-                    <b>{t("studio.cvAbout", { n: Math.max(1, Math.round(plan.minutes)) })}</b>
-                  </div>
-                  <div className="scn-act">
-                    <button type="button" className="scn-btn is-primary" onClick={() => onOpen("estimate")} data-testid="sc-estimate-open">
-                      <Icon name="check" size={11} /> {t("studio.cvReview")}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <p className="scn-text is-empty">{t("studio.cvEstimateEmpty")}</p>
-              )}
-              {plan?.engines && Object.values(plan.engines).includes("local") && (
-                <p className="scn-note" data-testid="sc-estimate-local">
-                  <Icon name="cpu" size={10} /> {t("studio.cvLocal", { n: Object.values(plan.engines).filter((e) => e === "local").length })}
-                </p>
-              )}
-              {p.extras.some((x) => x.status === "pending") && <p className="scn-note is-warn">{t("studio.wait_extra")}</p>}
-            </Node>
-          </div>
-
-          {/* 3 · the candidates, then the base picture every clip starts and ends on */}
-          <div className="sc-stack" style={{ gridColumn: 3, ...span }}>
-            {p.brief.reference.mode !== "as_base" && (
-              <Node
-                g="candidates"
-                title={candTitle}
-                side={picked ? t("studio.cvPicked") : cands.some((c) => c.state === "done") ? `${cands.filter((c) => c.state === "done").length}/${cands.length}` : undefined}
-                sideTone={picked ? "ok" : undefined}
-                onOpen={() => onOpen("candidates")}
-                lit={lit.candidates}
-                wait={wait === "pick"}
-                open={isOpen("candidates")}
-                off={skipped}
-              >
-                <div className="scn-cands">
-                  {cands.map((c) => (
-                    <span key={c.id} data-g={`cand:${c.id}`} className={`scn-cand is-${c.state}${c.picked ? " is-picked" : ""}${wait === "pick" && c.src ? " is-pickable" : ""}`}>
-                      {c.src ? <img src={c.src} alt="" draggable={false} /> : null}
-                      {c.state === "running" ? <i className="sct-sweep" /> : null}
-                      {c.picked ? <i>{t("studio.cvPickedTag")}</i> : null}
-                    </span>
-                  ))}
-                </div>
-                {wait === "pick" && (
-                  <div className="scn-act">
-                    <button type="button" className="scn-btn is-warn" onClick={() => onOpen("candidates")} data-testid="sc-pick-open">
-                      {t("studio.cvPickOne")}
-                    </button>
-                  </div>
-                )}
-              </Node>
-            )}
-            <Node
-              g="home"
-              title={t("studio.cvHome")}
-              side={home === "done" ? t("studio.cvFixed") : home === "waiting" ? t("studio.cvApproveNeeded") : home === "running" ? t("studio.cvMaking") : home === "failed" ? t("studio.cvFailed") : undefined}
-              sideTone={home === "done" ? "ok" : home === "waiting" ? "warn" : home === "running" ? "accent" : undefined}
-              onOpen={() => onOpen("home")}
-              lit={lit.home}
-              wait={wait === "home"}
-              open={isOpen("home")}
-              off={skipped}
-            >
-              <span className={`scn-pic is-${home === "waiting" ? "waiting" : home}`}>
-                {p.files.home ? <img src={p.files.home} alt="" draggable={false} /> : picked?.src ? <img src={picked.src} alt="" draggable={false} /> : <em>{t("studio.cvHomeEmpty")}</em>}
-                {home === "running" ? <i className="sct-sweep" /> : null}
-              </span>
-              <div className="scn-chips">
-                <span>{t("studio.cvRuleWaist")}</span>
-                <span>{t("studio.cvRuleCamera")}</span>
-                <span>{t("studio.cvRuleBg")}</span>
-              </div>
-              {wait === "home" && (
-                <div className="scn-act">
-                  <button type="button" className="scn-btn is-primary" disabled={busy} onClick={onApprove} data-testid="sc-approve-home">
-                    <Icon name="check" size={11} /> {t("avatar.approve")}
-                  </button>
-                  <button type="button" className="scn-btn" onClick={() => onOpen("home")}>
-                    {t("studio.cvLook")}
-                  </button>
-                </div>
-              )}
-            </Node>
-          </div>
-
-          {/* 4 · 5 · each set: its rule, and every picture or clip of it made at the same time */}
-          {shownRows.map((row, i) => {
-            const key = `set:${row.key}` as NodeKey;
-            const n = row.tiles.length;
-            const done = row.tiles.filter((x) => x.state === "done").length;
-            const making = row.tiles.filter((x) => going(x.state)).length;
-            const failed = row.tiles.filter((x) => x.state === "failed").length;
-            const isFaces = row.key === "faces";
-            const waitHere = isFaces && wait === "stills";
-            return (
-              <SetRow key={row.key} i={i}>
-                <div className="sc-cell" style={{ gridColumn: 4, gridRow: i + 2 }}>
-                  <Node g={key} title={t(SET_TITLE[row.key])} side={n ? t("studio.cvN", { n }) : undefined} onOpen={() => onOpen(key)} wait={waitHere} open={isOpen(key)} off={skipped} lit={lit[key]}>
-                    <Row k={t("studio.cvWhen")} v={t(SET_WHEN[row.key])} lit={false} empty={empty} />
-                    <Row k={t("studio.cvRule")} v={t(SET_RULE[row.key])} lit={false} empty={empty} />
-                    <p className={`scn-note${failed ? " is-bad" : ""}`}>
-                      {!n ? t("studio.cvNotPlanned") : failed ? t("studio.cvFailedN", { n: failed }) : making ? t("studio.cvMakingN", { n: making }) : done === n ? t("studio.cvAllDone") : confirmed ? t("studio.cvDoneOf", { done, n }) : t("studio.cvPlannedN", { n })}
-                    </p>
-                    {waitHere && (
+          {fileMode ? (
+            <>
+              {/* 2 · the file she comes from */}
+              <div className="sc-cell" style={{ gridColumn: 2, ...span }}>
+                <Node g="import" title={t("studio.cvFile")} side={fileHas ? <Icon name="check" size={11} /> : undefined} sideTone="ok" onOpen={() => onOpen("import")} lit={lit.import} open={isOpen("import")} wait={!fileHas}>
+                  {fileHas ? (
+                    <>
+                      <p className="scn-text">{t(av.kind === "live2d" ? "studio.fileKindLive2d" : av.kind === "livliv" ? "studio.fileKindLivliv" : av.kind === "video" ? "studio.fileKindVideo" : "studio.fileKindPhoto")}</p>
+                      {av.kind === "live2d" && <p className="scn-note">{decodeURIComponent(av.live2d.model.split("/").pop() || "")}</p>}
+                    </>
+                  ) : (
+                    <>
+                      <p className="scn-text is-empty">{t("studio.cvFileEmpty")}</p>
                       <div className="scn-act">
-                        <button type="button" className="scn-btn is-primary" disabled={busy} onClick={onApprove} data-testid="sc-approve-stills">
-                          <Icon name="check" size={11} /> {t("studio.cvApproveFaces")}
+                        <button type="button" className="scn-btn is-primary" onClick={() => onOpen("import")} data-testid="sc-file-open">
+                          <Icon name="upload" size={11} /> {t("studio.gFileUploadOpen")}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </Node>
+              </div>
+              {/* 3 · her emotions → its expressions and motions */}
+              <div className="sc-cell" style={{ gridColumn: 3, ...span }}>
+                <Node g="motions" title={t("studio.cvMap")} side={fileMapped ? String(fileMapped) : undefined} sideTone="ok" onOpen={() => onOpen("motions")} working={work("motions")} lit={lit.motions} open={isOpen("motions")} off={!fileHas || (av.kind !== "live2d" && av.kind !== "livliv")}>
+                  {av.kind === "live2d" || av.kind === "livliv" ? (
+                    fileMapped ? (
+                      <div className="scn-chips">
+                        {Object.entries(av.kind === "live2d" ? av.live2d.emotions ?? {} : av.livliv.emotions ?? {})
+                          .filter(([, v]) => v !== "")
+                          .slice(0, 6)
+                          .map(([e]) => (
+                            <span key={e}>{labelOr(t, `mate.emotion_${e}`, e)}</span>
+                          ))}
+                      </div>
+                    ) : (
+                      <p className="scn-text is-empty">{t("studio.cvMapEmpty")}</p>
+                    )
+                  ) : (
+                    <p className="scn-text is-empty">{fileHas ? t("studio.cvMapClips") : t("studio.cvMapLater")}</p>
+                  )}
+                </Node>
+              </div>
+            </>
+          ) : (
+            <>
+          {/* 2 · what she will look like, and what it costs */}
+              <div className="sc-stack" style={{ gridColumn: 2, ...span }}>
+                <Node g="brief" title={t("studio.cvBrief")} onOpen={() => onOpen("brief")} working={work("brief")} lit={lit.brief} open={isOpen("brief")} off={skipped}>
+                  <p className={`scn-text${p.brief.design.prompt || concept.look ? "" : " is-empty"}`}>
+                    <Reveal text={p.brief.design.prompt || concept.look || t("studio.cvBriefEmpty")} lit={!!lit.brief} />
+                  </p>
+                  {(p.brief.clips.length > 0 || p.status !== "interview") && (
+                    <div className="scn-chips">
+                      <span>{p.brief.aspect === "9:16" ? t("studio.cvAspectTall") : t("studio.cvAspectSquare")}</span>
+                      <span>{t(`studio.cvTier_${p.brief.tier}` as MsgKey)}</span>
+                      <span>{t("studio.cvCounts", { clips: p.brief.clips.length, stills: p.brief.stills.length })}</span>
+                    </div>
+                  )}
+                  {skipped && <p className="scn-note is-warn">{t("studio.avatarSkipped")}</p>}
+                </Node>
+                <Node
+                  g="estimate"
+                  title={t("studio.cvEstimate")}
+                  side={confirmed ? t("studio.cvConfirmed") : plan ? t("studio.cvToConfirm") : undefined}
+                  sideTone={confirmed ? "ok" : plan ? "warn" : undefined}
+                  onOpen={() => onOpen("estimate")}
+                  working={work("estimate")}
+                  lit={lit.estimate}
+                  wait={wait === "estimate" || wait === "extra" || wait === "cap"}
+                  open={isOpen("estimate")}
+                  off={skipped}
+                >
+                  {confirmed ? (
+                    <>
+                      <div className="scn-count">
+                        <span>{t("studio.cvSpent")}</span>
+                        <b>
+                          {fmt(p.credits.committed)} / {fmt(p.credits.cap)}
+                        </b>
+                      </div>
+                      <div className="scn-bar">
+                        <i style={{ width: `${p.credits.cap ? Math.min(100, (p.credits.committed / p.credits.cap) * 100) : 0}%` }} />
+                      </div>
+                    </>
+                  ) : plan ? (
+                    <>
+                      <div className="scn-count">
+                        <span>{t("studio.cvTotal")}</span>
+                        <b>{t("studio.cvCredits", { n: fmt(plan.total) })}</b>
+                      </div>
+                      <div className="scn-count">
+                        <span>{t("studio.cvMinutes")}</span>
+                        <b>{t("studio.cvAbout", { n: Math.max(1, Math.round(plan.minutes)) })}</b>
+                      </div>
+                      <div className="scn-act">
+                        <button type="button" className="scn-btn is-primary" onClick={() => onOpen("estimate")} data-testid="sc-estimate-open">
+                          <Icon name="check" size={11} /> {t("studio.cvReview")}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="scn-text is-empty">{t("studio.cvEstimateEmpty")}</p>
+                  )}
+                  {plan?.engines && Object.values(plan.engines).includes("local") && (
+                    <p className="scn-note" data-testid="sc-estimate-local">
+                      <Icon name="cpu" size={10} /> {t("studio.cvLocal", { n: Object.values(plan.engines).filter((e) => e === "local").length })}
+                    </p>
+                  )}
+                  {p.extras.some((x) => x.status === "pending") && <p className="scn-note is-warn">{t("studio.wait_extra")}</p>}
+                </Node>
+              </div>
+
+              {/* 3 · the candidates, then the base picture every clip starts and ends on */}
+              <div className="sc-stack" style={{ gridColumn: 3, ...span }}>
+                {p.brief.reference.mode !== "as_base" && (
+                  <Node
+                    g="candidates"
+                    title={candTitle}
+                    side={picked ? t("studio.cvPicked") : cands.some((c) => c.state === "done") ? `${cands.filter((c) => c.state === "done").length}/${cands.length}` : undefined}
+                    sideTone={picked ? "ok" : undefined}
+                    onOpen={() => onOpen("candidates")}
+                    lit={lit.candidates}
+                    wait={wait === "pick"}
+                    open={isOpen("candidates")}
+                    off={skipped}
+                  >
+                    <div className="scn-cands">
+                      {cands.map((c) => (
+                        <span key={c.id} data-g={`cand:${c.id}`} className={`scn-cand is-${c.state}${c.picked ? " is-picked" : ""}${wait === "pick" && c.src ? " is-pickable" : ""}`}>
+                          {c.src ? <img src={c.src} alt="" draggable={false} /> : null}
+                          {c.state === "running" ? <i className="sct-sweep" /> : null}
+                          {c.picked ? <i>{t("studio.cvPickedTag")}</i> : null}
+                        </span>
+                      ))}
+                    </div>
+                    {wait === "pick" && (
+                      <div className="scn-act">
+                        <button type="button" className="scn-btn is-warn" onClick={() => onOpen("candidates")} data-testid="sc-pick-open">
+                          {t("studio.cvPickOne")}
                         </button>
                       </div>
                     )}
                   </Node>
-                </div>
-                <div className="sc-tiles" style={{ gridColumn: 5, gridRow: i + 2 }} data-testid={`sc-tiles-${row.key}`}>
-                  {row.tiles.length ? (
-                    row.tiles.map((tl) => <TileView key={tl.key} t={tl} lit={!!lit[tl.key]} open={isOpen(tl.key)} onOpen={() => onOpen(tl.key)} />)
-                  ) : (
-                    <span className="scn-note" style={{ gridColumn: "1 / -1" }}>
-                      {t("studio.cvTilesEmpty")}
-                    </span>
+                )}
+                <Node
+                  g="home"
+                  title={t("studio.cvHome")}
+                  side={home === "done" ? t("studio.cvFixed") : home === "waiting" ? t("studio.cvApproveNeeded") : home === "running" ? t("studio.cvMaking") : home === "failed" ? t("studio.cvFailed") : undefined}
+                  sideTone={home === "done" ? "ok" : home === "waiting" ? "warn" : home === "running" ? "accent" : undefined}
+                  onOpen={() => onOpen("home")}
+                  lit={lit.home}
+                  wait={wait === "home"}
+                  open={isOpen("home")}
+                  off={skipped}
+                >
+                  <span className={`scn-pic is-${home === "waiting" ? "waiting" : home}`}>
+                    {p.files.home ? <img src={p.files.home} alt="" draggable={false} /> : picked?.src ? <img src={picked.src} alt="" draggable={false} /> : <em>{t("studio.cvHomeEmpty")}</em>}
+                    {home === "running" ? <i className="sct-sweep" /> : null}
+                  </span>
+                  <div className="scn-chips">
+                    <span>{t("studio.cvRuleWaist")}</span>
+                    <span>{t("studio.cvRuleCamera")}</span>
+                    <span>{t("studio.cvRuleBg")}</span>
+                  </div>
+                  {wait === "home" && (
+                    <div className="scn-act">
+                      <button type="button" className="scn-btn is-primary" disabled={busy} onClick={onApprove} data-testid="sc-approve-home">
+                        <Icon name="check" size={11} /> {t("avatar.approve")}
+                      </button>
+                      <button type="button" className="scn-btn" onClick={() => onOpen("home")}>
+                        {t("studio.cvLook")}
+                      </button>
+                    </div>
                   )}
-                </div>
-              </SetRow>
-            );
-          })}
+                </Node>
+              </div>
 
-          {/* 6 · the checks */}
-          <div className="sc-cell" style={{ gridColumn: 6, ...span }}>
-            <Node g="check" title={t("studio.cvCheck")} onOpen={() => onOpen("check")} lit={lit.check} open={isOpen("check")}>
-              {creating && (
-                <div className="scn-count">
-                  <span>{t("studio.cvNeeds")}</span>
-                  <b className={missing.length ? "" : "is-ok"}>
-                    {needs - Math.min(needs, missing.length)}/{needs}
-                  </b>
-                </div>
-              )}
-              {!skipped && (
-                <>
-                  <div className="scn-count">
-                    <span>{t("studio.cvHome")}</span>
-                    <b className={home === "done" ? "is-ok" : ""}>{home === "done" ? 1 : 0}/1</b>
-                  </div>
-                  {faces > 0 && (
+              {/* 4 · 5 · each set: its rule, and every picture or clip of it made at the same time */}
+              {shownRows.map((row, i) => {
+                const key = `set:${row.key}` as NodeKey;
+                const n = row.tiles.length;
+                const done = row.tiles.filter((x) => x.state === "done").length;
+                const making = row.tiles.filter((x) => going(x.state)).length;
+                const failed = row.tiles.filter((x) => x.state === "failed").length;
+                const isFaces = row.key === "faces";
+                const waitHere = isFaces && wait === "stills";
+                return (
+                  <SetRow key={row.key} i={i}>
+                    <div className="sc-cell" style={{ gridColumn: 4, gridRow: i + 2 }}>
+                      <Node g={key} title={t(SET_TITLE[row.key])} side={n ? t("studio.cvN", { n }) : undefined} onOpen={() => onOpen(key)} wait={waitHere} open={isOpen(key)} off={skipped} lit={lit[key]}>
+                        <Row k={t("studio.cvWhen")} v={t(SET_WHEN[row.key])} lit={false} empty={empty} />
+                        <Row k={t("studio.cvRule")} v={t(SET_RULE[row.key])} lit={false} empty={empty} />
+                        <p className={`scn-note${failed ? " is-bad" : ""}`}>
+                          {!n ? t("studio.cvNotPlanned") : failed ? t("studio.cvFailedN", { n: failed }) : making ? t("studio.cvMakingN", { n: making }) : done === n ? t("studio.cvAllDone") : confirmed ? t("studio.cvDoneOf", { done, n }) : t("studio.cvPlannedN", { n })}
+                        </p>
+                        {waitHere && (
+                          <div className="scn-act">
+                            <button type="button" className="scn-btn is-primary" disabled={busy} onClick={onApprove} data-testid="sc-approve-stills">
+                              <Icon name="check" size={11} /> {t("studio.cvApproveFaces")}
+                            </button>
+                          </div>
+                        )}
+                      </Node>
+                    </div>
+                    <div className="sc-tiles" style={{ gridColumn: 5, gridRow: i + 2 }} data-testid={`sc-tiles-${row.key}`}>
+                      {row.tiles.length ? (
+                        row.tiles.map((tl) => <TileView key={tl.key} t={tl} lit={!!lit[tl.key]} open={isOpen(tl.key)} onOpen={() => onOpen(tl.key)} />)
+                      ) : (
+                        <span className="scn-note" style={{ gridColumn: "1 / -1" }}>
+                          {t("studio.cvTilesEmpty")}
+                        </span>
+                      )}
+                    </div>
+                  </SetRow>
+                );
+              })}
+
+              {/* 6 · the checks */}
+              <div className="sc-cell" style={{ gridColumn: 6, ...span }}>
+                <Node g="check" title={t("studio.cvCheck")} onOpen={() => onOpen("check")} lit={lit.check} open={isOpen("check")}>
+                  {creating && (
                     <div className="scn-count">
-                      <span>{t("studio.setFaces")}</span>
-                      <b className={facesDone === faces ? "is-ok" : ""}>
-                        {facesDone}/{faces}
+                      <span>{t("studio.cvNeeds")}</span>
+                      <b className={missing.length ? "" : "is-ok"}>
+                        {needs - Math.min(needs, missing.length)}/{needs}
                       </b>
                     </div>
                   )}
-                  {clips > 0 && (
-                    <div className="scn-count">
-                      <span>{t("studio.cvClips")}</span>
-                      <b className={clipsDone === clips ? "is-ok" : ""}>
-                        {clipsDone}/{clips}
-                      </b>
-                    </div>
+                  {!skipped && (
+                    <>
+                      <div className="scn-count">
+                        <span>{t("studio.cvHome")}</span>
+                        <b className={home === "done" ? "is-ok" : ""}>{home === "done" ? 1 : 0}/1</b>
+                      </div>
+                      {faces > 0 && (
+                        <div className="scn-count">
+                          <span>{t("studio.setFaces")}</span>
+                          <b className={facesDone === faces ? "is-ok" : ""}>
+                            {facesDone}/{faces}
+                          </b>
+                        </div>
+                      )}
+                      {clips > 0 && (
+                        <div className="scn-count">
+                          <span>{t("studio.cvClips")}</span>
+                          <b className={clipsDone === clips ? "is-ok" : ""}>
+                            {clipsDone}/{clips}
+                          </b>
+                        </div>
+                      )}
+                    </>
                   )}
-                </>
-              )}
-              {checks && (
-                <>
-                  <div className="scn-count">
-                    <span>{t("studio.cvSeam")}</span>
-                    <b className={checks.seam[0] === checks.seam[1] ? "is-ok" : "is-bad"}>
-                      {checks.seam[0]}/{checks.seam[1]}
-                    </b>
-                  </div>
-                  <div className="scn-count">
-                    <span>{t("studio.cvStart")}</span>
-                    <b className={checks.start[0] === checks.start[1] ? "is-ok" : "is-bad"}>
-                      {checks.start[0]}/{checks.start[1]}
-                    </b>
-                  </div>
-                  <div className="scn-count">
-                    <span>{t("studio.cvClean")}</span>
-                    <b className={checks.clean[0] === checks.clean[1] ? "is-ok" : "is-bad"}>
-                      {checks.clean[0]}/{checks.clean[1]}
-                    </b>
-                  </div>
-                  {checks.failed.length > 0 && <p className="scn-note is-warn">{t("studio.cvCheckFailed", { n: checks.failed.length })}</p>}
-                </>
-              )}
-              {p.error && <p className="scn-note is-bad">{p.error}</p>}
-            </Node>
-          </div>
+                  {checks && (
+                    <>
+                      <div className="scn-count">
+                        <span>{t("studio.cvSeam")}</span>
+                        <b className={checks.seam[0] === checks.seam[1] ? "is-ok" : "is-bad"}>
+                          {checks.seam[0]}/{checks.seam[1]}
+                        </b>
+                      </div>
+                      <div className="scn-count">
+                        <span>{t("studio.cvStart")}</span>
+                        <b className={checks.start[0] === checks.start[1] ? "is-ok" : "is-bad"}>
+                          {checks.start[0]}/{checks.start[1]}
+                        </b>
+                      </div>
+                      <div className="scn-count">
+                        <span>{t("studio.cvClean")}</span>
+                        <b className={checks.clean[0] === checks.clean[1] ? "is-ok" : "is-bad"}>
+                          {checks.clean[0]}/{checks.clean[1]}
+                        </b>
+                      </div>
+                      {checks.failed.length > 0 && <p className="scn-note is-warn">{t("studio.cvCheckFailed", { n: checks.failed.length })}</p>}
+                    </>
+                  )}
+                  {p.error && <p className="scn-note is-bad">{p.error}</p>}
+                </Node>
+              </div>
+
+            </>
+          )}
 
           {/* 7 · the mate */}
-          <div className="sc-cell" style={{ gridColumn: 7, ...span }}>
+          <div className="sc-cell" style={{ gridColumn: fileMode ? 4 : 7, ...span }}>
             <Node
               g="mate"
               title={mate.name || t("studio.untitled")}

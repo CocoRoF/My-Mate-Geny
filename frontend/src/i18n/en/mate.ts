@@ -129,7 +129,7 @@ export default {
   alarmNoNote: "Alarm",
   alarmCancel: "Cancel alarm",
   callRingBody: "{name} is calling you",
-  callNoStt: "Speech recognition isn't available on this device: you can hear her, but she can't hear you. Set it up in her settings → Voice.",
+  callNoStt: "Speech recognition isn't available on this device: you can hear her, but she can't hear you. Set it up in Edit mate → Voice.",
   callMicDenied: "The microphone isn't allowed. Allow it for the app to talk on the call.",
   callNoMic: "No microphone was found.",
   callSttServer: "Listening with {engine}",
@@ -307,8 +307,8 @@ export default {
 
   // push-to-talk
   micNoMate: "No mate",
-  micOff: "Voice input is off — choose a speech-to-text engine in Mate settings → Voice.",
-  micNoBrowserStt: "This app has no built-in speech recognition — choose ElevenLabs realtime, OpenAI or Whisper in Mate settings → Voice.",
+  micOff: "Voice input is off — choose a speech-to-text engine in Edit mate → Voice.",
+  micNoBrowserStt: "This app has no built-in speech recognition — choose ElevenLabs realtime, OpenAI or Whisper in Edit mate → Voice.",
   micNoRecorder: "This browser can't record audio here (a secure https page is needed).",
   micRefused: "Microphone access was refused.",
   sttFailed: "Speech recognition failed ({reason}).",
@@ -465,4 +465,8 @@ export default {
   emotion_agree: "Agree",
   emotion_greet: "Greeting",
   emotion_sleepy: "Sleepy",
+  edit: "Edit mate",
+  editTitle: "Change everything about {name}: name, personality, style, temperament, look, voice",
+  status: "Status",
+  statusTitle: "{name}'s status: how she feels, the two of you, her day",
 };

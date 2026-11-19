@@ -54,9 +54,11 @@ const NAV_BAR = 48;
 
     step("the outfit's studio opens on the Agent tab");
     await page.goto(`${SERVER}/?view=mate`);
-    await page.waitForSelector('[data-testid="mate-settings-open"]');
-    await page.click('[data-testid="mate-settings-open"]');
-    await page.click('[data-testid="mate-tab-avatar"]');
+    await page.waitForSelector('[data-testid="mate-more"]');
+    await page.click('[data-testid="mate-more"]');
+    await page.click('[data-testid="mate-more-menu"] [data-testid="mate-edit"]');
+    await page.click('[data-testid="guide-step-look-toggle"]');
+    await page.locator('[data-testid="look-wardrobe"], [data-testid="guide-look-wardrobe"]').first().click();
     await page.click(`[data-testid="outfit-tile"][data-outfit="${outfit.id}"]`);
     await page.click('[data-testid="outfit-ai-open"]');
     await page.waitForSelector('[data-testid="mate-studio"][data-layout="tabs"]', { timeout: 20000 });
@@ -145,12 +147,12 @@ const NAV_BAR = 48;
       assert(over <= 0, `the header fits at ${width}: ${over}`);
     }
     step("the heart opens her relationship");
-    await page.click('[data-testid="mate-relation-open"]');
+    await page.click('[data-testid=\"mate-status-open\"]'); await page.click('[data-testid=\"stage-status-more\"]');
     await page.waitForSelector('[data-testid="mate-relation-panel"]');
     await page.click('[data-testid="mate-relation-panel-close"]');
 
     step("a value set by hand opens the locked outfit, with word of it on the screen");
-    await page.click('[data-testid="mate-relation-open"]');
+    await page.click('[data-testid=\"mate-status-open\"]'); await page.click('[data-testid=\"stage-status-more\"]');
     await page.click('[data-testid="mate-relation-panel-adjust"]');
     const set = page.locator('[data-testid="mate-relation-set"]');
     await set.waitFor();
@@ -172,7 +174,7 @@ const NAV_BAR = 48;
     await page.waitForSelector('[data-testid="mate-settings-open"]');
     assert.equal(await page.locator('[data-testid="mate-reset"]').count(), 0);
     await page.click('[data-testid="mate-more"]');
-    for (const id of ["mate-avatar-toggle", "mate-avatar-create", "mate-status-open", "mate-reset"]) assert(await page.locator(`[data-testid="${id}"]`).isVisible(), id);
+    for (const id of ["mate-avatar-toggle", "mate-edit", "mate-status-open", "mate-reset"]) assert(await page.locator(`[data-testid="${id}"]`).isVisible(), id);
     await page.click('[data-testid="mate-more"]');
     await page.waitForSelector('[data-testid="mate-more-menu"]', { state: "detached" });
 
@@ -188,16 +190,18 @@ const NAV_BAR = 48;
     await page.click('[data-testid="mate-settings-open"]');
     await page.waitForSelector('[data-testid="mate-settings"]');
     assert.equal(await page.locator('[data-testid="mate-switcher"]').count(), 0, "her header gives its room to the panel");
-    const top = await page.$eval('[data-testid="mate-settings-close"]', (el) => el.getBoundingClientRect().top);
+    const top = await page.$eval('[data-testid="node-sheet-close"]', (el) => el.getBoundingClientRect().top);
     assert(top >= 36, `the close button is under the status bar: ${top}`);
 
-    step("the Save bar: only with something to save, on the bottom edge");
-    await page.click('[data-testid="mate-tab-style"]');
+    step("the Save bar: only with something to save, on the bottom edge (메이트 편집 → 대화 방식)");
+    await page.click('[data-testid="node-sheet-close"]');
+    await page.click('[data-testid="guide-step-style-toggle"]');
+    await page.click('[data-testid="guide-style-open"]');
     assert.equal(await page.locator('[data-testid="mate-settings-savebar"]').count(), 0);
     const seg = await page.$eval('[role="radiogroup"]', (el) => ({ display: getComputedStyle(el).display, h: el.querySelector('[role="radio"]').offsetHeight }));
     assert.equal(seg.display, "grid");
     assert(seg.h >= 40, `a choice is big enough to press: ${seg.h}`);
-    const input = page.locator('[data-testid="mate-settings"] input').first();
+    const input = page.locator('[data-testid="node-sheet"] input').first();
     await input.fill("현석");
     await page.waitForSelector('[data-testid="mate-settings-savebar"]');
     const bar = await page.$eval('[data-testid="mate-settings-savebar"]', (el) => {
@@ -212,15 +216,8 @@ const NAV_BAR = 48;
     await page.locator('[data-testid="mate-settings-savebar"] .btn-ghost').click();
     await page.waitForSelector('[data-testid="mate-settings-savebar"]', { state: "detached" });
 
-    step("another tab starts at its top");
-    const scroller = () => page.evaluate(() => [...document.querySelectorAll('[data-testid="mate-settings"] *')].find((e) => getComputedStyle(e).overflowY === "auto" && e.scrollHeight > e.clientHeight + 40)?.scrollTop ?? -1);
-    await page.evaluate(() => { [...document.querySelectorAll('[data-testid="mate-settings"] *')].find((e) => getComputedStyle(e).overflowY === "auto" && e.scrollHeight > e.clientHeight + 40).scrollTop = 500; });
-    assert((await scroller()) > 0);
-    await page.click('[data-testid="mate-tab-profile"]');
-    await page.waitForTimeout(150);
-    assert.equal(await scroller(), 0);
     await page.screenshot({ path: path.join(SHOTS, "settings-phone.png") });
-    await page.click('[data-testid="mate-settings-close"]');
+    await page.click('[data-testid="node-sheet-close"]');
 
     step("a phone on its side");
     await page.setViewportSize({ width: 800, height: 360 });

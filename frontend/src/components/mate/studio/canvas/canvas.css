@@ -30,6 +30,8 @@
   padding: 18px 26px 52px;
   transform-origin: 0 0;
 }
+/* her look from a file: who she is → the file → her emotions matched → the mate */
+.sc-world.is-file { grid-template-columns: 178px 220px 230px 204px; column-gap: 44px; }
 .sc-world.is-gliding { transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1); }
 .sc-lines { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 

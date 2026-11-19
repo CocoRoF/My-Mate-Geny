@@ -259,13 +259,15 @@ const offScreen = (page) =>
     assert.equal(await page.locator(TEST("mate-state-badge")).count(), 0, "no face");
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(SHOTS, "mate-phone-header.png"), clip: { x: 0, y: 0, width: 360, height: 110 } });
-    await page.click(TEST("mate-relation-open"));
+    await page.click(TEST("mate-status-open")); await page.click(TEST("stage-status-more"));
     await page.waitForSelector(TEST("mate-relation-panel"));
     await page.click(TEST("mate-relation-panel-close"));
 
     step("her wardrobe: a set larger than its tile stays inside it, the name stays readable");
-    await page.click(TEST("mate-settings-open"));
-    await page.click(TEST("mate-tab-avatar"));
+    await page.click(TEST("mate-more"));
+    await page.click(TEST("mate-more-menu") + " " + TEST("mate-edit"));
+    await page.click(TEST("guide-step-look-toggle"));
+    await page.locator('[data-testid="look-wardrobe"], [data-testid="guide-look-wardrobe"]').first().click();
     const dress = page.locator('[data-testid="outfit-tile"][data-outfit="builtin-linen-dress"]');
     await dress.waitFor();
     await dress.scrollIntoViewIfNeeded();
@@ -312,7 +314,7 @@ const offScreen = (page) =>
     const desk = await wide.newPage();
     desk.on("pageerror", (e) => errors.push(e.message));
     await desk.goto(`${SERVER}/?view=mate`);
-    await desk.waitForSelector(TEST("mate-relation-open"));
+    await desk.waitForSelector(TEST("mate-status-open"));
     assert.equal(await desk.locator(TEST("mate-relation-badge")).count(), 0, "no ring");
     assert.equal(await desk.locator(TEST("mate-state-badge")).count(), 0, "no face");
     await desk.waitForTimeout(500);

@@ -197,13 +197,14 @@ class AvatarService:
                         f"{doc['brief']['target']['name']} and opened the studio to fill it. Greet them in one sentence "
                         "and ask what she should wear (one card).")
         elif studio == "new":
-            self._event(pid, "start", "The user opened the Mate Create studio to make a new mate: you are on the left, "
-                        "her settings (still empty) are on the right. Greet them in one sentence and start with the "
+            self._event(pid, "start", "The user opened the Mate Create studio to make a new mate: you are the AI tab, "
+                        "her settings (still empty) are on the canvas, and the Guide tab beside you walks them through. "
+                        "Greet them in one sentence and start with the "
                         "concept — ask what kind of mate they want, or offer 3 concept directions (ask_user kind "
                         "\"concepts\").")
         elif studio == "existing":
             self._event(pid, "start", f"The user opened the studio for the mate “{title}” to make her a new moving "
-                        "avatar; her settings are on the right. Greet them in one sentence and start the avatar "
+                        "avatar; her settings are on the canvas. Greet them in one sentence and start the avatar "
                         "interview with the first question card.")
         else:
             self._event(pid, "start", "The user opened Avatar Create"
@@ -423,7 +424,7 @@ class AvatarService:
         self.save(doc)
         return {"written": changed or "nothing new (the values were already set)",
                 "missing_to_create": ST.missing(mate),
-                "note": "The user sees these fields highlighted on the right and can edit or undo each."}
+                "note": "The user sees these fields highlighted on the canvas and can edit or undo each."}
 
     async def _tool_map_avatar_emotions(self, pid: str, args: dict[str, Any]) -> Any:
         """The avatar the user brought (Live2D / LivLiv): which of its expressions (and Live2D motions) answer to her
@@ -443,7 +444,7 @@ class AvatarService:
         return {"emotions": after.get("emotions"), **({"emotion_motions": after["emotion_motions"]}
                                                       if after["kind"] == "live2d" else {}),
                 "unmapped": [e for e in ST.EMOTION_TAGS if e not in (after.get("emotions") or {})],
-                "note": "The user sees her avatar on the right and can change any of it in her settings (Avatar)."}
+                "note": "The user sees her avatar on the canvas and can change any of it in the file and emotion windows."}
 
     def _studio_view(self, doc: dict[str, Any]) -> dict[str, Any] | None:
         st = self._studio(doc)
@@ -459,7 +460,7 @@ class AvatarService:
                 "missing": ST.missing(mate) if mate else ["mate"], "mate": mate}
 
     async def studio_fields(self, pid: str, body: dict[str, Any]) -> dict[str, Any]:
-        """The user edited fields on the right (any mate setting the Mate settings tabs edit, + the concept)."""
+        """The user edited fields in the studio (any setting of hers the studio's windows edit, + the concept)."""
         async with self._lock(pid):
             doc = self.doc(pid)
             st, _mate = self._studio_mate(doc)
@@ -828,7 +829,7 @@ class AvatarService:
             req.mcp_config_file = self._engine_file(pid, "mcp", "json", json.dumps(req.mcp_config, indent=1))
 
     def _studio_note(self, doc: dict[str, Any]) -> str:
-        """What the user changed on the right since the agent's last turn (then it counts as seen)."""
+        """What the user changed in the studio since the agent's last turn (then it counts as seen)."""
         st = doc.get("studio") or {}
         try:
             mate = self.mates.get(st["mate_id"])
@@ -1645,9 +1646,9 @@ class AvatarService:
                     + (f"These clips failed the automatic check: {', '.join(bad)} — explain and offer redos. "
                        if bad else "Every clip passed the automatic check. ")
                     + (f"These items failed and were left out: {', '.join(failed)}. " if failed else "")
-                    + ("It went into her wardrobe by itself; tell the user they can press Wear on the right, or switch "
-                       "any time in Mate settings → Avatar." if doc.get("outfit") else
-                       "It goes on the new mate by itself; tell the user they can preview it on the right."
+                    + ("It went into her wardrobe by itself; tell the user they can press Wear on the canvas, or switch "
+                       "any time in 메이트 편집 → 옷장." if doc.get("outfit") else
+                       "It goes on the new mate by itself; tell the user they can preview it on the canvas."
                        if (doc.get("studio") or {}).get("kind") == "new" else
                        "Tell the user they can press Apply (to the target mate) or create a new mate with it."))
         if doc.get("outfit"):

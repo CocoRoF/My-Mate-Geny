@@ -1,15 +1,10 @@
 // Avatar Create (docs/avatar-create.md)
 export default {
-  title: "Avatar Create",
-  openTitle: "Design a moving avatar for {name} with AI (Higgsfield)",
   close: "Back to the mate",
   projects: "Projects",
-  createWithAi: "Create with AI",
-  createWithAiHint: "An agent interviews you, prices every Higgsfield job, and after your OK makes a video avatar like the bundled mates: a base picture, expression stills and looping motion clips.",
-  createWithAiBtn: "Open Avatar Create",
   deleteConfirm: "Delete the project “{name}” and its pictures and clips?",
-  chatEmpty: "The agent is getting ready…",
-  composerPlaceholder: "Answer, or tell the agent what you want…",
+  chatEmpty: "The AI is getting ready…",
+  composerPlaceholder: "Answer, or tell the AI what you want…",
   attach: "Attach a picture",
   send: "Send",
   stop: "Stop",

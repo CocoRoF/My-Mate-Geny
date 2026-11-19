@@ -366,8 +366,10 @@ async function main() {
             await until("closed", async () => (await tl(p)).at(-1).live === "", 10000);
             await p.locator('[data-testid="mate-input"]').first().fill("");
             // Settings → Voice (the STT part)
-            await p.locator('[data-testid="mate-settings-open"]').first().click();
-            await p.locator('[data-testid="mate-tab-voice"]').first().click();
+            // (메이트 편집 → 목소리)
+            await p.locator('[data-testid="mate-edit"]').first().click();
+            await p.locator('[data-testid="guide-step-voice-toggle"]').first().click();
+            await p.locator('[data-testid="guide-voice-open"]').first().click();
             const sec = p.locator('[data-testid="mate-stt-realtime"]').first();
             await sec.waitFor({ timeout: 10000 });
             await sec.scrollIntoViewIfNeeded();

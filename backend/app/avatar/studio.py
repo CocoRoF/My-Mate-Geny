@@ -1,5 +1,5 @@
 """The Mate Create studio's fields (docs/avatar-create.md §11): what the creation agent may write on the mate being
-made (``update_mate_draft``), what the user changed on the right that the agent has not seen yet (a compact
+made (``update_mate_draft``), what the user changed in the studio that the agent has not seen yet (a compact
 ``<studio_update>`` before its next message — never stored, never a restart), and when a draft is complete enough
 to become a mate.
 
@@ -314,7 +314,7 @@ def _short(v: Any, n: int = 220) -> str:
 
 
 def update_note(seen: dict[str, Any] | None, now: dict[str, Any]) -> str:
-    """What changed on the right since the agent last saw the fields (the user typed, picked, undid)."""
+    """What changed in the studio since the agent last saw the fields (the user typed, picked, undid)."""
     if not isinstance(seen, dict):
         return ""
     lines = []
@@ -326,7 +326,7 @@ def update_note(seen: dict[str, Any] | None, now: dict[str, Any]) -> str:
             lines.append(f"- {k}: {_short(seen[k]) or '(empty)'} → {_short(v) or '(empty)'}")
     if not lines:
         return ""
-    return ("<studio_update>\nThe user changed these settings of the mate on the right since your last turn "
+    return ("<studio_update>\nThe user changed these settings of the mate since your last turn "
             "(their values win; build on them, don't write them back):\n" + "\n".join(lines[:24])
             + "\n</studio_update>")
 

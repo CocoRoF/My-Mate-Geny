@@ -365,7 +365,7 @@ threshold 0.015 / scale 1.8 as in Geny). Video motion has no audio-event subscri
   breathing/sway and a level-driven pulse. The still for an emotion (and for the
   moods thinking → "thinking", away → "sleepy"): `emotion_stills` under the
   emotion or an alias ("" = none), else the still named like it.
-- **Clip / trigger editor** (Mate settings → Avatar, video/photo): a clip library
+- **Clip / trigger editor** (메이트 편집 → 모습 → 옷장·세부 설정, video/photo): a clip library
   (a card per clip: a thumbnail, hover/tap plays it with the stage's own
   player, its triggers in plain words — "while idle", "while talking", "while
   you type", "while thinking", "when she feels ‹emotion›", "after a long
@@ -482,7 +482,7 @@ Asset upload / import:
 
 **New mate** in the mate picker opens the **Mate Create studio** — the creation agent on the left helps define her
 concept and fills her settings on the right (highlighted, undo per field; drafts are hidden mates until **Create
-mate**), then makes her avatar. **Mate view → Avatar Create** (or Mate settings → Avatar → **Create with AI**) opens
+mate**), then makes her avatar. **Mate view → 메이트 편집 → 모습 → AI로 그리기** opens
 the same studio for an existing mate, with a conversation with the avatar agent separate from the mate's chat: it interviews the user (reference picture, look, 1:1 / 9:16, studio / light,
 how many motions — presets minimal 6 / standard 15 (한채린's set) / rich 21 clips, or custom), prices every Higgsfield
 job (free quotes) and, only after the user's **Confirm** (enforced by the server, with a hard cap), makes the avatar
@@ -622,7 +622,7 @@ Live2D model (next section).
 ### Using your own LivLiv models
 
 A LivLiv model is a `.livliv` file (a zip: `model.json` + `textures/`, [FORMAT.md](https://github.com/livliv-dev/player/blob/main/FORMAT.md)),
-made for example on livliv.ai. **Mate settings → Avatar → Import → Upload a zip · .livliv** with the file, or enter a
+made for example on livliv.ai. **메이트 편집 → 모습 → 내 파일 쓰기 → 파일 올리기** with the file, or enter a
 `.livliv` (or its unpacked folder) under **Folder on the server**. The importer checks it as the player would (format 4 or the
 older 3, at most 8192 px and 512 layers, every layer image present, safe paths), unpacks it into `assets/lv-*/` and keeps
 what it says about itself; **Avatar → LivLiv model** shows its name, maker, licence and mark, the expression for each of her
@@ -643,7 +643,7 @@ bodies. They are not part of My Mate Geny — download them yourself:
    internally.
 2. Install the **Live2D runtime** once: Mate → **Global settings → Live2D**,
    accept the Cubism Core licence (the server downloads it from live2d.com).
-3. Mate → **Mate settings → Avatar → Import → Upload a zip** with the
+3. Mate → **메이트 편집 → 모습 → 내 파일 쓰기 → 파일 올리기** with the
    downloaded zip (the importer finds the `*.model3.json` inside), or unpack
    it on the server and enter the folder that contains `*.model3.json` under
    **Folder on the server** (`POST /api/mates/import-local`). To create a new
@@ -1370,7 +1370,7 @@ Who she is stays: her profile, her conversation style, her avatar and outfits. S
 
 ## Outfits
 
-A mate has a wardrobe, at the top of **Mate settings → Avatar & outfits**: her default set, bundled outfits, and the outfits the user added.
+A mate has a wardrobe, at the top of **메이트 편집 → 모습 → 옷장·세부 설정**: her default set, bundled outfits, and the outfits the user added.
 **Add outfit** takes a name and makes an empty place. Everything below in that tab edits the picked
 outfit exactly like an avatar (kind, Make it with AI, zip or folder import, stills, clips, triggers), whether she has it on
 or not. **Wear** swaps the whole set at once in every window (`mates.changed`); an empty outfit can't be worn yet. Her

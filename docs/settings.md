@@ -24,21 +24,36 @@ changes** — the mate (Mate settings), the chat (its controls), the moment (the
 | 로컬 모델 호스팅 | Voice Studio | models served from this server's own GPU: what is on the GPU and for whom (this app's models — a mate, a call, the studio — other programs), the models to download (each after its license) and serve, voice profiles (clips by feeling), making lines and downloading them, batches, the history of everything made, tools (A/B, seeds, a clip's analysis, transcription), its settings — [local-voice](local-voice.md#voice-studio) |
 | 로컬 모델 호스팅 | Image Studio | picture and clip models on the same GPU, set up here and used by the avatar maker: the engine (ComfyUI) and the GPU, the models to download (each after its license, with measured GPU / RAM / time), each recipe tried by hand (a draft, a change, a loop, a cut-out), the history of everything made, the model each use takes and where each avatar stage starts — [local-image](local-image.md#image-studio) |
 
-## Mate settings (메이트 설정) — her, now and then
+## 메이트 편집 — who she is (the studio)
+
+Who she is is changed where she was made (owner 2026-11-19), in the studio (docs/avatar-create.md §11): the Mate view's
+first header button **메이트 편집** (✏), or the card on top of Mate settings. Its Guide lists, each with its window:
+
+| Step | What is there |
+|---|---|
+| 콘셉트 | the pitch, her role, interests, backstory, the look and the voice character |
+| 이름과 성격 | icon · name · birthday · who she is · personality · greeting · standing instructions |
+| 대화 방식 | what she calls you (your name itself is in Settings → 계정) · what she calls herself · reply language · speech level · speech habits · length · emotion · warmth / humor / initiative · topics to avoid · whether she may change this herself |
+| 기질 | her temperament (read from her persona, or set by hand) |
+| 모습 | drawn by AI · from a file (a Live2D model, a LivLiv package, a clip pack: fit it, match her emotions to its expressions and motions) · 옷장·세부 설정 (her outfits and every set's pictures, clips and expressions; the Live2D runtime it may need: Settings → 메이트) |
+| 목소리 | her voice and how she hears you (the volume: Settings → 메이트, this device) |
+| 언어 모델 | engine, model, reasoning |
+
+## Mate settings (메이트 설정) — the rest of her settings
+
+The header's buttons, in order: 메이트 편집 · 새 대화 · 전화 (where calls work) · 레이아웃 · 상태 보기 (♥: the status
+window) · 설정 (⚙). Mate settings:
 
 | Tab | What is there |
 |---|---|
-| 프로필 | name · who she is · personality · greeting · standing instructions |
-| 대화 방식 | what she calls you (your name itself is in Settings → 계정) · what she calls herself · reply language · speech level · speech habits · length · emotion · warmth / humor / initiative · topics to avoid · whether she may change this herself |
-| 아바타·의상 | as before (the Live2D runtime it may need: Settings → 메이트) |
-| 음성 | her voice and how she hears you (the volume: Settings → 메이트, this device) |
-| 언어 모델 | engine, model, reasoning |
 | 관계와 기억 | relationship on/off, pause, sensitivity, her mood on the avatar, set by hand / recompute / start over · remembering by herself, recalling per message · forget everything |
+| 공통 | every mate's (the same as Settings → 메이트) |
 | 삭제 | delete her |
 
-The ♥ panel (기억과 관계) is for looking at the relationship and the memories; its 설정 button opens this tab (from
-the desktop Mate chat window: the console, `/?view=mate&panel=settings-relation`). Her daily life is switched on and
-off where it lives: the stage's status window.
+On top of 관계와 기억 and 삭제, a card opens 메이트 편집. The ♥ status window is for looking at how she is, the
+relationship and the promises; its 기억과 관계 opens the panel with the memories, whose 설정 button opens 관계와 기억
+(from the desktop Mate chat window: the console, `/?view=mate&panel=settings-relation`). Her daily life is switched on
+and off where it lives: the stage's status window.
 
 ## In the moment
 
@@ -57,7 +72,7 @@ off where it lives: the stage's status window.
 | Your name (`prefs.user_name`, per mate) | each mate's 대화 방식 | Settings → 계정, one for all mates (a mate's old value is used until it is set) |
 | Your birthday (`user_birthday`, "MM-DD") | — | Settings → 계정 (a month/day picker under your name), one for all mates: a mate with a day of her own knows it |
 | Your picture (`user_icon`) | — (your initial) | Settings → 계정 (the crop dialog), one for the app: the sidebar's footer and rail show it |
-| Her birthday (`persona.birthday`) and icon (`icon`) | — (her home still) | 메이트 설정 → 프로필; the icon is a square of her avatar's face or of a picture of one's own (the same crop dialog) |
+| Her birthday (`persona.birthday`) and icon (`icon`) | — (her home still) | 메이트 편집 → 이름과 성격; the icon is a square of her avatar's face or of a picture of one's own (the same crop dialog) |
 | First steps with a mate | — | the Mate panel's guide (프로필 · 대화 방식 · 아바타·의상 · 음성 · 화면 공유와 먼저 말 걸기): by itself once per account on a device and after a mate is created in the studio; 메이트 설정's 가이드 (the phone's ⋯) opens it again |
 | Time zone | Settings → Mate & voice · Global settings → Defaults | Settings → 언어 |
 | Volume | each mate's 음성 tab (it was this device's anyway) | Settings → 메이트 (this device) |
@@ -70,6 +85,9 @@ off where it lives: the stage's status window.
 | Mate chat window on top, reset her place | the tray only | Settings → 데스크톱 앱 (and the tray) |
 | Click-through, moving her, opening the chat | Settings → 데스크톱 앱 and the tray | the tray and her bar (the moment's) |
 | Global settings (전체 설정) | the Mate view's header | gone |
+| Profile, conversation style, avatar & outfits, voice, language model, temperament | Mate settings' tabs | 메이트 편집 (the studio's Guide and windows) |
+| ✨ 아바타 만들기 | the Mate view's header | 메이트 편집 → 모습 → AI로 그리기 |
+| The header's ♥ | 기억과 관계 | 상태 보기 (the status window; 기억과 관계 opens from it) |
 
 ## The first start
 

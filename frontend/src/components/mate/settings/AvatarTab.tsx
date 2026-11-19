@@ -1,5 +1,5 @@
 /**
- * Avatar and outfits. On top her wardrobe (OutfitBar): her default set and the outfits the user added; everything below
+ * Avatar and outfits (메이트 편집's 옷장·세부 설정 window, studio/canvas/NodeSheet). On top her wardrobe (OutfitBar): her default set and the outfits the user added; everything below
  * edits the set picked there, whether she has it on or not. Avatar: kind (none / video / photo / Live2D), imports (zip, a folder on the server), simple asset upload for photo
  * stills and video clips, a note when the Live2D runtime is missing (installed in Global settings) and emotion → expression / motion mapping, with
  * a live preview and test buttons. Video/photo rigs get the clip library + trigger editor (ClipLibrary.tsx); built-ins a
@@ -159,15 +159,8 @@ function AvatarEditor({ mate, conv, outfit, saved, live, dirtyRef }: { mate: Mat
           ))}
         </div>
       </Section>
-      {isDefault ? (
-        <Section title={t("avatar.createWithAi")} hint={t("avatar.createWithAiHint")} testId="mate-avatar-ai">
-          <button className="btn-primary" onClick={() => useStudio.getState().openAvatar(mate.id)} data-testid="mate-avatar-ai-open">
-            <Icon name="sparkles" size={14} /> {t("avatar.createWithAiBtn")}
-          </button>
-        </Section>
-      ) : (
-        <OutfitAi mate={mate} outfit={outfit} />
-      )}
+      {/* (her default set is made with AI by the studio this sits in; an outfit has a project of its own) */}
+      {!isDefault && <OutfitAi mate={mate} outfit={outfit} />}
       <ImportSection mate={mate} outfit={isDefault && live ? undefined : outfit} />
       {avatar.kind === "photo" && (
         <>
@@ -412,7 +405,8 @@ function StillsEditor({ mate, rig, onChange, folder = "" }: { mate: Mate; rig: R
 }
 
 /** Live2D needs the Cubism Core, installed once in Global settings: say so here while it's missing. */
-function CoreNotice() {
+/** the Live2D runtime isn't installed: a word and the way to Global settings */
+export function CoreNotice() {
   const t = useT();
   const [installed, setInstalled] = useState<boolean | null>(null);
   useEffect(() => {

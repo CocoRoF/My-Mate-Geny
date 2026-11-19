@@ -163,7 +163,7 @@ const [server, password] = process.argv.slice(2),
       console.log("PARALLEL MEASURE", JSON.stringify(results.at(-1)));
     }
     await page.evaluate(id=>localStorage.setItem('hrh_mate_active',id),lastMate);
-    await page.goto(server+'/?view=mate');await page.getByTestId('mate-settings-open').click();await page.getByTestId('mate-tab-voice').click();
+    await page.goto(server+'/?view=mate');await page.getByTestId('mate-edit').click();await page.getByTestId('guide-step-voice-toggle').click();await page.getByTestId('guide-voice-open').click();
     const pause=page.getByTestId('mate-stt-silence'),window=page.getByTestId('mate-stt-grace');
     assert.equal(await pause.inputValue(),'1.8');assert.equal(await window.inputValue(),'4');
     assert((await page.getByTestId('mate-stt-deadline-preview').textContent()).includes('4.0'));
