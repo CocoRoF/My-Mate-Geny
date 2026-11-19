@@ -1,8 +1,11 @@
 /** Status (메이트 상태) — only what is, never settings: how close you are and every feeling she has now with what is still
- * with her, where she is and how she is (what today is, a gift she just gave); what she is to you and the promises both
- * ways (관계); the rest of her day (plan, what she wants for herself and her growth, journal, gifts, what she gave and the
- * moments you shared); and the record of what happened (기록). How she is made — her temperament — is Mate settings → 기질. */
-import { useState } from "react";
+ * with her, where she is and how she is (what today is, a gift she just gave); where you two are — the relationship in
+ * full, what she is to you and the promises both ways (관계); her memories, their network and what she studied (기억 ·
+ * 네트워크 · 공부); the rest of her day (plan, what she wants for herself and her growth, journal, gifts, what she gave and
+ * the moments you shared); and the record of what happened (기록). One window for all of it (2026-11-20: the ♥ panel
+ * beside the conversation was this shown a second time, a 자세히 away) — as wide as the screen allows, two columns when
+ * there is room. How she is made — her temperament — is Mate settings → 기질 (`onSettings`). */
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Mate } from "../../../api/mates";
 import { useLang, useT, type MsgKey } from "../../../i18n";
 import { fmtTime } from "../../../i18n/format";
@@ -16,10 +19,20 @@ import StageWindow, { type WindowTab } from "./StageWindow";
 import Journal from "../gss/Journal";
 import { Between, Mind, NowContext, Promises, useGssView } from "../gss/StateView";
 import OtherMates from "../social/OtherMates";
+import { RelationView } from "../RelationPanel";
+import MemoryNotebook from "../MemoryNotebook";
+import MemoryNetwork from "../memory/MemoryNetwork";
+import StudyPanel from "../memory/StudyPanel";
 
-type Tab = "now" | "relation" | "plan" | "growth" | "journal" | "gifts" | "keepsakes" | "log";
+export type StatusTab = "now" | "relation" | "memory" | "network" | "study" | "plan" | "growth" | "journal" | "gifts" | "keepsakes" | "log";
+type Tab = StatusTab;
 const NOW: WindowTab<Tab> = { id: "now", icon: "heart", label: "stage.tabNow" };
 const RELATION: WindowTab<Tab> = { id: "relation", icon: "user", label: "stage.tabRelation" };
+const MIND: WindowTab<Tab>[] = [
+  { id: "memory", icon: "brain", label: "mateSettings.memTitle" },
+  { id: "network", icon: "network", label: "memgraph.tab" },
+  { id: "study", icon: "graduation", label: "memgraph.studyTab" },
+];
 const LOG: WindowTab<Tab> = { id: "log", icon: "history", label: "stage.tabLog" };
 // (her day — only while it is on)
 const LIFE_TABS: WindowTab<Tab>[] = [
@@ -31,25 +44,55 @@ const LIFE_TABS: WindowTab<Tab>[] = [
 ];
 const BIRTHDAY: Record<"her" | "user" | "both", MsgKey> = { her: "life.birthdayHer", user: "life.birthdayUser", both: "life.birthdayBoth" };
 
-export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }: { mate: Mate; phone: boolean; onClose: () => void; onSay: (text: string) => void; onRelation: () => void }) {
+/** cards in two columns when the window is wide enough (top to bottom, then the next column), one otherwise */
+// (each card its own bottom margin — a space-y would take it away from all but the first in a column)
+const COLS = "lg:columns-2 lg:gap-4 [&>*]:mb-3 lg:[&>*]:mb-4 [&>*]:break-inside-avoid";
+
+export default function StatusWindow({ mate, phone, wide = false, panel = false, onClose, onSay, onSettings, initialTab = "now" }: {
+  mate: Mate;
+  phone: boolean;
+  /** over the whole view, as wide as the screen allows (desktop) */
+  wide?: boolean;
+  /** filling where it is put (the desktop chat window) */
+  panel?: boolean;
+  onClose: () => void;
+  onSay: (text: string) => void;
+  /** Mate settings → 관계와 기억 (how the relationship and her memory are set: this window is for looking) */
+  onSettings: () => void;
+  initialTab?: StatusTab;
+}) {
   const t = useT();
   const locale = useLang();
-  const [tab, setTab] = useState<Tab>("now");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const { v, setV, err, setErr } = useLifeView(mate);
   const gss = useGssView(mate);
   const life = v?.enabled ? v : null;
-  const tabs = life ? [NOW, RELATION, ...LIFE_TABS, LOG] : [NOW, RELATION, LOG];
+  const tabs = [NOW, RELATION, ...MIND, ...(life ? LIFE_TABS : []), LOG];
   const shown: Tab = tabs.some((x) => x.id === tab) ? tab : "now";
+  // (another tab starts at its top)
+  const top = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    top.current?.closest('[data-testid="stage-status-body"]')?.scrollTo(0, 0);
+  }, [shown]);
   const rel = mate.relation;
   const state = mate.state;
   const sky = SKY[life?.weather ?? "clear"];
+  // (two columns only in the wide window; the stage's, the sheet and the chat window's are one)
+  const cols = wide ? COLS : "space-y-3";
+  const narrow = (children: ReactNode) => <div className={wide ? "mx-auto max-w-3xl space-y-3" : "space-y-3"}>{children}</div>;
+  const settingsBtn = (
+    <button onClick={onSettings} className="btn-ghost shrink-0 !px-2.5 !py-1 text-[12px]" title={t("mate.bondAdjust")} aria-label={t("mate.bondAdjust")} data-testid="stage-status-settings">
+      <Icon name="sliders" size={13} /> <span className="hidden min-[400px]:inline">{t("mate.bondAdjust")}</span>
+    </button>
+  );
   return (
-    <StageWindow title={t("stage.statusTitle", { name: mate.name })} sub={t("stage.statusSub")} icon="heart" phone={phone} onClose={onClose} tabs={tabs} tab={shown} onTab={setTab} testId="stage-status">
+    <StageWindow title={t("stage.statusTitle", { name: mate.name })} sub={t("stage.statusSub")} icon="heart" phone={phone} wide={wide} panel={panel} actions={settingsBtn} onClose={onClose} tabs={tabs} tab={shown} onTab={setTab} testId="stage-status">
       <NowContext.Provider value={gss.now}>
+      <span ref={top} hidden />
       {err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{t("life.error", { error: err })}</p>}
       {gss.err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{gss.err}</p>}
       {shown === "now" ? (
-        <>
+        <div className={cols} data-testid="stage-status-now">
           <Card testId="stage-status-bond">
             <div className="flex items-center gap-3">
               {rel?.enabled ? (
@@ -72,7 +115,7 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
                   </p>
                 )}
               </div>
-              <button type="button" className="btn-ghost shrink-0 !px-2 !py-1 text-[12px]" onClick={onRelation} data-testid="stage-status-more">
+              <button type="button" className="btn-ghost shrink-0 !px-2 !py-1 text-[12px]" onClick={() => setTab("relation")} data-testid="stage-status-more">
                 {t("stage.bondMore")} <Icon name="chevron" size={13} />
               </button>
             </div>
@@ -139,33 +182,40 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
               </button>
             </>
           )}
-        </>
+        </div>
       ) : shown === "relation" ? (
-        gss.v ? (
-          <>
-            <Between b={gss.v.bonds} name={mate.name} />
-            <Promises promises={gss.v.promises ?? []} name={mate.name} />
-            <OtherMates mate={mate} />
-          </>
-        ) : (
-          !gss.err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>
-        )
+        // (where you two are in full — then what she is to you, the promises both ways, the others she knows)
+        <RelationView mate={mate} onMemory={() => setTab("memory")} className={wide ? COLS : "space-y-3"}>
+          {gss.v && (
+            <>
+              <Between b={gss.v.bonds} name={mate.name} />
+              <Promises promises={gss.v.promises ?? []} name={mate.name} />
+            </>
+          )}
+          <OtherMates mate={mate} />
+        </RelationView>
+      ) : shown === "memory" ? (
+        narrow(<MemoryNotebook key={mate.id} mate={mate} onSettings={onSettings} />)
+      ) : shown === "network" ? (
+        <MemoryNetwork key={mate.id} mate={mate} onStudy={() => setTab("study")} />
+      ) : shown === "study" ? (
+        narrow(<StudyPanel key={mate.id} mate={mate} />)
       ) : shown === "log" ? (
         gss.v ? (
-          <Journal entries={gss.entries} name={mate.name} more={gss.more} onMore={() => void gss.loadMore()} />
+          narrow(<Journal entries={gss.entries} name={mate.name} more={gss.more} onMore={() => void gss.loadMore()} />)
         ) : (
           !gss.err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>
         )
       ) : !life ? null : shown === "plan" ? (
-        <PlanSection v={life} mate={mate} onChange={setV} onError={setErr} />
+        narrow(<PlanSection v={life} mate={mate} onChange={setV} onError={setErr} />)
       ) : shown === "growth" ? (
-        <GrowthSection v={life} />
+        narrow(<GrowthSection v={life} />)
       ) : shown === "journal" ? (
-        <JournalSection v={life} />
+        narrow(<JournalSection v={life} />)
       ) : shown === "keepsakes" ? (
-        <KeepsakesSection v={life} mate={mate} />
+        narrow(<KeepsakesSection v={life} mate={mate} />)
       ) : (
-        <GiftsSection v={life} mate={mate} onChange={setV} onError={setErr} />
+        narrow(<GiftsSection v={life} mate={mate} onChange={setV} onError={setErr} />)
       )}
       </NowContext.Provider>
     </StageWindow>

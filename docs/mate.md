@@ -1075,8 +1075,8 @@ avatar stage, conversation, mic, Mate settings: Profile · Avatar · Language
 model · Voice · Memory). Two layouts (`mate/layout.ts`), picked in the header —
 자동 / 위아래 / 좌우, kept on the device. Side by side, as in Geny's VTuber tab: the
 avatar gets half the width (big, bottom-anchored, fitted whole) and the
-conversation the other half; Mate settings and the ♥ panel open over the
-conversation half, so the stage never moves or overflows (1280 / 1440 / 1600 px
+conversation the other half; Mate settings opens over the
+conversation half (her status — ♥ — is one window over the whole view: docs/mate-memory-affinity.md §6.1), so the stage never moves or overflows (1280 / 1440 / 1600 px
 alike). Stacked: the stage on top (40 dvh), the conversation below, and the panels
 open below the stage in the conversation's place — she stays in sight. Automatic
 goes by the view's own box (beside the sidebar, folded into its rail or not): side

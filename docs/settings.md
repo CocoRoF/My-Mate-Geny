@@ -80,7 +80,7 @@ and off where it lives: the stage's status window.
 | Screen tab | each mate's settings (this device's capture settings, starting a share) | Settings → 화면 공유; the share itself in the composer |
 | Live2D runtime | Global settings | Settings → 메이트 |
 | Bring back the built-in mates | a mate's danger zone | Settings → 메이트 |
-| Relationship and memory settings | the ♥ panel's "adjust", the notebook's options | 메이트 설정 → 관계와 기억 |
+| Relationship and memory settings | the status window's "설정", the notebook's options | 메이트 설정 → 관계와 기억 |
 | Forget everything | the danger zone | 메이트 설정 → 관계와 기억 |
 | Mate chat window on top, reset her place | the tray only | Settings → 데스크톱 앱 (and the tray) |
 | Click-through, moving her, opening the chat | Settings → 데스크톱 앱 and the tray | the tray and her bar (the moment's) |

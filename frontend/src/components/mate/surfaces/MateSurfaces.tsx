@@ -36,7 +36,7 @@ import { MateThumb, moodLabel, useFadingCaption } from "../MateStage";
 import { lifeName } from "../life/needs";
 import { useLang, useT } from "../../../i18n";
 
-const RelationPanel = lazy(() => import("../RelationPanel"));
+const StatusWindow = lazy(() => import("../stage/StatusWindow"));
 
 type Kind = "mate-overlay" | "mate-quick" | "mate-chat" | "mate-share";
 
@@ -463,7 +463,7 @@ function ChatWindow() {
   const desk = useDesktopMate();
   const conv = useMateConversation(mate);
   const { dragging, dropProps } = useFileDrop(conv.sessionId);
-  // the Relationship panel, over the conversation (♥ in the title bar); Esc closes it
+  // her status (the same as the console's: StatusWindow), over the conversation (♥ in the title bar); Esc closes it
   const [relOpen, setRelOpen] = useState(false);
   useEffect(() => {
     if (!relOpen) return;
@@ -546,8 +546,8 @@ function ChatWindow() {
           <button
             className={`${iconBtn} ${relOpen ? "bg-surface-3 !text-content" : ""}`}
             onClick={() => setRelOpen((v) => !v)}
-            title={t("mate.relPanelOpenTitle", { name: mate.name })}
-            aria-label={t("mate.relPanelOpen")}
+            title={t("stage.statusTitle", { name: mate.name })}
+            aria-label={t("mate.status")}
             aria-pressed={relOpen}
             data-testid="mate-chat-relation"
           >
@@ -625,9 +625,15 @@ function ChatWindow() {
         {relOpen && (
           <div className="absolute inset-0 z-20 bg-surface animate-fade-in" data-testid="mate-chat-relation-panel">
             <Suspense fallback={null}>
-              <RelationPanel
+              <StatusWindow
                 mate={mate}
+                phone={false}
+                panel
                 onClose={() => setRelOpen(false)}
+                onSay={(text) => {
+                  setRelOpen(false);
+                  conv.send(text);
+                }}
                 onSettings={() => void desktopMate()?.openConsole(`${window.location.origin}${matePanelUrl(mate.id, "settings-relation")}`)}
               />
             </Suspense>

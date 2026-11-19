@@ -201,9 +201,9 @@ async function desktop(browser, lang, theme) {
   await page.click('[data-testid=\"mate-status-open\"]'); await page.click('[data-testid=\"stage-status-more\"]');
   await page.waitForSelector('[data-testid="mate-relation-panel"]');
   assert.equal(await count(page, '[data-testid="mate-relation-panel"] [data-testid="mate-relation-set"]'), 0);
-  await page.click('[data-testid="bond-tab-memory"]');
+  await page.click('[data-testid="stage-status-tab-memory"]');
   await page.waitForSelector('[data-testid="memory-settings-link"]');
-  await page.click('[data-testid="mate-relation-panel-adjust"]');
+  await page.click('[data-testid="stage-status-settings"]');
   await page.waitForSelector('[data-testid="mate-settings"]');
   assert.equal(await page.getAttribute('[data-testid="mate-tab-bond"]', "aria-selected"), "true");
 

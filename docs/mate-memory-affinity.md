@@ -623,12 +623,16 @@ moves. Router shapes and push throttling.
   "another change", never as its code), and stage and mood labels
   from `relation` codes. Korean strings use `{name:이}`.
 
-### 6.1 Relationship panel (memora's relationship page, as a side panel)
+### 6.1 Relationship (memora's relationship page — the 관계 tab of her status window)
 
-Opened from the Mate view's header (♥ next to reset / Global settings / Mate settings) and from the desktop
-Mate chat window's title bar (♥; the panel covers its conversation). Same slot as the settings panels: one
-at a time, Esc closes, full height on phones. View-first — adjusting stays in Mate settings → Relationship
-("Adjust in settings"; from the chat window the console opens at `/?view=mate&mate=<id>&panel=settings-relation`).
+Since 2026-11-20 her status is one window (`stage/StatusWindow.tsx`): 지금 · 관계 · 기억 · 네트워크 · 공부 · (her day:
+계획 · 성장 · 일지 · 선물 · 추억) · 기록. Before, the stage's status window and a ♥ side panel ("기억과 관계": 관계 ·
+기억 · 네트워크 · 공부) beside the conversation showed it twice, a "자세히" apart. Opened from the Mate view's header (♥),
+the stage's 상태 button and links to her memories / the relationship — a window over the whole view, as wide as the
+screen allows (up to 1180 px; two columns of cards on a wide screen), a sheet on a phone — and from the desktop Mate chat
+window's title bar (♥; it fills that window). "자세히" on 지금 goes to 관계 in the same window. Esc closes it.
+View-first — adjusting stays in Mate settings → 관계와 기억 (the window's "설정"; from the chat window the console opens
+at `/?view=mate&mate=<id>&panel=settings-relation`). The 관계 tab (`RelationPanel.tsx` `RelationView`):
 
 - **Hero**: a ring (affinity in the stage colour), stage, affinity, mood (word + emoji), days together,
   streak, the four stages.
