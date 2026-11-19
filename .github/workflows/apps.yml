@@ -31,7 +31,7 @@ env:
   # The version: <line>.<n>, n one past the highest published release of the line (its first build is <line>.0, so 1.0.0);
   # the line is the product's version (backend/app/__init__.py, the package.json files: test_version.py keeps them equal).
   # The run number keeps rising (Android's versionCode). The prepare job works it out once; every other job takes it from there.
-  APP_LINE: '1.0'
+  APP_LINE: '1.1'
   GH_TOKEN: ${{ github.token }}
   LOCAL_PYTHON_VERSION: '3.12.16'
   UV_VERSION: '0.13.6'

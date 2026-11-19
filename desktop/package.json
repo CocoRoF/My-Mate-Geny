@@ -1,7 +1,7 @@
 {
   "name": "hr-harnessor-desktop",
   "productName": "My Mate Geny",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "My Mate Geny — agent console and desktop Mate",
   "main": "src/main.js",
   "desktopName": "my-mate-geny.desktop",
