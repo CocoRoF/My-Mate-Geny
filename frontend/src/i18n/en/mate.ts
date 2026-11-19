@@ -150,9 +150,6 @@ export default {
   toolFeelPlain: "Checking how she feels",
 
   // the Relationship panel (header ♥ / the indicator → docs/mate-memory-affinity.md §6.1)
-  relPanelOpen: "Memory & relationship",
-  relPanelOpenTitle: "{name}’s memories and your relationship",
-  relPanelSub: "You and {name}",
   relPanelError: "Couldn't load the relationship: {error}",
   relPanelAffinity: "Affinity",
   relPanelDaysTogether: { one: "{count} day together", other: "{count} days together" },
@@ -428,7 +425,6 @@ export default {
   toolStyleChanged: "Conversation style: {what}",
   toolStyleProposed: "Proposed: {what}",
   toolStyleSame: "Conversation style: already like that",
-  bondTitle: "Memory & relationship",
   bondAdjust: "Settings",
   notebookAll: "All",
   notebookPeople: "People",
