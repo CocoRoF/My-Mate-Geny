@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Which platforms this run of the apps builds (.github/workflows/apps.yml; docs/apps.md "Releases").
 
-A push builds a platform only when something it is made of changed since its newest published build — that build's
-release (apps-v<version>, the one holding its installer) names the commit it came from:
+A push makes a new version when something a platform is made of changed since its newest published build — that
+build's release (apps-v<version>, the one holding its installer) names the commit it came from:
 
   desktop (Windows, Linux, macOS ×2)  bundles the backend and the UI for local execution: desktop/, backend/app/, the UI
-  android, ios                        load the console live from the user's server: only mobile/ makes a new one
+  android, ios                        load the console live from the user's server: mobile/
 
-This workflow and its scripts make every platform again. By hand (Run workflow): PLATFORMS=all, or a list
+and a new version is built for every platform: all of them are always the same version (a phone app at 1.1.1 beside a
+desktop at 1.1.4 was taken for one left behind). This workflow and its scripts make every platform again too. By hand (Run workflow): PLATFORMS=all, or a list
 (windows,linux,macos-arm64,macos-x64,android,ios), builds those whatever changed; PLATFORMS=changed decides as a push does.
 
 Outputs (GITHUB_OUTPUT): desktop = the desktop matrix (JSON), android / ios / any = true|false. A table of why goes to
@@ -120,7 +121,16 @@ def decide(want: str, prefix: str) -> dict[str, tuple[bool, str]]:
             continue
         out[p] = (bool(changed), f"{len(changed)} file(s) changed since {tag}: {', '.join(changed[:3])}{' …' if len(changed) > 3 else ''}"
                   if changed else f"nothing it is made of changed since {tag}")
-    return out
+    return one_version(out)
+
+
+def one_version(plan: dict[str, tuple[bool, str]]) -> dict[str, tuple[bool, str]]:
+    """a new version is every platform's: the ones nothing changed for are built too"""
+    why = [p for p, (b, _) in plan.items() if b]
+    if not why:
+        return plan
+    return {p: (True, r) if b else (True, f"the same version as the others ({', '.join(why[:3])}{' …' if len(why) > 3 else ''}); {r}")
+            for p, (b, r) in plan.items()}
 
 
 def main() -> None:

@@ -21,11 +21,13 @@ done it is on the Download page, whatever the others are doing:
 | testflight | waits for Apple, the public link's group, beta review | `ios.json` once a build has passed |
 | finalize | an empty draft goes; old releases are pruned | — |
 
-**What a push builds** (`.github/scripts/apps_plan.py`). A platform is built when something it is made of changed since
-its newest published build (the release holding its installer names the commit): the desktop follows `desktop/`,
-`backend/app/`, `backend/pyproject.toml`, `frontend/` and `assets/` (tests and docs don't count); Android and iOS follow
-`mobile/` only — they load the console from the server, so a backend or UI change doesn't make a new phone app. The
-workflow and its scripts make every platform again. The run's summary has the table of what was built and why.
+**What a push builds** (`.github/scripts/apps_plan.py`). A push makes a new version when something a platform is made of
+changed since its newest published build (the release holding its installer names the commit): the desktop follows
+`desktop/`, `backend/app/`, `backend/pyproject.toml`, `frontend/` and `assets/` (tests and docs don't count); Android and
+iOS follow `mobile/`. **A new version is every platform's**: all of them are built, so the apps are always the same
+version (since 2026-11-19 — before, a phone app at 1.1.1 stood beside a desktop at 1.1.4, and looked left behind). A push
+that changes nothing any of them is made of builds none. The workflow and its scripts make every platform again. The
+run's summary has the table of what was built and why.
 
 **Publishing one platform** (`.github/scripts/apps_publish.py publish`): its files go into this run's versioned release
 (the first one to arrive makes the draft public) and into the rolling `apps-latest`:
@@ -35,7 +37,8 @@ workflow and its scripts make every platform again. The run's summary has the ta
 2. never over a newer build of the same platform: an older run that finishes late leaves `apps-latest` alone;
 3. then that platform's older files go; another platform's are never touched.
 
-So `apps-latest` holds each platform's newest build — the versions differ for a while, and the Download page shows each
+So `apps-latest` holds each platform's newest build — while a run is under way the versions differ for a while (a Mac
+build takes longest, or a failed one is run again), and the Download page shows each
 platform's own (`backend/app/services/downloads.py`, `desktop/src/update-source.js`: the version is in each file name).
 Its notes are the newest build's; its hrh-meta says `latest`, never `version`: apps up to 1.1.0 pin their files to the
 versioned release a `version` names, and one platform's release doesn't hold the others.
