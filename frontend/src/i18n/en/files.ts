@@ -88,6 +88,14 @@ export default {
   previewTabHint: "preview (double-click to keep open)",
   closeOthers: "Close others",
   closeAll: "Close all",
+  // split editors (components/viewer/EditorGrid.tsx)
+  splitRight: "Split right",
+  splitDown: "Split down",
+  splitRightTitle: "Split right — or drag a tab onto a side of the view (Ctrl/⌘+\\; with Shift: down)",
+  unsplit: "Join all groups",
+  resizeSplit: "Resize the split",
+  resizeSplitHint: "Drag to resize · double-click: halves · arrow keys",
+  groupLabel: "Group {n}",
   keepOpen: "Keep open",
   // file viewer
   isFolder: "This is a folder — open it in the explorer.",
