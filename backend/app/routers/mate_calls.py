@@ -1,4 +1,5 @@
-"""Phone calls with a mate (docs/mate-calls.md): start one, take or turn down hers, hang up — and the call's own socket.
+"""Phone calls with a mate (docs/mate-calls.md): start one, take or turn down hers, hang up — and the call's own socket
+(JSON both ways; binary frames from the page: what its microphone hears, for the call's ear — app/mate/ear.py).
 
 HTTP::
 
@@ -193,9 +194,16 @@ async def line(websocket: WebSocket, cid: str) -> None:
     sock = calls.attach(call, queue.put_nowait)
     try:
         while True:
-            raw = await websocket.receive_text()
+            m = await websocket.receive()
+            if m.get("type") == "websocket.disconnect":
+                break
+            if m.get("bytes") is not None:
+                # (what the page's microphone hears, for the call's ear: app/mate/ear.py)
+                if calls.calls.get(cid) is call:
+                    calls.hear(call, m["bytes"])
+                continue
             try:
-                msg = json.loads(raw)
+                msg = json.loads(m.get("text") or "")
             except json.JSONDecodeError:
                 continue
             if isinstance(msg, dict) and calls.calls.get(cid) is call:

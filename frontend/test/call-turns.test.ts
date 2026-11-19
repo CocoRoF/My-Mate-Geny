@@ -457,3 +457,139 @@ test("a word cut where a segment closed, said whole at the next one's start, is 
   h.until(1500);
   assert.equal(h.sent.at(-1)!.text, "그래, 그럼 내일 저녁에 보자.");
 });
+
+// ── with the server's ear (app/mate/ear.py): their voice itself, and Smart Turn's judgement as it ends ──
+
+/** the harness with an ear: `voice(from, to, p)` — their voice from..to, Smart Turn's p at its end (events at the
+ *  times the server would send them: ~0.15 s after each edge) */
+function eared() {
+  const h = harness();
+  const voice = (from: number, to: number, p: number) => {
+    h.until(from + 150);
+    h.tt.heard(true, from, undefined, h.at());
+    h.until(to + 150, 0.2);
+    h.tt.heard(false, to, p, h.at());
+  };
+  return { ...h, voice };
+}
+
+test("ear: a real call's '근데 그냥 자꾸…' — the words hang, so she waits, even when the voice is taken for done", () => {
+  const h = eared();
+  h.voice(0, 1200, 0.95);
+  h.say(1300, "근데 그냥 자꾸");
+  h.until(2000);
+  // (her answer may be made meanwhile — her voice waits)
+  assert.ok(!h.log.some((x) => x.startsWith("confirm")), `not cut off at 0.8 s of quiet: ${h.log.join(" | ")}`);
+  // they go on after a 0.9 s breath
+  h.voice(2100, 3600, 0.9);
+  // (the segment was closed when her answer began to be made: the recognizer's next one has the new words)
+  h.say(3700, "생각나서 전화했어");
+  h.until(4600);
+  assert.equal(h.sent.at(-1)?.text, "근데 그냥 자꾸 생각나서 전화했어");
+  assert.equal(h.log.filter((x) => x.startsWith("confirm")).length, 1, "one turn, whole, heard once");
+});
+
+test("ear: the words and the voice both say done — her turn 0.3 s after their voice stopped", () => {
+  const h = eared();
+  h.voice(0, 1000, 0.97);
+  h.say(1150, "오늘 날씨 어때?");
+  h.until(2000);
+  assert.ok(h.log.includes("confirm@1300"), h.log.join(" | "));
+});
+
+test("ear: done by the words, not by the voice — a little longer; hanging by both — long", () => {
+  const h = eared();
+  h.voice(0, 600, 0.02);
+  h.say(700, "응.");
+  h.until(2000);
+  // ("응" may begin more — "응, 그래서…" — and the voice says so: a second)
+  assert.ok(h.log.some((x) => x === "confirm@1600"), h.log.join(" | "));
+  const d = eared();
+  d.voice(0, 600, 0.02);
+  d.say(700, "알았어.");
+  d.until(2000);
+  assert.ok(d.log.some((x) => x === "confirm@1250"), d.log.join(" | "));
+  const g = eared();
+  g.voice(0, 1500, 0.01);
+  g.say(1600, "그래서 내가 어제 친구를 만났는데");
+  g.until(2900);
+  assert.ok(!g.log.some((x) => x.startsWith("confirm")), g.log.join(" | "));
+  g.until(3300);
+  assert.ok(g.log.some((x) => x === "confirm@3100"), g.log.join(" | "));
+});
+
+test("ear: the recognizer behind their voice — the quiet counts from their voice, the words decide when they come", () => {
+  const h = eared();
+  h.voice(0, 1000, 0.9);
+  h.say(1100, "오늘 날씨");
+  h.until(1350);
+  assert.ok(!h.log.some((x) => x.startsWith("confirm")), "unsure words: not yet at 0.35 s");
+  h.say(1400, "오늘 날씨 어때?");
+  h.until(1500);
+  assert.equal(h.sent.at(-1)?.text, "오늘 날씨 어때?");
+  assert.deepEqual(h.log.filter((x) => x.startsWith("confirm")), ["confirm@1450"], h.log.join(" | "));
+});
+
+test("ear: still talking by the ear — nothing goes, however done the words look", () => {
+  const h = eared();
+  h.until(150);
+  h.tt.heard(true, 0, undefined, 150);
+  h.say(600, "오늘 날씨 어때?");
+  h.until(2500, 0.2);
+  assert.equal(h.sent.length, 0, h.log.join(" | "));
+  h.tt.heard(false, 2500, 0.9, 2650);
+  h.until(3000);
+  assert.equal(h.sent.length, 1);
+});
+
+test("ear: words with no voice after a turn are nobody's; their voice again before hers began holds her answer", () => {
+  const h = eared();
+  h.voice(0, 800, 0.95);
+  h.say(900, "밥 먹었어?");
+  h.until(1300);
+  assert.equal(h.sent.length, 1);
+  h.say(1600, "음.");
+  h.until(2500);
+  assert.equal(h.sent.length, 1, h.log.join(" | "));
+  // (confirmed; her voice not begun) their voice again → she waits
+  h.until(2600);
+  h.tt.heard(true, 2600, undefined, 2700);
+  assert.ok(h.log.some((x) => x.startsWith("hold")), h.log.join(" | "));
+});
+
+test("ear: a voice it says goes on with no words for long is not trusted; a dropped line puts the level back", () => {
+  const h = eared();
+  h.say(200, "그래서");
+  h.tt.heard(true, 100, undefined, 300);
+  h.until(9000, 0.01);
+  assert.ok(h.sent.length >= 1, "a stuck 'voice' doesn't hold a turn forever");
+  const g = eared();
+  g.tt.heard(true, 0, undefined, 100);
+  g.tt.earGone();
+  g.say(300, "알았어");
+  g.until(1200);
+  assert.equal(g.sent.at(-1)?.text, "알았어");
+});
+
+test("words: an adverb said last hangs ('근데 그냥 자꾸', '나 오늘 진짜 너무'); '자꾸나' is '자꾸 나…'", () => {
+  for (const s of ["근데 그냥 자꾸", "나 오늘 진짜 너무", "아니 그게 계속", "그래서 그냥", "기다리고 있었는데, 자꾸나"]) assert.equal(endState(s), "open", s);
+  for (const s of ["진짜", "정말?", "너무해", "자꾸 왜 그래?"]) assert.notEqual(endState(s), "open", s);
+});
+
+test("more of their turn begun with an '아' after she began: a backchannel-like sound, then words — the same turn", () => {
+  const h = harness();
+  h.say(300, "근데 있잖아");
+  h.until(1700);
+  assert.ok(h.log.some((x) => x.startsWith("confirm")));
+  // her answer began (0.3 s of it heard), then theirs: "아…" then the rest
+  h.st.her = true;
+  h.st.heard = 300;
+  h.say(2000, "아");
+  h.say(2400, "나 다음 주에 이사 가");
+  assert.ok(h.log.some((x) => x.startsWith("resumed")), h.log.join(" | "));
+  h.st.her = false;
+  h.until(3500);
+  const last = h.sent.at(-1)!;
+  assert.ok(last.amend && !last.aside, h.log.join(" | "));
+  assert.match(last.text, /^근데 있잖아 .*이사 가$/);
+});

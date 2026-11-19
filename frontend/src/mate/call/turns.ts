@@ -31,8 +31,13 @@ export type EndState = "complete" | "unsure" | "open";
 /** how long a quiet stretch (ms) ends a turn: their words go to her (`send`), her voice may play (`confirm`) */
 export const SEND_MS: Record<EndState, number> = { complete: 200, unsure: 400, open: 800 };
 export const CONFIRM_MS: Record<EndState, number> = { complete: 250, unsure: 600, open: 1300 };
+/** With the server's ear (app/mate/ear.py: their voice itself, and Smart Turn's judgement of it the moment it stops):
+ *  how long after their voice stopped her voice may play — fast only when the words and the voice both say done,
+ *  patient when either says more is coming (a real call cut them off at "근데 그냥 자꾸…" after 0.4 s). [voice sounds
+ *  done (p ≥ 0.5), doesn't] */
+export const PATIENCE_MS: Record<EndState, [number, number]> = { complete: [300, 650], unsure: [600, 1000], open: [1100, 1600] };
 /** quiet this long ends any turn, however it ended */
-export const CEILING_MS = 1700;
+export const CEILING_MS = 2000;
 /** they go on within this long after their turn ended, before she said much: it is the same turn (merged) */
 export const CONTINUE_MS = 6000;
 /** "said much": her answer played this long (ms) */
@@ -60,6 +65,12 @@ const OPEN_WORDS = new Set(
     "the a an to of with for in on at my your i we you if when that which").split(/\s+/),
 );
 const STANDALONE_VERBS = new Set("가 와 해 봐 줘 자 놔 써 사 타 돼 펴 꺼 켜".split(" "));
+/** adverbs and the like said last: the verb they go with is still to come ("근데 그냥 자꾸…", "나 오늘 진짜 너무…") */
+const HANGING = new Set(
+  ("자꾸 그냥 계속 막 너무 진짜 정말 완전 되게 엄청 아주 좀 조금 많이 다시 또 아직 이미 벌써 혹시 아마 제발 같이 다 잘 못 안 " +
+    "원래 요즘 요새 거의 별로 전혀 절대 항상 맨날 매일 가끔 자주 이제 이따 나중에 먼저 빨리 천천히 한번 그렇게 이렇게 저렇게 " +
+    "어떻게 왜냐하면 그러면서 그러니까는 그래가지고 해가지고 가지고 그래갖고 갖고 해서는 했는데도 때문에 땜에 처럼 대신에 말고").split(/\s+/),
+);
 const PRONOUNS = new Set("나 너 저 제 내 니 우리 저희 걔 쟤 얘 그녀 그분".split(" "));
 /** whole answers by themselves */
 const ANSWERS = new Set(
@@ -140,6 +151,9 @@ export function endState(text: string): EndState {
   // (a one-syllable verb said last — "이사 가", "빨리 와" — is a sentence's end; a pronoun — "응, 나…" — begins one)
   if (w.length > 1 && STANDALONE_VERBS.has(last)) return "complete";
   if (PRONOUNS.has(last)) return "open";
+  if (w.length > 1 && HANGING.has(last)) return "open";
+  // (an adverb and a pronoun run together by the recognizer — "자꾸나" for "자꾸 나…")
+  if (w.length > 1 && /^(?:자꾸|그냥|계속|진짜|너무)(?:나|너|내|네|우리)$/.test(last)) return "open";
   const end = last.slice(-2);
   const tail = last.slice(-1);
   const before = last.length > 1 ? last[last.length - 2] : "";
@@ -207,7 +221,8 @@ export class TurnTaker {
   private base = ""; // this turn's words in segments the recognizer closed
   private seg = ""; // the open segment's words (its latest partial)
   private segWords = false; // the open segment showed words of this turn
-  private commits: ("turn" | "drop")[] = []; // commits asked for, their words not back yet
+  private commits: ("turn" | "drop" | "settle")[] = []; // commits asked for, their words not back yet
+  private settling = 0; // (the ear) their voice stopped: the recognizer's final words asked for — the turn waits for them
   private sentText = ""; // what went to her for this turn
   private amending = false; // the next send amends the last one
   private lastWordsAt = 0; // their words last grew
@@ -228,6 +243,13 @@ export class TurnTaker {
   private bargeAt = 0; // words meant to stop her heard: she stops if they still say so then
   private heldOnce = false; // her voice waited once more for this turn
   private lastAside = false; // the turn sent was an aside
+  private fresh = false; // this stretch began right after their last turn (as a backchannel-like sound: it may yet be more of it)
+  // the server's ear (app/mate/ear.py), when it is on: their voice itself (page ms), and Smart Turn at its end
+  private ear = false;
+  private earOn = false;
+  private earFrom = -Infinity;
+  private earTo = -Infinity;
+  private earP: number | null = null;
   private soundAt = -Infinity; // the microphone last heard a sound above its noise
   private blindAt = -Infinity; // the microphone's level last couldn't tell (her voice in it)
   private phantom = ""; // words heard with no sound behind them, let be
@@ -278,7 +300,8 @@ export class TurnTaker {
       this.voicedAt = now;
     }
     // (they make a sound again — the breath before going on — after the end seemed sure and before her voice began)
-    if (this.voicedRun >= 2 && this.phase === "confirmed" && !this.heldOnce && this.ev.hold && this.ctx.heardMs() === 0 &&
+    // (with the ear, it says so — the level is any sound)
+    if (!this.ear && this.voicedRun >= 2 && this.phase === "confirmed" && !this.heldOnce && this.ev.hold && this.ctx.heardMs() === 0 &&
         !this.ctx.herVoice() && now - this.endAt < CONTINUE_MS) {
       this.heldOnce = true; // (once a turn: a noisy room can't keep her quiet)
       this.phase = "sent";
@@ -296,9 +319,56 @@ export class TurnTaker {
     }
   }
 
-  /** when they last talked: their words — or, a little longer, the microphone (never for long: steady noise must not
-   *  hold a turn open) */
-  private lastVoice(): number {
+  /** The server's ear: their voice began (`on`) or ended at `at` (page ms) — `p`: Smart Turn's P(the turn is over)
+   *  at that end. Once it is heard from, it — not the microphone's level — says when they talk. */
+  heard(on: boolean, at: number, p: number | undefined, now: number): void {
+    this.ear = true;
+    if (on) {
+      this.earOn = true;
+      this.earFrom = at;
+      // (their voice again after the end seemed sure, before hers began: her answer waits once more)
+      if (this.phase === "confirmed" && !this.heldOnce && this.ev.hold && this.ctx.heardMs() === 0 && this.earLive(now) &&
+          at > this.endAt && now - this.endAt < CONTINUE_MS) {
+        this.heldOnce = true;
+        this.phase = "sent";
+        this.ev.hold();
+      }
+      if (this.phase === "speaking" || this.phase === "sent") this.lastLoudAt = Math.max(this.lastLoudAt, now);
+    } else {
+      this.earOn = false;
+      this.earTo = at;
+      this.earP = typeof p === "number" ? p : null;
+      // (their voice stopped: what the recognizer shows may still be a word cut in half — "근데 그냥 자" for "자꾸" — and
+      // look finished; its final words decide)
+      if (this.phase === "speaking" && this.segWords && !this.commits.length && this.earLive(now)) {
+        this.commits.push("settle");
+        this.settling = now;
+        this.ev.commit();
+      }
+    }
+  }
+
+  /** the ear is gone (the line dropped): the microphone's level again */
+  earGone(): void {
+    this.ear = false;
+    this.earOn = false;
+  }
+
+  /** the ear says when they talk — not while her voice is in the microphone (it may hear her), nor a moment after;
+   *  nor a voice it says goes on and on with no words (a noise it took for one — or its "ended" lost) */
+  private earLive(now: number): boolean {
+    if (!this.ear || this.ctx.herVoice() || now - this.blindAt <= EAR_BLIND_MS) return false;
+    return !(this.earOn && now - Math.max(this.earFrom, this.lastWordsAt) > EAR_STUCK_MS);
+  }
+
+  /** when they last talked: their voice by the ear (the words lag it: they only count for a moment after it) — or
+   *  without one, their words or, a little longer, the microphone (never for long: steady noise must not hold a turn
+   *  open) */
+  private lastVoice(now = Date.now()): number {
+    if (this.earLive(now)) {
+      if (this.earOn) return now;
+      return Math.max(this.earTo, this.lastWordsAt - WORDS_LAG_MS);
+    }
     // (their voice beginning again after a gap — words not shown yet — holds it from there; a steady noise, no gap,
     // only from their last words)
     const from = Math.max(this.lastWordsAt, this.runFrom);
@@ -316,6 +386,15 @@ export class TurnTaker {
    *  recognizer "hearing" an "음." in the quiet after their last word): let be */
   private unvoiced(t: string, at: number): boolean {
     if (this.phase !== "idle" && this.phase !== "confirmed") return false;
+    if (this.earLive(at)) {
+      // (by the ear: their voice now or lately — and, right after a turn, begun again since it ended)
+      const voiced = this.earOn || at - this.earTo < AUDIBLE_MS;
+      const again = this.phase !== "confirmed" || this.commits.length > 0 || this.earFrom > this.endAt;
+      if (voiced && again) return false;
+      if (t !== this.phantom) this.ev.ignored?.(t, "unvoiced");
+      this.phantom = t;
+      return true;
+    }
     const after =
       this.phase !== "confirmed" || this.commits.length > 0 || !this.levels || this.ctx.herVoice() ||
       this.blindAt > this.endAt || this.soundAt > this.endAt + SOUND_AFTER_MS;
@@ -373,9 +452,18 @@ export class TurnTaker {
         // (more of the segment that was sent — its commit not back —, or soon after and she had barely begun: the
         // same turn — her answer goes, theirs is answered whole)
         if (this.more() && (this.commits.length > 0 || this.amendable(now, t))) this.resume(now);
-        else this.begin(now, her);
+        else {
+          this.begin(now, her);
+          this.fresh = !!this.sentText && now - this.endAt < CONTINUE_MS;
+        }
         break;
       case "speaking":
+        // (a stretch begun just after their turn with a sound like "아" — then words: more of that turn after all)
+        if (this.fresh && !this.amending && this.sentText && !backchannel(t) && this.amendable(now, t)) {
+          this.fresh = false;
+          this.base = this.sentText;
+          this.resume(now);
+        }
         break;
     }
     this.considerBarge(now);
@@ -392,6 +480,7 @@ export class TurnTaker {
   }
 
   private begin(now: number, her: boolean): void {
+    this.fresh = false;
     this.phase = "speaking";
     // (a segment still holding the last turn's words — its commit not asked for: a backchannel let be — is this
     // turn's start: the recognizer shows it whole)
@@ -459,8 +548,9 @@ export class TurnTaker {
     const t = noiseOnly(text) || this.nameOnly(text) ? "" : text.trim();
     const asked = this.commits.shift();
     if (asked) {
+      if (asked === "settle") this.settling = 0;
       // (a segment that showed no words of this turn: the recognizer's echo of the last one, nothing new)
-      const words = asked === "turn" && this.segWords ? t || this.seg : "";
+      const words = asked !== "drop" && this.segWords ? t || this.seg : "";
       this.base = join(this.base, words);
       if (words) {
         this.lastSeg = norm(words);
@@ -508,9 +598,19 @@ export class TurnTaker {
     return p90(this.loud) < BACKGROUND_RATIO * median(this.usual);
   }
 
+  /** how long after their voice her answer is made (send) and may be heard (confirm): by the ear's judgement and
+   *  the words — or, without the ear, by the words alone */
+  private waits(st: EndState, now: number): [number, number] {
+    if (this.earLive(now) && !this.earOn && this.earP !== null) {
+      const t = PATIENCE_MS[st][this.earP >= 0.5 ? 0 : 1];
+      return [Math.max(200, Math.round(t * 0.6)), t];
+    }
+    return [SEND_MS[st], CONFIRM_MS[st]];
+  }
+
   tick(now: number): void {
     if (this.phase !== "speaking" && this.phase !== "sent") return;
-    const quiet = now - this.lastVoice();
+    const quiet = now - this.lastVoice(now);
     if (this.phase === "speaking") {
       const text = this.text();
       if (!text) {
@@ -518,10 +618,14 @@ export class TurnTaker {
         return;
       }
       if (this.bargeAt && now >= this.bargeAt) this.considerBarge(now);
+      // (their final words asked for as their voice stopped: decided on those — unless they are slow to come)
+      if (this.settling && now - this.settling < SETTLE_MAX_MS) return;
+      this.settling = 0;
       const st = endState(text);
+      const [sendMs, confirmMs] = this.waits(st, now);
       // (her voice in the microphone lately: it couldn't hear whether they were still talking — a little longer then)
-      const blind = now - this.blindAt < SEND_MS[st] + BLIND_EXTRA_MS ? BLIND_EXTRA_MS : 0;
-      if (quiet < SEND_MS[st] + blind && quiet < CEILING_MS) return;
+      const blind = now - this.blindAt < sendMs + BLIND_EXTRA_MS ? BLIND_EXTRA_MS : 0;
+      if (quiet < sendMs + blind && quiet < CEILING_MS) return;
       const her = this.ctx.herVoice();
       // while she is still talking: a backchannel, a laugh — them listening, not a turn (once she has stopped, the same
       // "응" is an answer)
@@ -537,7 +641,7 @@ export class TurnTaker {
       }
       const aside = this.overHer && !this.barged && her;
       this.lastAside = aside;
-      this.endAt = this.lastVoice();
+      this.endAt = this.lastVoice(now);
       this.sentText = text;
       this.phase = "sent";
       this.turns++;
@@ -551,11 +655,12 @@ export class TurnTaker {
       if (!this.overHer && this.loud.length >= 3) this.usual = [...this.usual, p90(this.loud)].slice(-6);
       this.ev.send(text, this.endAt, this.amending, aside);
       this.amending = false;
-      if (quiet >= CONFIRM_MS[st] || quiet >= CEILING_MS) this.confirmNow();
+      if (quiet >= confirmMs || quiet >= CEILING_MS) this.confirmNow();
       return;
     }
     // sent: her voice waits for the end to be sure
-    if (quiet >= CONFIRM_MS[endState(this.sentText)] || quiet >= CEILING_MS) this.confirmNow();
+    if (this.earLive(now) && this.earOn) return;
+    if (quiet >= this.waits(endState(this.sentText), now)[1] || quiet >= CEILING_MS) this.confirmNow();
   }
 
   private confirmNow(): void {
@@ -590,6 +695,14 @@ const LOUD_GRACE_MS = 800;
 const AUDIBLE_MS = 2500;
 /** …and, right after a turn, some sound this long after it ended (not only the tail of its last word) */
 const SOUND_AFTER_MS = 250;
+/** the ear isn't trusted while her voice plays and this long after (her voice may still be in the microphone) */
+const EAR_BLIND_MS = 400;
+/** their words show this long after they said them: with the ear, words this much later than their voice don't hold it */
+const WORDS_LAG_MS = 700;
+/** a voice the ear says goes on this long with no words: not trusted */
+const EAR_STUCK_MS = 8000;
+/** their final words, asked for as their voice stopped, are waited for this long at most */
+const SETTLE_MAX_MS = 700;
 /** a new segment may echo the one just closed for this long (Scribe v3: its last words, as the next sound begins) */
 const ECHO_SEG_MS = 6000;
 /** words meant to stop her: still so this much later, she stops */

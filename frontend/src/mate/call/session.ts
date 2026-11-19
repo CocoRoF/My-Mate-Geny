@@ -27,7 +27,7 @@ import { MateAudioQueue, type AudioQueueItem } from "../audioQueue";
 import { claimVoice } from "../voiceBridge";
 import { setCallRoute } from "../stt/capture";
 import { voiceEmotionAt } from "../emotion";
-import { SentenceStream, type Sentence } from "../sentences";
+import { SentenceStream, speakable, type Sentence } from "../sentences";
 import { bcp47 } from "../useMateConversation";
 import { listen, type Listener } from "./listen";
 import type { EndReason } from "./machine";
@@ -155,6 +155,8 @@ export class CallSession {
   /** each "say" numbered (the server's reply to it says which): asides whose answer hasn't come, and those whose
    *  answer is to go unheard (she was stopped meanwhile) */
   private seq = 0;
+  /** the server's ear is on (app/mate/ear.py): the microphone's sound goes to it on the line */
+  private earOn = false;
   private asideSeqs: number[] = [];
   private orphans = new Set<number>();
   /** her voice on the call is hers in every window of this computer (the overlay's mouth moves with it) */
@@ -271,11 +273,30 @@ export class CallSession {
     ws.onclose = (e) => {
       if (this.ws !== ws || this.over) return;
       this.ws = null;
+      // (the ear is on the line: gone with it until the server says it is on again)
+      if (this.earOn) {
+        this.earOn = false;
+        this.listener?.heard?.(null);
+      }
       if (e.code === 4404) return this.finish("gone");
       if (this.retries >= RETRY_MS.length) return this.finish("network");
       this.ev.reconnecting(true);
       setTimeout(() => this.connect(), RETRY_MS[this.retries++]);
     };
+  }
+
+  /** the microphone's sound to the server's ear: the page's clock (float64) at its last sample, then the 16 kHz PCM */
+  private toEar(pcm: Int16Array, at: number): void {
+    const ws = this.ws;
+    if (!this.earOn || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const buf = new ArrayBuffer(8 + pcm.length * 2);
+    new DataView(buf).setFloat64(0, at, true);
+    new Int16Array(buf, 8).set(pcm);
+    try {
+      ws.send(buf);
+    } catch {
+      /* the line is going */
+    }
   }
 
   private send(msg: Record<string, unknown>): boolean {
@@ -335,6 +356,15 @@ export class CallSession {
         if (r.greeting && !r.started.length && !this.held.length && !this.queue.getState().current && !this.queue.getState().pending) this.connectNow(Date.now());
         return;
       }
+      case "ear":
+        // (the server's ear: on — or their voice began / ended, and how done it sounds)
+        if (typeof msg.ready === "boolean") {
+          this.earOn = msg.ready;
+          if (!msg.ready) this.listener?.heard?.(null);
+          if (msg.ready) this.diag("ear.on");
+        } else if (typeof msg.on === "boolean" && typeof msg.at === "number")
+          this.listener?.heard?.({ on: msg.on, at: msg.at, p: typeof msg.p === "number" ? msg.p : undefined });
+        return;
       case "ended":
         this.finish(((msg.reason as EndReason) || "gone"));
         return;
@@ -381,8 +411,11 @@ export class CallSession {
     }, ms));
   }
 
-  private say(r: Reply, s: Sentence, again = false): void {
+  private say(r: Reply, sentence: Sentence, again = false): void {
     if (r.hushed || this.over) return;
+    // (a stage direction — *sleepy*, [voice still thick], (yawns) — is never said, shown or kept: words only)
+    const text = stageless(sentence.text);
+    const s: Sentence = text === sentence.text ? sentence : { ...sentence, text, speech: stageless(speakable(text)) };
     if (!again && s.speech && !SILENT.test(s.text)) r.words++;
     // (their turn's end isn't sure yet: her answer is ready, but waits — they may go on, and then it is never heard)
     if (this.turnOpen && !r.greeting) {
@@ -645,6 +678,7 @@ export class CallSession {
         voicedAt: () => (this.speakingNow() ? Date.now() : this.voiceEndedAt),
         heardMs: this.heardMs,
         herNames: herNames(mate.name),
+        ear: (pcm, at) => this.toEar(pcm, at),
         muted: () => this.muted,
       },
       {
@@ -804,4 +838,17 @@ export function herNames(name: string): string[] {
   const out = [n];
   if (/^[\uac00-\ud7a3]{3}$/.test(n)) out.push(n.slice(1));
   return out;
+}
+
+/** A call's line without stage directions (*sleepy, voice still thick*, [yawns], (웃음)): on the phone she only says words —
+ *  a model now and then writes how it sounds anyway, and the voice would read it out. [SILENT] stays (her choice). */
+export function stageless(text: string): string {
+  if (!text) return text;
+  const t = text
+    .replace(/\*[^*\n]*\*/g, " ")
+    .replace(/\[[^\]\n]*\]/g, (m) => (SILENT.test(m) ? m : " "))
+    .replace(/[(（][^()（）\n]*[)）]/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+  return /[\p{L}\p{N}]/u.test(t) || SILENT.test(t) ? t : "";
 }

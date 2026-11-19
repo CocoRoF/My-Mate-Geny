@@ -95,6 +95,8 @@ export interface RealtimeCallbacks {
   onNotice?: (n: RealtimeNotice) => void;
   /** the session ended with a failure (start / mic / no fallback) */
   onError?: (code: SttFailure, message: string, serverFallback: string | null) => void;
+  /** what the stream hears (16 kHz mono, a chunk at a time — silence while muted), `at`: when (ms, its last sample) */
+  onPcm?: (pcm: Int16Array, at: number) => void;
   /** mic level 0..1 (per chunk); `raw`: the same, unclipped (a loud voice above 1) */
   onLevel?: (level: number, raw: number) => void;
 }
@@ -217,6 +219,7 @@ export class RealtimeStt {
     for (let i = 0; i < pcm.length; i += 4) s += pcm[i] * pcm[i];
     const loud = Math.sqrt(s / Math.max(1, pcm.length / 4));
     this.cb.onLevel?.(muted ? 0 : Math.min(1, loud / 8000), muted ? 0 : loud / 8000);
+    this.cb.onPcm?.(out, now);
     // (a recording has no transcript to tell speech from quiet: its loudness does)
     if (this.mode === "record" && loud > 600 && !muted) this.lastSpeech = now;
     // (the fallback hears what the stream would have)

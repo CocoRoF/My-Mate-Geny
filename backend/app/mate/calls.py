@@ -32,7 +32,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
+from app.config import settings
 from app.mate import affinity as A
+from app.mate import ear as ear_mod
 from app.mate import files
 from app.mate import memory as M
 from app.mate import state as S
@@ -54,6 +56,7 @@ RESUME_S = 10                     # a dropped call socket may come back this lon
 MAX_CALL_S = 60 * 60              # an hour at most
 MAX_REPLY_TOKENS = 400
 MAX_TEXT = 2000                   # one utterance
+EAR_BACKLOG = 30                  # frames of the microphone's sound waiting for the ear, at most (≈ 3 s)
 ASIDE_WAIT_S = 10                 # words said over her: her answer being made is made to its end first, this long at most
 MAX_TRANSCRIPT = 400              # lines kept
 DIAG_KEEP = 150                   # the page's listening diagnostics kept with a call (calls.CallService._diag)
@@ -73,6 +76,8 @@ LINK_PING_S = 45                  # the phone app's background link hears someth
 PHONES_KEY = "call_phones"        # what each phone app last said it lets her do (its device → {enabled, mate_id, at})
 
 _TAG = re.compile(r"\[\s*[A-Za-z_]+(?:\s*:\s*[0-9.]+)?\s*\]")
+# stage directions a model writes now and then even on the phone (*sleepy, voice still thick*, [yawns], (웃음)): not words
+_STAGE = re.compile(r"(?<!\*)\*(?!\*)[^*\n]+(?<!\*)\*(?!\*)|\[[^\]\n]*\]|[(（][^()（）\n]*[)）]")
 _SPACE = re.compile(r"[ \t]+")
 
 
@@ -86,9 +91,13 @@ class EngineError(RuntimeError):
     pass
 
 
-def spoken(text: str) -> str:
-    """What of a reply is words (emotion tags and [SILENT] out)."""
-    return _SPACE.sub(" ", _TAG.sub("", text or "").replace("[SILENT]", "")).strip()
+def spoken(text: str, *, stage: bool = False) -> str:
+    """What of a reply is words (emotion tags and [SILENT] out; ``stage``: her reply on the line — stage directions out
+    too, as the page never says nor shows them)."""
+    t = _TAG.sub("", text or "").replace("[SILENT]", "")
+    if stage:
+        t = _STAGE.sub(" ", t)
+    return _SPACE.sub(" ", t).strip()
 
 
 def clip(text: str, n: int) -> str:
@@ -366,6 +375,9 @@ class Call:
     timers: list[asyncio.TimerHandle] = field(default_factory=list)
     reply_task: asyncio.Task | None = None
     reply_rid: str = ""       # the reply reply_task is making
+    ear: Any = None           # the call's ear (app/mate/ear.py), once the page is on the line and the models are ready
+    ear_queue: list[bytes] = field(default_factory=list)
+    ear_task: asyncio.Task | None = None
     say_seq: int | None = None  # the page's number for the "say" being answered (its reply says it)
     ready: asyncio.Event = field(default_factory=asyncio.Event)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -420,6 +432,9 @@ class CallService:
         from app.mate.alarms import AlarmBook, AlarmClock
 
         self.alarms = AlarmClock(AlarmBook(db, clock), self, on_change=self._alarms_changed)
+        # the calls' own ear (app/mate/ear.py): their voice and how done it sounds, from the microphone's sound itself
+        self.ear_models: ear_mod.Models | None = (ear_mod.Models(settings.home_dir / "models" / "ear")
+                                                  if settings.call_ear else None)
         mates.calls = self
         self.svc.call_note = lambda card: describe(card, self.store.tz())  # (her chat's handoffs and catch-ups)
 
@@ -576,6 +591,10 @@ class CallService:
             self._diag(call, "line.back", {})
         call.send, call.socket = send, sock
         send({"type": "state", "call": call.public()})
+        # (the ear, when it is on: the page sends what its microphone hears on this line)
+        if call.ear is None and self.ear_models is not None and self.ear_models.ready:
+            call.ear = ear_mod.Ear(self.ear_models)
+        send({"type": "ear", "ready": call.ear is not None})
         for r in call.replies.values():
             if not r.get("delivered") and not r.get("cut"):
                 send({"type": "reply", "rid": r["rid"], "greeting": r.get("greeting", False)})
@@ -595,11 +614,38 @@ class CallService:
         self._later(call, RESUME_S, lambda: self._spawn(call, self.end(call, "network"))
                     if call.send is None and call.status != "ended" else None)
 
+    def hear(self, call: Call, data: bytes) -> None:
+        """What the page's microphone heard (a binary frame on the line, app/mate/ear.py): through the call's ear, in
+        order, off the event loop; what it makes of it goes back to the page. A backlog (a slow moment) drops the
+        oldest frames: the ear is about now."""
+        if call.ear is None or call.status == "ended":
+            return
+        call.ear_queue.append(data)
+        if len(call.ear_queue) > EAR_BACKLOG:
+            del call.ear_queue[: len(call.ear_queue) - EAR_BACKLOG]
+        if call.ear_task is None or call.ear_task.done():
+            call.ear_task = self._spawn(call, self._ear_loop(call))
+
+    async def _ear_loop(self, call: Call) -> None:
+        while call.ear_queue and call.ear is not None and call.status != "ended":
+            data = call.ear_queue.pop(0)
+            try:
+                events = await ear_mod.hear(call.ear, data)
+            except Exception as exc:  # noqa: BLE001 - the ear is off for this call; the page goes by the level
+                self._diag(call, "ear.error", {"error": str(exc)[:120]})
+                call.ear = None
+                self._send(call, {"type": "ear", "ready": False})
+                return
+            for ev in events:
+                self._send(call, ev)
+
     async def receive(self, call: Call, msg: dict[str, Any]) -> None:
         """One message from the call screen. What they say and talk over goes in order, on the side (the line keeps
         listening: a hang-up is never stuck behind a reply)."""
         kind = msg.get("type")
         if kind == "say":
+            if call.ear is not None:
+                call.ear.reset_turn()  # (their turn went to her: Smart Turn hears the next one on its own)
             heard, seq = msg.get("heard"), msg.get("seq")
             self._spawn(call, self._in_order(call, self._say(
                 call, str(msg.get("text") or ""), amend=bool(msg.get("amend")),
@@ -827,7 +873,7 @@ class CallService:
             await self.end(call, "failed", error=str(exc)[:300])
             return
         r["done"] = True
-        words = spoken(text)
+        words = spoken(text, stage=True)
         if words and not any(x.get("rid") == rid for x in call.transcript):
             self._line(call, "mate", words, rid=rid)
         elif not words:
@@ -881,10 +927,10 @@ class CallService:
         if call.reply_rid == rid:
             await self._stop_reply(call)
         r = call.replies.get(rid)
-        heard = spoken(heard)
+        heard = spoken(heard, stage=True)
         if r is None:
             return
-        full = spoken(r["text"])
+        full = spoken(r["text"], stage=True)
         said = heard if heard else ""
         cut = bool(full) and said != full
         line = next((x for x in call.transcript if x.get("rid") == rid), None)
@@ -920,10 +966,10 @@ class CallService:
             await self._aside(call, text, over, over_heard)
             return
         cut = await self._stop_reply(call)
-        if cut is not None and not any(x.get("rid") == cut["rid"] for x in call.transcript) and spoken(cut["text"]):
+        if cut is not None and not any(x.get("rid") == cut["rid"] for x in call.transcript) and spoken(cut["text"], stage=True):
             # (talked over before the page said what it heard: what was made of it so far)
-            self._line(call, "mate", spoken(cut["text"]) + "…", rid=cut["rid"], cut=True)
-            call.cut_note = call.cut_note if call.cut_note is not None else spoken(cut["text"])
+            self._line(call, "mate", spoken(cut["text"], stage=True) + "…", rid=cut["rid"], cut=True)
+            call.cut_note = call.cut_note if call.cut_note is not None else spoken(cut["text"], stage=True)
         self._line(call, "user", text)
         prompt, note = text, ""
         if call.cut_note is not None:
@@ -950,7 +996,7 @@ class CallService:
             if not task.done():
                 await self._stop_reply(call)
         self._line(call, "user", text, aside=True)
-        got = clip(spoken(over_heard), 200)
+        got = clip(spoken(over_heard, stage=True), 200)
         so_far = f" (you had got to “{got}”)" if got else ""
         note = (f"[They said this while you were still talking{so_far} — maybe not to you. If it wasn't for you (to someone "
                 f"beside them, a mumble, a word half heard), reply with exactly [SILENT]: you go on where you were. If it "
@@ -974,7 +1020,7 @@ class CallService:
         await self._stop_reply(call)
         at = users[-1]
         before = call.transcript[at]["text"]
-        heard = spoken(heard_now if heard_now is not None else (call.cut_note or ""))
+        heard = spoken(heard_now if heard_now is not None else (call.cut_note or ""), stage=True)
         call.cut_note = None
         # her answer to the half: nobody heard it — it goes; heard as she began — what they heard of it, as said
         after = call.transcript[at + 1:]
@@ -982,8 +1028,8 @@ class CallService:
         call.transcript[at + 1:] = [x for x in after if x["who"] != "mate"]
         if heard:
             r = call.replies.get(rid) or call.replies.get(str((mine or {}).get("rid") or "")) or {}
-            full = spoken(r.get("text") or "")
-            cutoff = bool(full) and spoken(heard) != full
+            full = spoken(r.get("text") or "", stage=True)
+            cutoff = bool(full) and spoken(heard, stage=True) != full
             self._line(call, "mate", heard + ("…" if cutoff else ""), rid=r.get("rid") or (mine or {}).get("rid"), cut=cutoff)
             more = text[len(before):].strip() if text.startswith(before) else text
             self._line(call, "user", more or text)
@@ -1578,6 +1624,8 @@ class CallService:
 
     def start(self) -> None:
         self.task = asyncio.create_task(self.run())
+        if self.ear_models is not None:
+            self.ear_models.start()
         self.alarms.start()
         self._end_links_on_exit()
 
