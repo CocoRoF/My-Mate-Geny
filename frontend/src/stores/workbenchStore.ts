@@ -7,6 +7,7 @@ import { folderFor, isQualified, qualify, sessionFolders, strip, unqualify } fro
 import type { Session } from "../types";
 import { tr } from "../i18n";
 import { sidePanelPreferences, panelWidth, type SidePanelKind } from "../lib/sidePanel";
+import * as L from "../lib/editorLayout";
 
 /**
  * Workbench = the VS Code-like layer around a chat: file tabs in the main
@@ -14,6 +15,10 @@ import { sidePanelPreferences, panelWidth, type SidePanelKind } from "../lib/sid
  * Explorer panel. Tabs follow VS Code's preview rule: a single click opens a
  * *preview* tab that the next single click reuses; double-click (or the tab
  * title) pins it. A tab's position never changes on its own.
+ *
+ * Tabs can be split into groups side by side or one above the other (lib/editorLayout.ts — the chat a tab too, so
+ * it can sit beside a file): `layout` says which group has which tab; a file opens in the focused group, whose shown
+ * tab is `active`.
  */
 
 export interface FileTab {
@@ -27,7 +32,8 @@ export interface FileTab {
 
 interface SessionTabs {
   tabs: FileTab[];
-  active: string | null; // null = the chat
+  active: string | null; // the focused group's shown tab; null = the chat
+  layout?: L.Layout; // the groups (none stored: one group of them all — tabs from before splits)
 }
 
 interface Toast {
@@ -57,9 +63,16 @@ interface WorkbenchState {
   openFile: (sid: string, path: string, opts?: { preview?: boolean; line?: number; endLine?: number }) => void;
   pinTab: (sid: string, id: string) => void;
   closeTab: (sid: string, id: string) => void;
-  closeOthers: (sid: string, id: string | null) => void;
+  /** the other files of `id`'s group closed (`id` null: every file of `group`, else of the focused group) */
+  closeOthers: (sid: string, id: string | null, group?: string) => void;
   activate: (sid: string, id: string | null) => void;
-  moveTab: (sid: string, from: number, to: number) => void;
+  /** a tab (a file's path, or L.CHAT) moved into a group, at a place (else at its end) */
+  moveTab: (sid: string, tab: string, group: string, index?: number) => void;
+  /** a tab dropped on a group's edge: a new group on that side with it */
+  splitTab: (sid: string, tab: string, group: string, side: L.Side) => void;
+  resizeSplit: (sid: string, split: string, ratio: number) => void;
+  focusGroup: (sid: string, group: string) => void;
+  unsplit: (sid: string) => void;
   setExpanded: (sid: string, path: string, open: boolean) => void;
   collapseAll: (sid: string) => void;
   select: (path: string | null, reveal?: boolean) => void;
@@ -76,6 +89,15 @@ const initialPanel = (): SidePanelKind => {
 };
 
 const empty: SessionTabs = { tabs: [], active: null };
+
+/** a session's groups, mended for the files open (lib/editorLayout.ts normalize) */
+export const layoutOf = (s: SessionTabs): L.Layout => L.normalize(s.layout, s.tabs.map((t) => t.id), s.active);
+
+/** the session with `layout`, its shown tab in step (the explorer, the back button follow `active`) */
+function withLayout(s: SessionTabs, layout: L.Layout, tabs: FileTab[] = s.tabs): SessionTabs {
+  const shown = L.focused(layout).active;
+  return { tabs, layout, active: shown === L.CHAT ? null : shown };
+}
 
 export const useWorkbench = create<WorkbenchState>()(
   persist(
@@ -105,44 +127,38 @@ export const useWorkbench = create<WorkbenchState>()(
           patch(sid, (s) => {
             const preview = opts.preview ?? true;
             const target = { line: opts.line, endLine: opts.endLine, nonce: Date.now() };
+            const layout = layoutOf(s);
             const existing = s.tabs.find((t) => t.id === path);
             if (existing) {
-              return {
-                active: path,
-                tabs: s.tabs.map((t) => (t.id === path ? { ...t, ...target, preview: t.preview && preview } : t)),
-              };
+              // (open already — in whichever group: shown there, that group focused)
+              const tabs = s.tabs.map((t) => (t.id === path ? { ...t, ...target, preview: t.preview && preview } : t));
+              return withLayout(s, L.activate(layout, path), tabs);
             }
             const tab: FileTab = { id: path, path, preview, ...target };
-            const slot = preview ? s.tabs.findIndex((t) => t.preview) : -1;
-            if (slot >= 0) {
-              const tabs = [...s.tabs];
-              tabs[slot] = tab;
-              return { tabs, active: path };
-            }
-            const at = s.active ? s.tabs.findIndex((t) => t.id === s.active) + 1 : s.tabs.length;
-            const tabs = [...s.tabs];
-            tabs.splice(at, 0, tab);
-            return { tabs, active: path };
+            // a preview opens in place of the focused group's preview tab
+            const group = L.focused(layout);
+            const slot = preview ? s.tabs.find((t) => t.preview && group.tabs.includes(t.id)) : undefined;
+            if (slot) return withLayout(s, L.addTab(layout, path, slot.id), s.tabs.map((t) => (t.id === slot.id ? tab : t)));
+            return withLayout(s, L.addTab(layout, path), [...s.tabs, tab]);
           }),
         pinTab: (sid, id) => patch(sid, (s) => ({ ...s, tabs: s.tabs.map((t) => (t.id === id ? { ...t, preview: false } : t)) })),
         closeTab: (sid, id) =>
+          patch(sid, (s) => (id === L.CHAT ? s : withLayout(s, L.removeTab(layoutOf(s), id), s.tabs.filter((t) => t.id !== id)))),
+        closeOthers: (sid, id, group) =>
           patch(sid, (s) => {
-            const i = s.tabs.findIndex((t) => t.id === id);
-            const tabs = s.tabs.filter((t) => t.id !== id);
-            if (s.active !== id) return { ...s, tabs };
-            const next = tabs[i] || tabs[i - 1] || null;
-            return { tabs, active: next ? next.id : null };
+            let layout = layoutOf(s);
+            const g = (id && L.groupOf(layout, id)) || (group && L.findGroup(layout, group)) || L.focused(layout);
+            const gone = g.tabs.filter((t) => t !== id && t !== L.CHAT);
+            for (const t of gone) layout = L.removeTab(layout, t);
+            if (id) layout = L.activate(layout, id);
+            return withLayout(s, layout, s.tabs.filter((t) => !gone.includes(t.id)));
           }),
-        closeOthers: (sid, id) =>
-          patch(sid, (s) => ({ tabs: s.tabs.filter((t) => t.id === id), active: id })),
-        activate: (sid, id) => patch(sid, (s) => ({ ...s, active: id })),
-        moveTab: (sid, from, to) =>
-          patch(sid, (s) => {
-            const tabs = [...s.tabs];
-            const [t] = tabs.splice(from, 1);
-            tabs.splice(to, 0, t);
-            return { ...s, tabs };
-          }),
+        activate: (sid, id) => patch(sid, (s) => withLayout(s, L.activate(layoutOf(s), id ?? L.CHAT))),
+        moveTab: (sid, tab, group, index) => patch(sid, (s) => withLayout(s, L.moveTab(layoutOf(s), tab, group, index))),
+        splitTab: (sid, tab, group, side) => patch(sid, (s) => withLayout(s, L.splitWith(layoutOf(s), tab, group, side))),
+        resizeSplit: (sid, split, ratio) => patch(sid, (s) => ({ ...s, layout: L.resize(layoutOf(s), split, ratio) })),
+        focusGroup: (sid, group) => patch(sid, (s) => withLayout(s, L.focusGroup(layoutOf(s), group))),
+        unsplit: (sid) => patch(sid, (s) => withLayout(s, L.unsplit(layoutOf(s)))),
 
         setExpanded: (sid, path, open) =>
           set((st) => {
@@ -168,7 +184,7 @@ export const useWorkbench = create<WorkbenchState>()(
     },
     {
       name: "hrh_workbench_v1",
-      version: 2,
+      version: 3, // (3: split groups — a session's `layout`; one stored before is one group: layoutOf mends it)
       migrate: (saved) => ({ bySession: {}, showHidden: false, pinnedRoots: {}, expanded: {}, ...(saved as Partial<WorkbenchState>), ...sidePanelPreferences(saved, initialPanel()) }),
       merge: (saved, current) => ({ ...current, ...(saved as object), ...sidePanelPreferences(saved, current.sidePanel) }),
       partialize: (s) => ({

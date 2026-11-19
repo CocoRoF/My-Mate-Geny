@@ -89,6 +89,14 @@ const ko: Messages<"files"> = {
   previewTabHint: "미리 보기 (두 번 클릭하면 계속 열어 둬요)",
   closeOthers: "다른 탭 닫기",
   closeAll: "모두 닫기",
+  // 분할 보기 (components/viewer/EditorGrid.tsx)
+  splitRight: "오른쪽으로 분할",
+  splitDown: "아래로 분할",
+  splitRightTitle: "오른쪽으로 분할 — 탭을 화면 가장자리로 끌어다 놓아도 돼요 (Ctrl/⌘+\\, Shift를 함께 누르면 아래로)",
+  unsplit: "분할 합치기",
+  resizeSplit: "분할 크기 조절",
+  resizeSplitHint: "끌어서 크기 조절 · 더블클릭: 반반 · 화살표 키",
+  groupLabel: "그룹 {n}",
   keepOpen: "계속 열어 두기",
   // file viewer
   isFolder: "폴더예요 — 탐색기에서 열어 주세요.",

@@ -2,6 +2,8 @@
 // name->component map so the rest of the app stays decoupled from the set.
 import type { IconType } from "react-icons";
 import {
+  LuColumns2,
+  LuRows2,
   LuMessageSquare,
   LuCircleHelp,
   LuPlug,
@@ -180,6 +182,8 @@ const MAP = {
   "git-branch": LuGitBranch,
   github: LuGithub,
   refresh: LuRefreshCw,
+  "split-right": LuColumns2, // (a tab beside / under the others: components/viewer/EditorGrid.tsx)
+  "split-down": LuRows2,
   paperclip: LuPaperclip,
   image: LuImage,
   camera: LuCamera,

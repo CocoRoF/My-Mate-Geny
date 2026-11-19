@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { stopTurn } from "../../api/sessions";
 import RightSidebar from "./panel/RightSidebar";
 import { MenuButton } from "../layout/MobileTopBar";
@@ -13,7 +13,7 @@ import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
 import NewSessionPanel from "./NewSessionPanel";
 import UsageModal from "../usage/UsageModal";
 import Icon, { type IconName } from "../ui/Icon";
-import TabBar from "../viewer/TabBar";
+import EditorGrid from "../viewer/EditorGrid";
 import FolderButton from "./topbar/FolderButton";
 import GitButton from "./topbar/GitButton";
 import { useChatStore } from "../../stores/chatStore";
@@ -21,7 +21,6 @@ import { useSessionTabs, useWorkbench } from "../../stores/workbenchStore";
 import { useT } from "../../i18n";
 
 // Viewers (and their format libraries) load when a file is first opened.
-const FileViewer = lazy(() => import("../viewer/FileViewer"));
 const WIDE = 1280; // below this the side panels are drawers
 
 /** An element's width, kept current by a ResizeObserver (no polling). */
@@ -125,7 +124,7 @@ export default function ChatView() {
   const togglePanel = () => setSidePanel(panel ? null : "session");
   const explorer = useWorkbench((s) => s.explorerOpen);
   const setExplorer = useWorkbench((s) => s.setExplorer);
-  const { tabs, active: activeTab } = useSessionTabs(activeId);
+  const { active: activeTab } = useSessionTabs(activeId);
   const activate = useWorkbench((s) => s.activate);
   // The top bar's density follows its own width (sidebar, explorer, panel and window all take from it): "full" shows
   // every label (and, given room to spare, the workspace path), "medium" drops the view buttons' labels, "tight" also
@@ -140,11 +139,6 @@ export default function ChatView() {
     if (window.innerWidth < WIDE) setSidePanel(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Tabs mount on first view and then stay mounted (scroll, zoom, sheet survive switching).
-  const [visited, setVisited] = useState<Set<string>>(() => new Set());
-  useEffect(() => {
-    if (activeId && activeTab) setVisited((v) => (v.has(`${activeId}:${activeTab}`) ? v : new Set(v).add(`${activeId}:${activeTab}`)));
-  }, [activeId, activeTab]);
   // A finished turn may have changed files: explorer + open files refresh.
   const streaming = useChatStore((s) => s.isStreaming);
   const wasStreaming = useRef(streaming);
@@ -284,24 +278,23 @@ export default function ChatView() {
         )}
         </div>
       )}
-      {active && tabs.length > 0 && <TabBar sid={active.id} />}
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <MessageList />
-        {active && <InputBar key={active.id} onSend={send} onSteer={steer} onStop={stop} session={active} />}
-        {active &&
-          tabs
-            .filter((t) => t.id === activeTab || visited.has(`${active.id}:${t.id}`))
-            .map((t) => (
-              <div
-                key={`${active.id}:${t.id}`}
-                className={`absolute inset-0 z-20 bg-bg ${t.id === activeTab ? "" : "invisible pointer-events-none"}`}
-              >
-                <Suspense fallback={null}>
-                  <FileViewer session={active} tab={t} />
-                </Suspense>
-              </div>
-            ))}
-      </div>
+      {/* the chat and its open files, in groups side by side / one above the other (components/viewer/EditorGrid.tsx) */}
+      {active ? (
+        <EditorGrid
+          key={active.id}
+          session={active}
+          chat={
+            <>
+              <MessageList />
+              <InputBar key={active.id} onSend={send} onSteer={steer} onStop={stop} session={active} />
+            </>
+          }
+        />
+      ) : (
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <MessageList />
+        </div>
+      )}
       {showUsage && active && <UsageModal provider={active.provider} onClose={() => setShowUsage(false)} />}
       {showTasks && active && <TasksPanel sid={active.id} onClose={() => setShowTasks(false)} />}
     </div>
