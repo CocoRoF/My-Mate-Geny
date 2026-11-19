@@ -71,7 +71,7 @@ def counts(platform: str, path: str) -> bool:
 
 
 def git(*args: str) -> str:
-    return subprocess.run(["git", *args], text=True, capture_output=True, check=True).stdout
+    return subprocess.run(["git", *args], text=True, encoding="utf-8", errors="replace", capture_output=True, check=True).stdout
 
 
 def releases(prefix: str) -> list[dict]:
@@ -79,7 +79,7 @@ def releases(prefix: str) -> list[dict]:
     repo = os.environ["GITHUB_REPOSITORY"]
     r = subprocess.run(["gh", "api", "--paginate", f"repos/{repo}/releases?per_page=100",
                         "--jq", ".[] | select(.draft | not) | {tag: .tag_name, files: [.assets[].name]}"],
-                       text=True, capture_output=True, check=True)
+                       text=True, encoding="utf-8", errors="replace", capture_output=True, check=True)
     rx = re.compile(rf"^{re.escape(prefix)}(\d+\.\d+\.\d+)$")
     out = [json.loads(line) for line in r.stdout.splitlines() if line.strip()]
     out = [x for x in out if rx.match(x["tag"])]
@@ -145,4 +145,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # (Windows: cp1252 otherwise)
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     main()

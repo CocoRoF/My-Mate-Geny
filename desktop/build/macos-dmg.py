@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -66,6 +67,19 @@ def write_feed(directory: Path, version: str, arch: str | None = None) -> Path:
     return path
 
 
+def quiet_scanners() -> None:
+    """On the Actions runners only: XProtect scans each file as hdiutil writes it into the image, which made one image
+    take anywhere from 1 to 13 minutes there (2026-11-19). An ephemeral runner, sudo without a password: it is stopped
+    for the image. A developer's own Mac is left alone."""
+    if os.environ.get("GITHUB_ACTIONS") != "true" or sys.platform != "darwin":
+        return
+    subprocess.run(["sudo", "-n", "pkill", "-9", "XProtect"], capture_output=True)
+    for _ in range(10):
+        if subprocess.run(["pgrep", "XProtect"], capture_output=True).returncode != 0:
+            break
+        time.sleep(3)
+
+
 def build(directory: Path, version: str, arch: str) -> Path:
     if sys.platform != "darwin":
         raise RuntimeError("DMG creation requires macOS")
@@ -77,6 +91,8 @@ def build(directory: Path, version: str, arch: str) -> Path:
         stage = Path(temp)
         shutil.copytree(source, stage / source.name, symlinks=True, copy_function=clone_file)
         (stage / "Applications").symlink_to("/Applications", target_is_directory=True)
+        quiet_scanners()
+        started = time.monotonic()
         subprocess.run(
             [
                 "hdiutil",
@@ -96,6 +112,7 @@ def build(directory: Path, version: str, arch: str) -> Path:
             # (a ~530 MB image on the Intel runners takes 9–12 min, so 10 min failed twice in a row on 2026-11-18)
             timeout=1800,
         )
+        print(f"DMG_CREATED in {time.monotonic() - started:.0f} s", flush=True)
     subprocess.run(["hdiutil", "verify", str(output)], check=True, timeout=120)
     print(f"DMG_VERIFIED {output} ({output.stat().st_size} bytes)", flush=True)
     return output

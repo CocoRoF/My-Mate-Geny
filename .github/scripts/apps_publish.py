@@ -55,7 +55,7 @@ def repo() -> str:
 
 def gh(*args: str, check: bool = True, stdin: str | None = None) -> subprocess.CompletedProcess:
     for attempt in range(1, 6):
-        r = subprocess.run(["gh", *args], text=True, capture_output=True, input=stdin)
+        r = subprocess.run(["gh", *args], text=True, encoding="utf-8", errors="replace", capture_output=True, input=stdin)
         if r.returncode == 0 or not check:
             return r
         print(f"gh {' '.join(args[:3])} failed (try {attempt}): {r.stderr.strip()[:300]}", file=sys.stderr)
@@ -97,7 +97,7 @@ def meta_of(body: str) -> dict:
 
 
 def git(*args: str) -> str:
-    return subprocess.run(["git", *args], text=True, capture_output=True, check=True).stdout.strip()
+    return subprocess.run(["git", *args], text=True, encoding="utf-8", errors="replace", capture_output=True, check=True).stdout.strip()
 
 
 # ---- begin: this run's version and release
@@ -305,6 +305,8 @@ def cmd_finalize(tag: str, channel: str) -> None:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # (Windows: cp1252 otherwise)
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("begin")
