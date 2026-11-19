@@ -21,6 +21,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ from app.config import settings
 
 _API = "https://api.github.com"
 _META_TTL = 60.0
+GOING_UP_S = 3600.0  # a new version still going up onto apps-latest after this long: a platform no longer built
 
 # The product as shown on the Download page (docs/mate.md §0).
 PRODUCT_NAME = "My Mate Geny"
@@ -146,12 +148,21 @@ class DownloadService:
         # The rolling release is updated in place: for a moment it holds both
         # the old and the new file of a platform. Offer only the newest.
         newest: dict[str, dict] = {}
+        by_version: dict[str, dict[str, dict]] = {}  # label → version → its file
         for a in rel.get("assets") or []:
             if a.get("state", "uploaded") != "uploaded" or self.classify(a["name"]) is None:
                 continue
             key = self.classify(a["name"])["label"]
             if key not in newest or (a.get("updated_at") or "") > (newest[key].get("updated_at") or ""):
                 newest[key] = a
+            v = version_of(a["name"])
+            if v:
+                by_version.setdefault(key, {})[v] = a
+        # Every platform's new version goes up together (.github/scripts/apps_publish.py promote): while it does, the
+        # version every platform has is offered — the apps are always the same version here.
+        going_up = self._going_up(by_version)
+        if going_up:
+            newest = {k: vs[going_up] for k, vs in by_version.items()}
         assets = []
         for a in newest.values():
             kind = self.classify(a["name"])
@@ -182,6 +193,29 @@ class DownloadService:
             self._meta = (time.monotonic(), out)
             self._files = files
         return out
+
+    @staticmethod
+    def _now() -> float:
+        return time.time()
+
+    def _going_up(self, by_version: dict[str, dict[str, dict]]) -> str | None:
+        """a new version half-way onto the release (its first file under an hour old, not every platform's yet): the
+        newest version every platform has, else None"""
+        versions = {v for vs in by_version.values() for v in vs}
+        if not versions:
+            return None
+        top = max(versions, key=_vkey)
+        if all(top in vs for vs in by_version.values()):
+            return None
+        first = min((vs[top].get("updated_at") or "" for vs in by_version.values() if top in vs), default="")
+        try:
+            age = self._now() - datetime.fromisoformat(first.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+        if age > GOING_UP_S:
+            return None  # (a platform no longer built: each shows its own)
+        common = set.intersection(*(set(vs) for vs in by_version.values()))
+        return max(common, key=_vkey) if common else None
 
     def _ios(self, asset: dict[str, Any] | None) -> dict[str, Any] | None:
         """iOS is TestFlight: ``ios.json`` (version, build, the public link) — read with the release, a few hundred bytes"""
