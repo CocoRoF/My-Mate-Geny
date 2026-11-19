@@ -201,7 +201,8 @@ export default function OtherMates({ mate }: { mate: Mate }) {
   const t = useT();
   const { v, err } = useSocialView(mate);
   if (err) return <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{err}</p>;
-  if (!v || !v.enabled) return null;
+  // (a server from before answers in another shape: nothing to show until it is the same version)
+  if (!v || !v.enabled || !Array.isArray(v.mates)) return null;
   return (
     <Block title={t("social.title")} testId="social-others">
       {v.mates.length === 0 ? (
