@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { fsList, fsResolve, fsStat, type FsEntry } from "../api/fs";
+import { fsList, fsResolve, fsStat, type FsEntry, type FsNear } from "../api/fs";
 import { dirName } from "../lib/fileView";
 import { parsePathRef, resolvePath } from "../lib/paths";
 import { folderFor, isQualified, qualify, sessionFolders, strip, unqualify } from "../lib/hosts";
@@ -322,13 +322,13 @@ export async function openPath(session: Session, raw: string, opts: { base?: str
       lastErr = String(e.message || e);
     }
   }
+  const mainRoots = [session.workspace_path, ...folders.filter((f) => (f.connection_id || null) === main).map((f) => f.path)];
+  const roots = [...(opts.base && !isQualified(opts.base) ? [opts.base] : []), ...mainRoots,
+    ...(wb.pinnedRoots[session.id] || []).filter((p) => !isQualified(p))];
   if (relative && !exact && lastErr === "not found") {
     // Not under the first root: the agent may have meant a folder it was
     // working in (a chat on "/" that edited /home/x/repo prints "docs/a.md").
     try {
-      const mainRoots = [session.workspace_path, ...folders.filter((f) => (f.connection_id || null) === main).map((f) => f.path)];
-      const roots = [...(opts.base && !isQualified(opts.base) ? [opts.base] : []), ...mainRoots,
-        ...(wb.pinnedRoots[session.id] || []).filter((p) => !isQualified(p))];
       const { matches } = await fsResolve(ref.path, main, session.id, roots);
       if (matches.length) return await show(main, matches[0]);
     } catch (e: any) {
@@ -343,5 +343,46 @@ export async function openPath(session: Session, raw: string, opts: { base?: str
       }
     }
   }
+  if (lastErr === "not found") {
+    // Nothing there: the agent named it before making it ("when the run ends I'll write out/x.docx"), made it again
+    // under another name, or the name stands for several files (report_V3-xx.docx). Its folder, and what in it was
+    // most likely meant, instead of a bare "not found".
+    const conn = exact ? exact.conn : relative ? main : (tries[0]?.conn ?? main);
+    try {
+      const { near } = await fsResolve(ref.path, conn, session.id, relative && !exact ? roots : [], true);
+      if (near && (await showNear(session, conn, ref.path, near))) return;
+    } catch {
+      /* the plain message below */
+    }
+  }
   wb.notify(lastErr === "not found" ? tr("files.notFound", { path: ref.path }) : `${ref.path}: ${lastErr}`, "error");
+}
+
+const baseName = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
+
+/** Show what a missing path most likely meant (`openPath`): the one file made again under a near-identical name —
+ *  opened, saying so; several (a name standing for many, or a few alike) — their folder, the first one selected;
+ *  none yet — the folder it belongs in (or the nearest one there is). */
+async function showNear(session: Session, conn: string | null, raw: string, near: FsNear): Promise<boolean> {
+  const wb = useWorkbench.getState();
+  const name = baseName(raw);
+  if (near.sure && near.similar.length === 1) {
+    wb.openFile(session.id, qualify(session, conn, near.similar[0]), { preview: true });
+    wb.notify(tr("files.openedSimilar", { name, similar: baseName(near.similar[0]) }), "info");
+    return true;
+  }
+  wb.setExplorer(true);
+  if (near.similar.length) {
+    await revealInExplorer(session, qualify(session, conn, near.similar[0]));
+    wb.notify(
+      near.how === "pattern"
+        ? tr("files.patternFolder", { name, count: near.similar.length })
+        : tr("files.similarFolder", { name, similar: near.similar.map(baseName).slice(0, 3).join(", ") }),
+      "info",
+    );
+    return true;
+  }
+  await revealInExplorer(session, qualify(session, conn, near.folder), true);
+  wb.notify(tr(near.own_folder ? "files.notYetFolder" : "files.notYetNearest", { name, folder: baseName(near.folder) }), "info");
+  return true;
 }

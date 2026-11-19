@@ -37,10 +37,23 @@ const q = (path: string, conn: string | null, extra: Record<string, string> = {}
 
 /** Where a relative path the agent printed really is (tried roots, then the
  *  folders the chat has been working in, then a bounded search). Best first. */
-export const fsResolve = (path: string, conn: string | null, sessionId: string, roots: string[]) => {
-  const p = new URLSearchParams(q(path, conn, { session_id: sessionId }));
+/** Nothing at a path the agent printed: the folder it belongs in and the files there it most likely means
+ * (made later, made again under another name, a name standing for several — backend path_resolver.near). */
+export interface FsNear {
+  folder: string;
+  own_folder: boolean;
+  expected: string;
+  similar: string[];
+  how: "pattern" | "similar" | null;
+  score: number;
+  /** one file, nearly the same long name: what was meant — opened outright */
+  sure?: boolean;
+}
+
+export const fsResolve = (path: string, conn: string | null, sessionId: string, roots: string[], near = false) => {
+  const p = new URLSearchParams(q(path, conn, { session_id: sessionId, ...(near ? { near: "1" } : {}) }));
   roots.forEach((r) => p.append("roots", r));
-  return apiFetch<{ matches: { path: string; is_dir: boolean }[] }>(`/api/fs/resolve?${p.toString()}`);
+  return apiFetch<{ matches: { path: string; is_dir: boolean }[]; near?: FsNear | null }>(`/api/fs/resolve?${p.toString()}`);
 };
 
 export const fsList = (path: string, conn: string | null) =>
