@@ -4,8 +4,9 @@
 # into this run's release (apps-v<version>) and into the rolling `apps-latest` the Download page and the desktop's own
 # updater read. A slow macOS build never holds the others back, and the Download page shows each platform's own version.
 #
-# A push makes a new version when something a platform is made of changed since its newest published build
-# (.github/scripts/apps_plan.py) — and builds it for every platform: the apps are always the same version. By hand (Run workflow): any
+# A push builds only the platforms something they are made of changed for since their newest published build
+# (.github/scripts/apps_plan.py): the desktop bundles the backend and the UI (local execution), so it follows those; the
+# phone apps load the console live from the user's server, so only mobile/ changes them. By hand (Run workflow): any
 # platforms, on the release channel (main) or the test channel (apps-test-v…: never apps-latest, never the public link).
 #
 # One build per platform at a time (job concurrency): a newer push's waits, and replaces any older one still waiting.

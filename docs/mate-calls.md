@@ -117,8 +117,27 @@ log line `mate.call`).
 On the phone the feel is everything: answered the moment they are done, never cut off when they only paused, never
 stopped by an "응" or a word to someone else. A fixed pause can't do it — one long enough for "그래서 어제 친구를
 만났는데…" breathing in makes every "오늘 날씨 어때?" wait, one short enough cuts the first into pieces she answers
-half of. `mate/call/turns.ts` (`TurnTaker`, in `listen.ts`) decides instead, from the recognizer's live words, the
-microphone's level and her voice:
+half of. `mate/call/turns.ts` (`TurnTaker`, in `listen.ts`) decides instead — with **our own ear** on this server
+(below), the recognizer's live words, and her voice. The recognizer (ElevenLabs, or any other) only writes their words
+down; when they are done, whether it was for her and what is noise is ours.
+
+- **The call's own ear** (`app/mate/ear.py`): the page sends what its microphone hears on the call's line (binary
+  frames: its clock, then 16 kHz PCM) and the server runs two open models on its CPU — **Silero VAD** v6 (MIT: is it a
+  voice, every 32 ms — not a fan, a clatter, a hum) and **Smart Turn** v3.2 (BSD-2, Pipecat, 23 languages with Korean:
+  does their voice sound done, judged the moment it stops on the turn so far, up to 8 s). Back come `ear {on, at, p}`:
+  their voice began / ended at the page's clock and how done it sounds. Fetched on first use into
+  `<data home>/models/ear` (2.3 MB + 8.7 MB, SHA-256 checked), ≈ 0.1 ms a frame and ≈ 50 ms a judgement on one thread;
+  without onnxruntime or the files the ear is off (`ear {ready: false}`) and the page goes by the level as before
+  (`CALL_EAR=false`: tests). The real call that asked for it (2026-11-19): "아니, 너가 끝나고 얘기한다길래 기다리고
+  있었는데, 자꾸나" and "근데 그냥 자꾸" each went to her 0.2 – 0.4 s after a pause, mid-sentence — the words looked
+  finished to a rule on the text, and nothing listened to the voice.
+- **Fast only when everything says done** (`PATIENCE_MS`, from where their voice stopped): the words finished and the
+  voice sounding done → 0.3 s; one of them not → 0.6 – 1.0 s; the words hanging (a connective, an adverb said last —
+  "자꾸", "그냥", "너무" —, a particle) → 1.1 s, 1.6 s if the voice hangs too. When their voice stops, the recognizer's
+  final words are asked for first (`settle`): what it shows then may be a word cut in half ("근데 그냥 자" for "자꾸")
+  that looks finished. Their voice in the ear holds the turn however done the words look; words with no voice in the
+  ear behind them are nobody's; their voice back after the end seemed sure, before hers began, makes her wait once
+  more. (Tried and left out: Namo's multilingual text model — on Korean it was right about half the time.)
 
 - **The words say how long to wait** (`endState`, Korean endings): a finished sentence ("…어때?", "…했어", "갈게",
   "입니까", a one-syllable verb said last: "이사 가") goes 0.2 s after their last word; one clearly going on (a
@@ -152,7 +171,13 @@ microphone's level and her voice:
   (a TV across the room: < 0.25 × their usual loudness) is nobody's turn, and their own voice far louder than a turn
   just sent takes that turn's place.
 
-Measured (2026-11-19, the real `TurnTaker` on a live Scribe v3 Live stream, TTS voices streamed in real time at a
+Measured with the ear (2026-11-19, the real ear's events over the same audio, `~/.cache/hrh-e2e/turnlab`: sentences
+said whole by four voices and cut after a word — "…자꾸", "근데 그냥 자꾸", "…만났는데", "나 오늘 진짜 너무",
+"채린아,", "음, 그러니까" — with a 0.8 – 1.2 s pause before the rest): her voice never played for the half — each was
+answered once, whole; a finished sentence went to her 0.5 – 0.6 s after their voice stopped; noise, a clatter, a fan
+were never a voice.
+
+Measured before the ear (2026-11-19, the real `TurnTaker` on a live Scribe v3 Live stream, TTS voices streamed in real time at a
 speaking level — `~/.cache/hrh-e2e/stt-lab`): a question → her turn 0.4 – 0.65 s after the last word; "응." 0.75 s; a
 1.2 s breath after "…만났는데", a 2.2 s pause after "근데 있잖아" (held as her voice was about to begin), a filler pause,
 a list with a pause, fan noise in the pause: each answered once, whole; "응 응", "아 진짜?", "맞아 맞아" over her:
@@ -393,7 +418,10 @@ is set again from the page only (there is no notice of a change to listen for).
 - `POST /api/mates/{id}/calls {device}` → `{call, plan}` (409 `code: busy`) · `GET /api/mate-calls/active` →
   `{call | null}` · `POST /api/mate-calls/{cid}/accept {device}` → `{call, plan}` · `…/answering` · `…/decline` ·
   `…/hangup` · `GET /api/mate-calls/link?device=` (the app's background link, above).
-- `/ws/mate-calls/{cid}`: client `say {text, amend?, heard?, rid?, aside?, over?, over_heard?}`, `barge {rid, heard, aside?}`, `metric {rid, first_audio_ms, stt}`,
+- `/ws/mate-calls/{cid}`: binary frames from the client — what its microphone hears, for the call's ear (float64 LE: its
+  clock in ms at the frame's last sample, then 16 kHz mono int16 PCM); server `ear {ready}` (send them or not) and
+  `ear {on, at, p?}` (their voice began / ended, Smart Turn's p at its end). Client `say {seq, text, amend?, heard?, rid?,
+  aside?, over?, over_heard?}` (her `reply {rid, seq}` says which say it answers), `barge {rid, heard, aside?}`, `metric {rid, first_audio_ms, stt}`,
   `diag {ev, t, …}` (a few short values), `hangup`, `ping`; server `state {call}`, `reply {rid, greeting}`, `delta {rid, text}`, `done {rid, text, ttft_ms}`,
   `ended {reason, call}`, `pong`.
 - `/ws/sessions`: `call.ring {call}` (the device she calls), `call.update {call}` (every window), `alarms.changed
@@ -432,6 +460,11 @@ is set again from the page only (there is no notice of a change to listen for).
   stop word stopping every reply that is on, a hold. `backend/tests/test_mate_calls.py`: an amend (her answer nobody
   heard taken back from the call and the engine; heard as she began: kept), the CLI line told, an aside (her answer
   made to its end, the note, the barge with no note after).
+- `backend/tests/test_mate_ear.py`: the ear — their voice begins and ends at the page's clock, Smart Turn hears the turn
+  so far with its tail of quiet, a blip is no voice, a long quiet forgets the turn, Whisper's features, the models
+  checked by SHA-256, the line carrying the sound and the events (the real models when this machine has them).
+  `frontend/test/call-turns.test.ts` "ear:" — the real call's "근데 그냥 자꾸…", fast when both say done, patient when
+  either doesn't, the words behind the voice, still talking by the ear, no voice behind words, a stuck voice.
 - `backend/tests/test_mate_stt_realtime.py`: the call's Scribe v3 Live (manual commit, background filtered, no key
   terms) and v2 for a key without it (its pause, the key terms), a 5xx asked once more.
   `backend/tests/test_mate_calls.py`: the listening's `diag` kept with the call (line down and back, a silent reply).

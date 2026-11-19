@@ -178,8 +178,8 @@ async def test_a_screen_that_connects_while_her_reply_is_being_made_gets_all_of_
         sock2: list = []
         call.replies[next(iter(call.replies))]["delivered"] = False
         calls.attach(call, sock2.append)
-        assert [m["type"] for m in sock2] == ["state", "reply", "delta", "done"]
-        assert sock2[2]["text"] == "[joy] 여보세요? 응, 나야."
+        assert [m["type"] for m in sock2] == ["state", "ear", "reply", "delta", "done"]
+        assert sock2[3]["text"] == "[joy] 여보세요? 응, 나야."
         await calls.hangup(call.id)
     finally:
         await calls.stop()
@@ -918,6 +918,10 @@ async def test_her_note_after_a_call_streams_and_silent_is_nothing():
 def test_spoken_words_leave_tags_out():
     assert spoken("[joy] 응! [laugh:0.8] 그래") == "응! 그래"
     assert spoken("[SILENT]") == ""
+    # (stage directions a model writes now and then even on the phone: not words)
+    assert spoken("*sleepy, voice still thick* ...여보세요. 자기야?", stage=True) == "...여보세요. 자기야?"
+    assert spoken("[yawns] 응 (웃음) 그래", stage=True) == "응 그래"
+    assert spoken("**Done** — the build is green.") == "**Done** — the build is green."
 
 
 def test_the_check_in_line_says_hello_what_was_said_and_bye(monkeypatch):

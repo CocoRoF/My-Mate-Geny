@@ -221,3 +221,20 @@ test("stopped while her answer to an aside was still to come: that answer goes u
     s.finish("hangup");
   }
 });
+
+test("a stage direction (*sleepy*, [voice still thick], (웃음)) is never said nor shown on a call", async () => {
+  const { stageless } = await import("../src/mate/call/session.ts");
+  assert.equal(stageless("*sleepy, voice still thick* ...여보세요."), "...여보세요.");
+  assert.equal(stageless("[sleepy, voice still thick] ...여보세요."), "...여보세요.");
+  assert.equal(stageless("(웃음) 응, 나 왔어"), "응, 나 왔어");
+  assert.equal(stageless("[SILENT]"), "[SILENT]");
+  assert.equal(stageless("(yawns)"), "");
+  const { s, played, reply } = line();
+  try {
+    reply("r1", "[sleepy, voice still thick] ...여보세요. 자기야?");
+    await wait(CLIP_MS * 2 + 200);
+    assert.deepEqual(played, ["...여보세요.", "자기야?"]);
+  } finally {
+    s.finish("hangup");
+  }
+});

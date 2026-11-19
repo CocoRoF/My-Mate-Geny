@@ -31,6 +31,8 @@ dependencies = [
     "soundfile>=0.12",
     "soxr>=0.4",
     "huggingface_hub>=0.30",
+    # a call's own ear (app/mate/ear.py): Silero VAD and Smart Turn on the CPU (two small ONNX models)
+    "onnxruntime>=1.20",
 ]
 
 [project.optional-dependencies]

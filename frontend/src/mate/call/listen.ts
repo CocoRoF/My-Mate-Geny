@@ -73,6 +73,8 @@ export interface ListenDeps {
   heardMs?: () => number;
   /** her names (called, they stop her) */
   herNames?: string[];
+  /** what the microphone hears, for the server's ear (app/mate/ear.py) — given while it is on */
+  ear?: (pcm: Int16Array, at: number) => void;
   muted: () => boolean;
   /** (tests) the server, the microphone and the page's recognition, as given */
   io?: Partial<ListenIO>;
@@ -102,6 +104,8 @@ export interface Listener {
   setMuted: (on: boolean) => void;
   /** an utterance of theirs is being heard now (not a moment to switch the way of listening) */
   busy?: () => boolean;
+  /** the server's ear: their voice began / ended at `at` (page ms), `p`: Smart Turn at its end; `null`: the ear is gone */
+  heard?: (ev: { on: boolean; at: number; p?: number } | null) => void;
 }
 
 const ENGINE: Record<string, string> = { whisper: "Whisper", openai: "OpenAI", elevenlabs: "ElevenLabs", google: "Google" };
@@ -342,6 +346,7 @@ function realtimeListener(d: ListenDeps, cb: ListenCallbacks): Listener {
           }
           if (st === "listening" || st === "reconnecting") cb.onDiag?.("stream." + st);
         },
+        onPcm: (pcm, at) => d.ear?.(pcm, at),
         onPartial: (text) => {
           cb.onPartial(text);
           turns.keyterms = s.keyterms;
@@ -434,6 +439,10 @@ function realtimeListener(d: ListenDeps, cb: ListenCallbacks): Listener {
     },
     setMuted: (on) => inner?.setMuted(on),
     busy: () => inner?.busy?.() ?? false,
+    heard: (ev) => {
+      if (ev) turns.heard(ev.on, ev.at, ev.p, Date.now());
+      else turns.earGone();
+    },
   };
 }
 

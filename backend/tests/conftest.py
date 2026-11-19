@@ -101,6 +101,8 @@ _default("VOICE_HOME", lambda: _temp("hrh_test_voice_"))
 os.environ.setdefault("CLI_UPDATE_CHECK", "false")
 # no automatic continues of cut-off chats (tests/test_turn_resume.py turns them on for itself)
 os.environ.setdefault("RESUME_CUT_OFF", "false")
+# no ear models fetched for calls (tests/test_mate_ear.py gives the ear its own stand-ins)
+os.environ.setdefault("CALL_EAR", "false")
 os.environ.setdefault("MEMORY_CONSOLIDATION_ENABLED", "false")
 os.environ.setdefault("LIFE_WORLD", "false")  # (no weather / holiday lookups: app/mate/life/world.py)
 

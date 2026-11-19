@@ -174,6 +174,10 @@ class Settings(BaseSettings):
     # themselves (app/services/turn_resume.py). false: they stay stopped (their Continue button); tests.
     resume_cut_off: bool = True
 
+    # a call's own ear (app/mate/ear.py): Silero VAD + Smart Turn on the CPU, fetched on first use into
+    # <data home>/models/ear. false: the page goes by its microphone's level (tests, no downloads).
+    call_ear: bool = True
+
     # her day's real world (app/mate/life/world.py): the weather where the user is (Open-Meteo) and their public holidays
     # (Nager.Date) — off: a made-up sky and weekends only (tests, no network)
     life_world: bool = True

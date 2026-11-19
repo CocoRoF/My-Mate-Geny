@@ -39,7 +39,6 @@ _FAT = {0xCAFEBABE, 0xBEBAFECA, 0xCAFEBABF, 0xBFBAFECA}
 #: signing one file asks Apple's time server: a few at a time, and it does say no now and then
 PARALLEL = 8
 TRIES = 4
-RETRY_S = (5, 20, 45)  # between codesign attempts
 
 
 def is_macho(path: Path) -> bool:
@@ -160,12 +159,8 @@ class Signer:
             done = subprocess.run([*cmd, str(path)], text=True, capture_output=True)
             if done.returncode == 0:
                 return
-            why = (done.stderr or done.stdout or f"exit {done.returncode}").strip()
             if attempt == TRIES - 1:
-                raise SystemExit(f"codesign failed on {path}:\n{why}")
-            # (Apple's timestamp service failing for a moment: wait, then again — at once it failed every time)
-            print(f"codesign: {path.name} failed ({why[-200:]}), again in {RETRY_S[attempt]} s", flush=True)
-            time.sleep(RETRY_S[attempt])
+                raise SystemExit(f"codesign failed on {path}:\n{done.stderr}")
 
     def sign_app(self, app: Path) -> None:
         loose, bundles = signing_order(app)
