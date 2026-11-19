@@ -24,7 +24,7 @@ import { useMateConversation } from "../../mate/useMateConversation";
 import { MenuButton } from "../layout/MobileTopBar";
 import Icon, { type IconName } from "../ui/Icon";
 import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
-import MateComposer, { ReadAloudToggle } from "./MateComposer";
+import MateComposer, { ReadAloudMenuItem, ReadAloudToggle } from "./MateComposer";
 import AlarmChip from "./call/AlarmChip";
 import CallButton from "./call/CallButton";
 import { onAndroid } from "../../mate/call/native";
@@ -67,6 +67,9 @@ const readPref = (): LayoutPref => {
     return "auto";
   }
 };
+
+/** the header's icon buttons (a phone keeps each 40 px wide for a finger: .touch-ui in index.css) */
+const HEAD_BTN = "!px-2.5";
 
 export default function MateView() {
   const t = useT();
@@ -405,7 +408,8 @@ export default function MateView() {
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <AlarmChip mateId={mate.id} />
-          {(compact || touch) && <ReadAloudToggle mate={mate} conv={conv} className="btn-ghost !px-2.5" size={16} />}
+          {/* (the narrowest phones: in ⋯, so her name shows whole — a finger's button stays 40 px wide) */}
+          {(compact || touch) && <ReadAloudToggle mate={mate} conv={conv} className={`btn-ghost ${HEAD_BTN} ${compact ? "max-[380px]:!hidden" : ""}`} size={16} />}
           {/* (메이트 편집 · 새 대화 · 전화 · 레이아웃 · 상태 보기 · 설정, in this order) */}
           {!compact && (
             <>
@@ -426,7 +430,7 @@ export default function MateView() {
           )}
           {/* a phone call with her (docs/mate-calls.md): the Android app, a phone's browser, the desktop app (its microphone
               and speakers) */}
-          {(onAndroid() || (phoneScreen && touch) || /^desktop-/.test(window.hrhNative?.platform ?? "")) && <CallButton mate={mate} className="btn-ghost !px-2.5" />}
+          {(onAndroid() || (phoneScreen && touch) || /^desktop-/.test(window.hrhNative?.platform ?? "")) && <CallButton mate={mate} className={`btn-ghost ${HEAD_BTN}`} />}
           {/* the layout: 자동 / 위아래 / 좌우 (a phone has only the one) */}
           {!phoneScreen && (
             <div ref={layoutRef} className="relative flex">
@@ -470,7 +474,7 @@ export default function MateView() {
           )}
           <button
             onClick={() => openWindow("status")}
-            className={`btn-ghost !px-2.5 ${stageWindow === "status" ? "!bg-surface-3 !text-content" : ""}`}
+            className={`btn-ghost ${HEAD_BTN} ${stageWindow === "status" ? "!bg-surface-3 !text-content" : ""}`}
             title={t("mate.statusTitle", { name: mate.name })}
             aria-label={t("mate.status")}
             aria-pressed={stageWindow === "status"}
@@ -480,7 +484,7 @@ export default function MateView() {
           </button>
           <button
             onClick={toggleMate}
-            className={`btn-ghost !px-2.5 ${mateOpen ? "!bg-surface-3 !text-content" : ""}`}
+            className={`btn-ghost ${HEAD_BTN} ${mateOpen ? "!bg-surface-3 !text-content" : ""}`}
             title={t("mate.mateSettingsTitle", { name: mate.name })}
             aria-label={t("mate.mateSettings")}
             data-testid="mate-settings-open"
@@ -489,7 +493,7 @@ export default function MateView() {
           </button>
           {compact && (
             <div ref={moreRef} className="flex">
-              <button onClick={() => setMore((v) => !v)} className={`btn-ghost !px-2.5 ${more ? "!bg-surface-3 !text-content" : ""}`} aria-label={t("mate.moreActions")} aria-expanded={more} data-testid="mate-more">
+              <button onClick={() => setMore((v) => !v)} className={`btn-ghost ${HEAD_BTN} ${more ? "!bg-surface-3 !text-content" : ""}`} aria-label={t("mate.moreActions")} aria-expanded={more} data-testid="mate-more">
                 <Icon name="more" size={16} />
               </button>
               {more && (
@@ -515,6 +519,7 @@ export default function MateView() {
                       <span className="min-w-0 flex-1 truncate">{x.label}</span>
                     </button>
                   ))}
+                  <ReadAloudMenuItem mate={mate} conv={conv} onDone={() => setMore(false)} className="hidden max-[380px]:flex" />
                 </div>
               )}
             </div>

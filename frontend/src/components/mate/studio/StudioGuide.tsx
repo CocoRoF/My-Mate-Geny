@@ -104,10 +104,12 @@ function SubStep({ n, state, title, children, testId }: { n: number; state: "don
 
 const DRAW_ORDER: DrawStage[] = ["brief", "estimate", "pick", "home", "stills", "making", "ready"];
 
-function DrawSteps({ project: p, env, reloadEnv, streaming, onOpen, onAi }: Pick<StudioGuideProps, "project" | "env" | "reloadEnv" | "streaming" | "onOpen" | "onAi">) {
+function DrawSteps({ project: p, env, reloadEnv, streaming, onOpen, onAi, creating }: Pick<StudioGuideProps, "project" | "env" | "reloadEnv" | "streaming" | "onOpen" | "onAi" | "creating">) {
   const outfit = !!p.outfit;
-  const t = useT();
   const stage = drawStage(p);
+  // (made: a new mate has it on by itself; an existing mate's or an outfit's waits for Apply / Wear)
+  const toApply = stage === "ready" && p.status === "ready" && !creating;
+  const t = useT();
   const at = stage === "extra" ? DRAW_ORDER.indexOf(p.confirmation ? "making" : "estimate") : stage === "failed" ? DRAW_ORDER.indexOf("making") : DRAW_ORDER.indexOf(stage);
   const asBase = p.brief.reference.mode === "as_base";
   const tiles = rowsOf(p).flatMap((r) => r.tiles);
@@ -128,7 +130,7 @@ function DrawSteps({ project: p, env, reloadEnv, streaming, onOpen, onAi }: Pick
   return (
     <ol className="space-y-2.5" data-testid="guide-draw" data-stage={stage}>
       {steps.map((s, i) => (
-        <SubStep key={s.id} n={i + 1} state={stage === "ready" && s.id === "ready" ? "done" : state(s.id)} title={t(s.title)} testId={`guide-draw-${s.id}`}>
+        <SubStep key={s.id} n={i + 1} state={s.id === "ready" && stage === "ready" ? (toApply ? "now" : "done") : state(s.id)} title={t(s.title)} testId={`guide-draw-${s.id}`}>
           {s.id === "brief" && (
             <>
               <p className="text-[12px] leading-relaxed text-content-dim">{t("studio.gDrawBriefSays")}</p>
@@ -165,6 +167,14 @@ function DrawSteps({ project: p, env, reloadEnv, streaming, onOpen, onAi }: Pick
             <Btn kind="primary" icon="image" onClick={() => onOpen("set:faces")} testId="guide-draw-stills">
               {t("studio.gDrawStillsOpen")}
             </Btn>
+          )}
+          {s.id === "ready" && toApply && (
+            <>
+              <p className="text-[12px] leading-relaxed text-content-dim">{t(outfit ? "studio.gDrawReadyOutfit" : "studio.gDrawReadySays")}</p>
+              <Btn kind="primary" icon="check" onClick={() => onOpen("mate")} testId="guide-draw-apply">
+                {t(outfit ? "studio.cvWearIt" : "studio.cvApplyIt")}
+              </Btn>
+            </>
           )}
           {s.id === "making" && (
             <>
@@ -273,7 +283,7 @@ export default function StudioGuide(props: StudioGuideProps) {
           <h2 className="text-[15px] font-semibold text-content">{t("studio.gOutfitTitle", { name: mate.name })}</h2>
           <p className="mt-0.5 text-[12px] text-content-dim">{t("studio.gOutfitSays")}</p>
         </div>
-        <DrawSteps project={p} env={props.env} reloadEnv={props.reloadEnv} streaming={streaming} onOpen={onOpen} onAi={onAi} />
+        <DrawSteps project={p} env={props.env} reloadEnv={props.reloadEnv} streaming={streaming} onOpen={onOpen} onAi={onAi} creating={creating} />
       </div>
     );
 
@@ -424,7 +434,7 @@ export default function StudioGuide(props: StudioGuideProps) {
             </>
           ) : (
             <>
-              {look === "draw" && <DrawSteps project={p} env={props.env} reloadEnv={props.reloadEnv} streaming={streaming} onOpen={onOpen} onAi={onAi} />}
+              {look === "draw" && <DrawSteps project={p} env={props.env} reloadEnv={props.reloadEnv} streaming={streaming} onOpen={onOpen} onAi={onAi} creating={creating} />}
               {look === "file" && <FileSteps mate={mate} checked={checked} onOpen={onOpen} onAi={onAi} onCheck={onCheck} />}
               {look === "later" && <p className="text-[12px] leading-relaxed text-content-dim" data-testid="guide-look-later">{t("studio.gLookLaterSays")}</p>}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1">

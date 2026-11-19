@@ -529,6 +529,30 @@ function RealtimeStatus({ mic, name, compact }: { mic: Mic; name: string; compac
 }
 
 /** Read replies aloud on/off (the composer's row on wide screens; the Mate view's header on phones). */
+/** the same switch as a line of the Mate header's ⋯ menu (the narrowest phones keep it there, so her name shows whole) */
+export function ReadAloudMenuItem({ mate, conv, onDone, className = "" }: { mate: Mate; conv: MateConversation; onDone: () => void; className?: string }) {
+  const t = useT();
+  const speech = useReplySpeech(mate);
+  const reading = speech.enabled;
+  return (
+    <button
+      role="menuitemcheckbox"
+      aria-checked={reading}
+      disabled={!speech.available || speech.busy}
+      onClick={() => {
+        onDone();
+        if (reading) conv.stopVoice();
+        void speech.setEnabled(!reading);
+      }}
+      className={`min-h-[44px] w-full items-center gap-2.5 px-3 text-left text-[13.5px] text-content hover:bg-surface-3 disabled:opacity-40 ${className}`}
+      data-testid="mate-read-menu"
+    >
+      <Icon name={reading ? "volume" : "volume-off"} size={15} className={`shrink-0 ${reading ? "text-accent" : "text-content-dim"}`} />
+      <span className="min-w-0 flex-1 truncate">{reading ? t("mate.readingAloudTap") : t("mate.readAloud")}</span>
+    </button>
+  );
+}
+
 export function ReadAloudToggle({ mate, conv, className, size = 17 }: { mate: Mate; conv: MateConversation; className: string; size?: number }) {
   const t = useT();
   const speech = useReplySpeech(mate);

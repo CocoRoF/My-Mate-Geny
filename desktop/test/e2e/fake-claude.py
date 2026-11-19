@@ -172,6 +172,27 @@ def avatar_turn(lines: list[str], intro: str | None = None) -> str:
     return intro if intro else "AVATAR " + " ".join(said)
 
 
+def reading_turn(text: str) -> str | None:
+    """A mate's message read for how it lands on her (app/mate/gss/reader.py → appraisal.SYSTEM): the request ends with the
+    message in <message>; the real reader is a model, this one goes by a few words — rude words aimed at her, a sorry
+    (owned when it says what was wrong), else nothing done to her."""
+    if "The message to read:" not in text:
+        return None
+    m = re.search(r"<message>\n(.*?)\n</message>", text, re.S)
+    if not m:
+        return None
+    said = m.group(1)
+    if re.search(r"닥쳐|꺼져|멍청|병신|쓸모없|shut up|stupid|useless|idiot", said, re.I):
+        d = {"aimed_at_her": True, "acts": ["insult"], "intensity": 0.8, "owns_it": False, "note": "rude words at her"}
+    elif re.search(r"미안|죄송|sorry", said, re.I):
+        d = {"aimed_at_her": True, "acts": ["apology"], "intensity": 0.5, "owns_it": bool(re.search(r"잘못|wrong|다시는", said, re.I)),
+             "note": "an apology"}
+    else:
+        d = {"aimed_at_her": False, "acts": ["neutral"], "intensity": 0.0, "owns_it": False, "note": "nothing to her"}
+    d.update({"sarcastic": False, "promise": None, "her_promise": None, "fulfills": []})
+    return json.dumps(d, ensure_ascii=False)
+
+
 def _korean() -> bool:
     if "--system-prompt-file" not in args:
         return False
@@ -620,6 +641,12 @@ while True:
             emit({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":chunk}}})
         emit({"type":"assistant","message":{"model":model,"content":[{"type":"text","text":"[SILENT]"}]}})
         emit({"type":"result","subtype":"success","is_error":False,"result":"[SILENT]","session_id":"fake-sid","total_cost_usd":0.01,"usage":{"input_tokens":1,"output_tokens":1}})
+        continue
+    reading = reading_turn(text)
+    if reading is not None:
+        emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": reading}]}})
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": reading, "session_id": "fake-sid",
+              "total_cost_usd": 0.0, "usage": {"input_tokens": 1, "output_tokens": 1}})
         continue
     atools = [ln for ln in text.strip().splitlines() if ln.strip().startswith("atool:")]
     studio = studio_turn(text) if "--mcp-config" in args and '"avatar"' in open_mcp() else None

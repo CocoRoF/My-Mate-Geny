@@ -501,5 +501,7 @@ const studio: Messages<"studio"> = {
   mapBrowse: "모델 둘러보기",
   mapBrowseHelp: "이 모델이 가진 표정과 동작을 먼저 하나씩 눌러 보세요. 무엇인지 보고 나서 아래에서 감정마다 골라요.",
   cvIdleEdit: "바꿀 것을 가이드에서 고르거나 AI에게 말해 보세요",
+  gDrawReadySays: "다 만들어졌어요. 확인하고 메이트에 적용하세요.",
+  gDrawReadyOutfit: "다 만들어졌어요. 새 의상을 확인하고 입혀 보세요.",
 };
 export default studio;
