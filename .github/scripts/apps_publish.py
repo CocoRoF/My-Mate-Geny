@@ -3,6 +3,7 @@
 
     apps_publish.py begin <line> <channel> <platforms…>          this run's version and its (draft) release → GITHUB_OUTPUT
     apps_publish.py publish <platform> <version> <tag|-> [--latest] [--wait-verify] <file>…
+    apps_publish.py promote <version> <tag> <platforms…>          every platform of this run onto apps-latest, together
     apps_publish.py mac-legacy <version>                          the macOS feed both architectures share (apps ≤ 1.1.0)
     apps_publish.py finalize <tag> <channel>                      an empty draft goes; old releases are pruned
 
@@ -21,6 +22,12 @@ The macOS feed every architecture shares (latest-mac.yml, read by apps 1.1.0 and
 both architectures of one version are up: until then those apps keep the last complete one, and its files stay.
 
 --wait-verify: published only once this run's verify jobs (the backend's and the UI's tests) have passed.
+
+promote: since 2026-11-19 a release run publishes each platform into its versioned release only, and — once every
+platform it built is there — puts them all onto apps-latest at once: every installer first, then every feed, then the
+older files go. The apps are always the same version on the Download page (it shows the version every platform has
+while the files are going up: backend/app/services/downloads.py). A platform that failed holds them all at the last
+version until it is run again.
 """
 from __future__ import annotations
 
@@ -278,6 +285,50 @@ def cmd_mac_legacy(version: str) -> None:
             print(f"  {LATEST} − {n}")
 
 
+# ---- promote
+
+
+def cmd_promote(version: str, tag: str, platforms: list[str]) -> None:
+    have = assets(tag)
+    if not release(LATEST):
+        gh("release", "create", LATEST, "--title", "Apps (latest)", "--notes", "Each platform's newest build.", "--latest=false")
+    now = assets(LATEST)
+    plan: dict[str, list[str]] = {}
+    for p in platforms:
+        rx, feeds = PLATFORMS[p]
+        pat = re.compile(rx)
+        names = [a["name"] for a in have if pat.search(a["name"]) or a["name"] in feeds]
+        if not any(pat.search(n) for n in names):
+            raise SystemExit(f"{tag} has no {p} build: nothing goes onto {LATEST}")
+        there = published_version(p, now)
+        if there and vkey(there) > vkey(version):
+            print(f"  {LATEST} has {p} {there}, newer than {version}: left as it is")
+            continue
+        plan[p] = names
+    if not plan:
+        return
+    out = Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "promote"
+    out.mkdir(parents=True, exist_ok=True)
+    wanted = [n for names in plan.values() for n in names]
+    gh("release", "download", tag, "-D", str(out), "--clobber", *[x for n in wanted for x in ("-p", n)])
+    feeds_of = {n for p in plan for n in PLATFORMS[p][1]}
+    print(f"{', '.join(plan)} {version} → {LATEST}, together")
+    # 1. every installer, 2. every feed (a feed never names a file not there yet), 3. the older files go
+    with ThreadPoolExecutor(3) as pool:
+        list(pool.map(lambda n: upload(LATEST, [out / n]), [n for n in wanted if n not in feeds_of]))
+    upload(LATEST, [out / n for n in wanted if n in feeds_of])
+    keep = set(wanted)
+    for a in assets(LATEST):
+        n = a["name"]
+        mine = any(re.search(PLATFORMS[p][0], n) or n in PLATFORMS[p][1] for p in plan)
+        if mine and n not in keep and not legacy_mac_needs(n):
+            gh("release", "delete-asset", LATEST, n, "--yes", check=False)
+            print(f"  {LATEST} − {n}")
+    latest_notes(version, tag)
+    if any(p.startswith("macos-") for p in plan):
+        cmd_mac_legacy(version)
+
+
 # ---- finalize
 
 
@@ -320,6 +371,10 @@ if __name__ == "__main__":
     p.add_argument("--latest", action="store_true")
     p.add_argument("--wait-verify", action="store_true")
     p.add_argument("files", nargs="+", type=Path)
+    pr = sub.add_parser("promote")
+    pr.add_argument("version")
+    pr.add_argument("tag")
+    pr.add_argument("platforms", nargs="+", choices=list(PLATFORMS))
     m = sub.add_parser("mac-legacy")
     m.add_argument("version")
     f = sub.add_parser("finalize")
@@ -330,6 +385,8 @@ if __name__ == "__main__":
         cmd_begin(a.line, a.channel, a.platforms)
     elif a.cmd == "publish":
         cmd_publish(a.platform, a.version, a.tag, a.latest, a.wait_verify, a.files)
+    elif a.cmd == "promote":
+        cmd_promote(a.version, a.tag, a.platforms)
     elif a.cmd == "mac-legacy":
         cmd_mac_legacy(a.version)
     else:

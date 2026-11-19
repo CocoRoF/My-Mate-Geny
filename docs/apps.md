@@ -27,15 +27,20 @@ its newest published build (the release holding its installer names the commit):
 `mobile/` only — they load the console from the server, so a backend or UI change doesn't make a new phone app. The
 workflow and its scripts make every platform again. The run's summary has the table of what was built and why.
 
-**Publishing one platform** (`.github/scripts/apps_publish.py publish`): its files go into this run's versioned release
-(the first one to arrive makes the draft public) and into the rolling `apps-latest`:
+**Publishing** (`.github/scripts/apps_publish.py`): each platform's files go into this run's versioned release the moment
+it is built (`publish`; the first one to arrive makes the draft public). **Onto the Download page together**: once every
+platform the run built is there, the `latest` job puts them all onto the rolling `apps-latest` at once (`promote`) — so
+the apps there are always the same version (since 2026-11-19; before, each platform went up the moment it was built and
+for a quarter of an hour Android said 1.1.7 while the desktop still said 1.1.6). A platform that failed holds them all
+at the last version until it is run again (Re-run failed jobs runs `latest` after it). Onto `apps-latest`:
 
-1. the installers first, the update feed last (`latest.yml`, `latest-linux.yml`, `latest-mac-<arch>.yml`, `ios.json`): a
-   feed never names a file that isn't there yet;
+1. every platform's installers first, the update feeds last (`latest.yml`, `latest-linux.yml`, `latest-mac-<arch>.yml`,
+   `ios.json`): a feed never names a file that isn't there yet — and while the installers go up the Download page offers
+   the version every platform has (`downloads.py` `_going_up`), so it never shows one ahead of the others;
 2. never over a newer build of the same platform: an older run that finishes late leaves `apps-latest` alone;
 3. then that platform's older files go; another platform's are never touched.
 
-So `apps-latest` holds each platform's newest build — the versions differ for a while, and the Download page shows each
+So `apps-latest` holds each platform's newest build — all of them the same version; the Download page shows each
 platform's own (`backend/app/services/downloads.py`, `desktop/src/update-source.js`: the version is in each file name).
 Its notes are the newest build's; its hrh-meta says `latest`, never `version`: apps up to 1.1.0 pin their files to the
 versioned release a `version` names, and one platform's release doesn't hold the others.

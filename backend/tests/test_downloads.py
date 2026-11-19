@@ -155,3 +155,36 @@ def test_each_platform_has_its_own_version_and_ios_is_testflight(monkeypatch, tm
     ios.write_text(_json.dumps({"version": "1.1.4", "testflight": "https://evil.example/x"}))
     svc._meta = None
     assert svc.latest(force=True)["ios"]["testflight"] == ""
+
+
+def test_a_version_going_up_shows_the_one_every_platform_has(monkeypatch):
+    """Every platform's new version goes up together (apps_publish.py promote): until the last of them is there, the
+    page offers the version they all have — never one platform ahead of the others."""
+    from datetime import datetime, timezone
+
+    from app.config import settings
+    monkeypatch.setattr(settings, "github_token", "t")
+    monkeypatch.setattr(settings, "apps_repo", "o/r")
+    now = datetime(2026, 11, 19, 17, 0, tzinfo=timezone.utc).timestamp()
+
+    def asset(i, name, at):
+        return {"id": i, "name": name, "size": 3, "updated_at": at, "state": "uploaded"}
+
+    old = [asset(1, "my-mate-geny-1.1.6-windows-x64-setup.exe", "2026-11-19T15:43:00Z"),
+           asset(2, "my-mate-geny-1.1.6-macos-arm64.dmg", "2026-11-19T15:43:00Z"),
+           asset(3, "my-mate-geny-1.1.6-android.apk", "2026-11-19T15:43:00Z")]
+    rel = {"tag_name": "apps-latest", "body": "", "assets": [*old, asset(4, "my-mate-geny-1.1.7-android.apk", "2026-11-19T16:58:00Z")]}
+    svc = DownloadService()
+    monkeypatch.setattr(svc, "_get", lambda url: rel)
+    monkeypatch.setattr(svc, "_now", lambda: now)
+    out = svc.latest(force=True)
+    assert {a["platform"]: a["version"] for a in out["assets"]} == {"windows": "1.1.6", "macos": "1.1.6", "android": "1.1.6"}
+    # all of 1.1.7 there: all of them at once
+    rel["assets"] += [asset(5, "my-mate-geny-1.1.7-windows-x64-setup.exe", "2026-11-19T16:59:00Z"),
+                      asset(6, "my-mate-geny-1.1.7-macos-arm64.dmg", "2026-11-19T16:59:30Z")]
+    out = svc.latest(force=True)
+    assert {a["version"] for a in out["assets"]} == {"1.1.7"} and out["version"] == "1.1.7"
+    # (a platform no longer built, its file an hour behind: each shows its own)
+    rel["assets"] = [*old[:2], asset(7, "my-mate-geny-1.1.7-android.apk", "2026-11-19T15:50:00Z")]
+    out = svc.latest(force=True)
+    assert {a["platform"]: a["version"] for a in out["assets"]}["android"] == "1.1.7"
