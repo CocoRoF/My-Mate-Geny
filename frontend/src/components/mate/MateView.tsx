@@ -109,10 +109,9 @@ export default function MateView() {
   // her menu on the stage: one window at a time, over her (a sheet on a phone)
   const [stageWindow, setStageWindow] = useState<StageWindowKind | null>(null);
   const game = useGameView(mate);
-  const [mateTab, setMateTab] = useState<"profile" | "avatar" | "bond" | undefined>(undefined);
+  const [mateTab, setMateTab] = useState<"bond" | undefined>(undefined);
   const [bondTab, setBondTab] = useState<"memory" | "relation">("relation");
   const mateOpen = panel === "mate";
-  const relationOpen = panel === "relation";
   const settings = panel !== null;
   const closePanels = () => setPanel(null);
   const openMate = (tab?: SettingsTab) => {
@@ -121,16 +120,12 @@ export default function MateView() {
       setPanel("relation");
       return;
     }
-    setMateTab("profile");
+    setMateTab(undefined);
     setPanel("mate");
   };
   const toggleMate = () => {
     if (mateOpen) return setPanel(null);
     openMate();
-  };
-  const toggleRelation = () => {
-    if (relationOpen) return setPanel(null);
-    setPanel("relation");
   };
   const openWindow = (k: StageWindowKind) => setStageWindow((w) => (w === k ? null : k));
   // a link from another window: the ♥ panel, or Mate settings → 관계와 기억 (settings-relation / settings-memory)
@@ -409,28 +404,29 @@ export default function MateView() {
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {/* a phone call with her (docs/mate-calls.md): the Android app, a phone's browser, the desktop app (its microphone
-              and speakers) */}
           <AlarmChip mateId={mate.id} />
-          {(onAndroid() || (phoneScreen && touch) || /^desktop-/.test(window.hrhNative?.platform ?? "")) && <CallButton mate={mate} className="btn-ghost !px-2.5" />}
           {(compact || touch) && <ReadAloudToggle mate={mate} conv={conv} className="btn-ghost !px-2.5" size={16} />}
+          {/* (메이트 편집 · 새 대화 · 전화 · 레이아웃 · 상태 보기 · 설정, in this order) */}
           {!compact && (
             <>
               <button
-                onClick={() => useStudio.getState().openAvatar(mate.id)}
+                onClick={() => useStudio.getState().openEdit(mate.id)}
                 className="btn-ghost !px-2.5"
-                title={t("avatar.openTitle", { name: mate.name })}
-                aria-label={t("avatar.title")}
-                data-testid="mate-avatar-create"
+                title={t("mate.editTitle", { name: mate.name })}
+                aria-label={t("mate.edit")}
+                data-testid="mate-edit"
               >
-                <Icon name="sparkles" size={15} />
-                <span className="ml-1 text-[12.5px]">{t("avatar.title")}</span>
+                <Icon name="pencil" size={15} />
+                <span className="ml-1 text-[12.5px]">{t("mate.edit")}</span>
               </button>
-              <button onClick={reset} disabled={resetting || conv.streaming} className="btn-ghost !px-2.5" title={t("mate.resetTitle")} data-testid="mate-reset">
+              <button onClick={reset} disabled={resetting || conv.streaming} className="btn-ghost !px-2.5" title={t("mate.resetTitle")} aria-label={t("mate.newConversation")} data-testid="mate-reset">
                 <Icon name="rotate" size={15} spin={resetting} />
               </button>
             </>
           )}
+          {/* a phone call with her (docs/mate-calls.md): the Android app, a phone's browser, the desktop app (its microphone
+              and speakers) */}
+          {(onAndroid() || (phoneScreen && touch) || /^desktop-/.test(window.hrhNative?.platform ?? "")) && <CallButton mate={mate} className="btn-ghost !px-2.5" />}
           {/* the layout: 자동 / 위아래 / 좌우 (a phone has only the one) */}
           {!phoneScreen && (
             <div ref={layoutRef} className="relative flex">
@@ -473,12 +469,12 @@ export default function MateView() {
             </div>
           )}
           <button
-            onClick={toggleRelation}
-            className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
-            title={t("mate.relPanelOpenTitle", { name: mate.name })}
-            aria-label={t("mate.relPanelOpen")}
-            aria-pressed={relationOpen}
-            data-testid="mate-relation-open"
+            onClick={() => openWindow("status")}
+            className={`btn-ghost !px-2.5 ${stageWindow === "status" ? "!bg-surface-3 !text-content" : ""}`}
+            title={t("mate.statusTitle", { name: mate.name })}
+            aria-label={t("mate.status")}
+            aria-pressed={stageWindow === "status"}
+            data-testid="mate-status-open"
           >
             <Icon name="heart" size={16} />
           </button>
@@ -500,8 +496,7 @@ export default function MateView() {
                 <div className="absolute right-3 top-[calc(100%+4px)] z-40 w-60 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border bg-surface-2 py-1 shadow-float animate-fade-in" role="menu" data-testid="mate-more-menu">
                   {[
                     { icon: collapsed ? "chevron-down" : "chevron-up", label: collapsed ? t("mate.showAvatar") : t("mate.hideAvatar"), run: toggleCollapsed, id: "mate-avatar-toggle" },
-                    { icon: "sparkles", label: t("avatar.title"), run: () => useStudio.getState().openAvatar(mate.id), id: "mate-avatar-create" },
-                    { icon: "heart", label: t("stage.status"), run: () => setStageWindow("status"), id: "mate-status-open" },
+                    { icon: "pencil", label: t("mate.edit"), run: () => useStudio.getState().openEdit(mate.id), id: "mate-edit" },
                     { icon: "rotate", label: t("mate.newConversation"), run: () => void reset(), id: "mate-reset", disabled: resetting || conv.streaming },
                     { icon: "book", label: t("guide.open"), run: () => setGuide(mate.id), id: "mate-guide-open" },
                   ].map((x) => (
@@ -583,7 +578,7 @@ export default function MateView() {
   const settingsPanel = settings && (
     <Suspense fallback={<PageLoading />}>
       {mateOpen ? (
-        <MateSettings key={mateTab ?? ""} mate={mate} conv={conv} onClose={closePanels} initialTab={mateTab} onGuide={() => setGuide(mate.id)} />
+        <MateSettings key={mateTab ?? ""} mate={mate} onClose={closePanels} initialTab={mateTab} onGuide={() => setGuide(mate.id)} onEdit={() => useStudio.getState().openEdit(mate.id)} />
       ) : (
         <RelationPanel
           key={bondTab}
@@ -636,8 +631,7 @@ export default function MateView() {
           onClose={closeWindow}
           onManage={() => {
             closeWindow();
-            setMateTab("avatar");
-            setPanel("mate");
+            useStudio.getState().openEdit(mate.id, "wardrobe");
           }}
         />
       )}

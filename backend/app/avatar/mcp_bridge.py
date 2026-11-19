@@ -77,7 +77,7 @@ TOOLS = [
          "stills": {"type": "array", "items": _STILL}, "target": {"type": "object"}}}},
          "required": ["patch"]}},
     {"name": "update_mate_draft",
-     "description": "Mate Create studio: write the settings of the mate on the right of the user's screen (merged "
+     "description": "Mate Create studio: write the settings of the mate on the canvas of the user's screen (merged "
                     "field by field, checked; the user sees each field you filled highlighted and can edit or undo "
                     "it). name (a first name, at most 40 characters); gender (female|male: who the character is — "
                     "write it once you know; nothing shows it, the app uses it); persona = who she is, never how she talks "

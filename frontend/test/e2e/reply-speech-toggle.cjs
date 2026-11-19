@@ -23,7 +23,7 @@ function wav(seconds){const n=8000*seconds,b=Buffer.alloc(44+n*2);b.write('RIFF'
   const mate=await api('/api/mates','POST',{name:'한채린 음성 동기화 검증',persona:{greeting:''},avatar:original.avatar,voice:{auto_read:true,tts:{engine:'browser'},stt:{engine:'off'}}});
   const main=ctx.pages().find(p=>p.url().startsWith(server)&&!p.url().includes('surface='));
   await main.goto(server+'/?view=mate');await main.evaluate(id=>{localStorage.setItem('hrh_mate_active',id);localStorage.removeItem('hrh_mate_muted')},mate.id);await main.reload();
-  await main.getByTestId('mate-settings-open').click();await main.getByTestId('mate-tab-voice').click();
+  await main.getByTestId('mate-edit').click();await main.getByTestId('guide-step-voice-toggle').click();await main.getByTestId('guide-voice-open').click();
   await main.evaluate(async id=>{window.hrhNative.setLanguage('ko');await window.hrhNative.mate.showAvatar(id);await window.hrhNative.mate.openChat();await window.hrhNative.mate.openQuick()},mate.id);
   const overlay=await until('overlay',()=>ctx.pages().find(p=>p.url().includes('surface=mate-overlay')));
   const chat=await until('chat',()=>ctx.pages().find(p=>p.url().includes('surface=mate-chat')));
@@ -52,7 +52,7 @@ function wav(seconds){const n=8000*seconds,b=Buffer.alloc(44+n*2);b.write('RIFF'
   await all(true,'initial ON in every window');await screenshot('after-on');
   // Existing device mute is represented consistently, then cleared by the same ON action.
   await main.evaluate(()=>localStorage.setItem('hrh_mate_muted','1'));await main.reload();
-  await main.getByTestId('mate-settings-open').click();await main.getByTestId('mate-tab-voice').click();
+  await main.getByTestId('mate-edit').click();await main.getByTestId('guide-step-voice-toggle').click();await main.getByTestId('guide-voice-open').click();
   await until('legacy mute is OFF everywhere',async()=>await voice.getAttribute('aria-pressed')==='false'&&await setting.getAttribute('aria-checked')==='false'&&await chat.getByTestId('mate-read-toggle').getAttribute('aria-pressed')==='false');
   assert.equal((await api('/api/mates/'+mate.id)).voice.auto_read,true);
   await voice.evaluate(b=>b.click());await all(true,'native ON clears legacy device mute');
@@ -84,7 +84,7 @@ function wav(seconds){const n=8000*seconds,b=Buffer.alloc(44+n*2);b.write('RIFF'
   assert.equal(await voice.getAttribute('aria-pressed'),'true');await overlay.getByTestId('app-toast').waitFor();
   await overlay.unroute('**/api/mates/'+mate.id);
   await voice.evaluate(b=>b.click());await all(false,'retry OFF succeeds');
-  await main.reload();await main.getByTestId('mate-settings-open').click();await main.getByTestId('mate-tab-voice').click();await all(false,'reload keeps OFF');
+  await main.reload();await main.getByTestId('mate-edit').click();await main.getByTestId('guide-step-voice-toggle').click();await main.getByTestId('guide-voice-open').click();await all(false,'reload keeps OFF');
   // Small avatar's independent toolbar stays inside its native window, even at 150px avatar width.
   const bounds=await voice.evaluate(b=>{const r=b.getBoundingClientRect();return {left:r.left,right:r.right,window:innerWidth,height:r.height}});
   assert(bounds.left>=0&&bounds.right<=bounds.window&&bounds.height>0);results.push({name:'small avatar voice button fully visible',...bounds});

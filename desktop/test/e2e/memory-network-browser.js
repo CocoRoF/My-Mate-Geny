@@ -74,7 +74,7 @@ const shot = async (page, name, el) => {
 
 async function openPanel(page, tab) {
   await page.goto(`${SERVER}/?view=mate`);
-  await page.click('[data-testid="mate-relation-open"]');
+  await page.click('[data-testid=\"mate-status-open\"]'); await page.click('[data-testid=\"stage-status-more\"]');
   await page.click(`[data-testid="bond-tab-${tab}"]`);
 }
 

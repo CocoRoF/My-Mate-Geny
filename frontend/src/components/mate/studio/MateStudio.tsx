@@ -1,19 +1,19 @@
 /**
- * The Mate Create studio (메이트 만들기 — docs/avatar-create.md §11): a screen of the Mate view of its own
+ * The Mate Create studio (메이트 만들기 / 메이트 편집 — docs/avatar-create.md §11): a screen of the Mate view of its own
  * (`/?view=mate&create=<draft>` / `/?view=mate&avatar=<mate>`; back closes it, a reload resumes the draft).
  *
  * The making on the LEFT, as a canvas (StudioCanvas: who she is → what she will look like and what it costs → the
- * candidates → the base picture → every set's pictures and clips, made at the same time → the checks → the mate) —
- * the creation agent on the RIGHT (its conversation and cards: concept directions, choices, sliders, uploads, the
- * estimate with Confirm). A click on a node opens its sheet over the canvas (NodeSheet: the settings of the mate being
- * made — Concept, Profile, Conversation style, Voice, Language model — and the avatar's estimate, checkpoints,
- * progress, clips and finish, one node at a time): the agent writes them (the node glows, words type themselves in,
- * undo per field), the user edits any of them and the agent hears what changed before its next turn. Header: the
- * title, the draft's name, the steps, the credits, drafts, Save draft & exit, Discard, Create mate. The same layout
- * for an existing mate's avatar (✨ in the Mate view, "Create with AI" in Avatar settings) and an outfit.
+ * candidates → the base picture → every set's pictures and clips, made at the same time → the checks → the mate; or,
+ * for a look from a file, the file → her emotions matched to it → the mate). On the RIGHT two tabs: 가이드 (StudioGuide:
+ * the steps in order, one at a time, with the fields each takes) and AI (the creation agent: its conversation and
+ * cards — concept directions, choices, sliders, uploads, the estimate with Confirm). A click on a node or a step opens
+ * its window in the middle of the screen (NodeSheet): the agent's fills glow there, the user edits anything and the
+ * agent hears what changed before its next turn. Header: the title, the draft's name, the credits, drafts, Save draft &
+ * exit, Discard, Create mate. The same screen edits an existing mate (메이트 편집 in the Mate view: everything about
+ * her — profile, style, temperament, look and wardrobe, voice, model) and makes an outfit.
  *
- * Desktop: the canvas and the agent with a splitter (the agent's width remembered; it folds to a rail). Phone: two tabs
- * (Canvas | Agent), Canvas marked when the agent changed something there or a decision waits.
+ * Desktop: the canvas and the right side with a splitter (its width remembered; it folds to a rail). Phone: three tabs
+ * (Guide | Canvas | AI), Canvas marked when the agent changed something there or a decision waits.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -39,14 +39,13 @@ import {
   type ProjectSummary,
   type StudioFieldsPatch,
 } from "../../../api/avatar";
-import { prefsOf, type Mate } from "../../../api/mates";
+import type { Mate } from "../../../api/mates";
 import { useNarrowerThan, usePhone, useTouchFirst } from "../../../lib/device";
 import { cameFrom, goBack } from "../../../lib/nav";
 import { useMateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import { useStudio } from "../../../stores/studioStore";
 import { useLang, useT, type MsgKey } from "../../../i18n";
-import ScrollRow from "../../ui/ScrollRow";
 import Icon, { type IconName } from "../../ui/Icon";
 import AvatarChat from "../avatar/AvatarChat";
 import { StatusPill, StepBar, type Act } from "../avatar/AvatarPanel";
@@ -54,6 +53,8 @@ import { useAgentChat } from "../avatar/useAgentChat";
 import { MateThumb } from "../MateStage";
 import NewMateDialog, { type NewMateTab } from "../NewMateDialog";
 import type { FieldsApi } from "./fields";
+import { lookPathOf, type Checked, type GuideStepId, type LookPath } from "./guide";
+import StudioGuide from "./StudioGuide";
 import type { SectionId } from "./StudioSettings";
 import StudioCanvas, { type CanvasActivity } from "./canvas/StudioCanvas";
 import NodeSheet from "./canvas/NodeSheet";
@@ -67,6 +68,38 @@ const CHAT_DEFAULT = 400;
 const CHAT_MIN = 340;
 const CANVAS_MIN = 420;
 const CHAT_FOLDED = "hrh_studio_chat_folded";
+const SIDE_KEY = "hrh_studio_side";
+const GUIDE_KEY = (pid: string) => `hrh_studio_guide_${pid}`;
+
+/** the guide's own state for a project, in this browser: the steps looked at, how her look is made */
+function useGuideState(pid: string | null): { checked: Checked; look: LookPath | null; check: (s: GuideStepId | "file", on?: boolean) => void; setLook: (p: LookPath | null) => void } {
+  const read = () => {
+    try {
+      const v = pid ? JSON.parse(localStorage.getItem(GUIDE_KEY(pid)) || "{}") : {};
+      return { checked: (v.checked ?? {}) as Checked, look: (v.look ?? null) as LookPath | null };
+    } catch {
+      return { checked: {}, look: null };
+    }
+  };
+  const [st, setSt] = useState(read);
+  useEffect(() => setSt(read()), [pid]); // eslint-disable-line react-hooks/exhaustive-deps
+  // (from the latest state: two changes in one go both stay)
+  const put = (change: (s: { checked: Checked; look: LookPath | null }) => { checked: Checked; look: LookPath | null }) =>
+    setSt((prev) => {
+      const next = change(prev);
+      try {
+        if (pid) localStorage.setItem(GUIDE_KEY(pid), JSON.stringify(next));
+      } catch {
+        /* private mode: for this visit */
+      }
+      return next;
+    });
+  return {
+    ...st,
+    check: (s, on = true) => put((x) => ({ ...x, checked: { ...x.checked, [s]: on } })),
+    setLook: (look) => put((x) => ({ ...x, look, checked: look === null ? { ...x.checked, look: false } : x.checked })),
+  };
+}
 
 const fmt = (n: number | null | undefined) => (n === null || n === undefined ? "—" : Number(n.toFixed(1)).toLocaleString());
 
@@ -78,68 +111,6 @@ function patchOf(path: string, value: unknown): StudioFieldsPatch {
   if (head === "prefs") return a === "tone" ? { prefs: { tone: { [b]: value } } } : { prefs: { [a]: value } };
   if (head === "concept") return { concept: { [a]: String(value ?? "") } };
   return {};
-}
-
-// ── the steps of a new mate ──
-type StepId = "concept" | "personality" | "look" | "avatar" | "voice" | "done";
-const STEPS: { id: StepId; label: MsgKey; section: SectionId | null }[] = [
-  { id: "concept", label: "studio.stepConcept", section: "concept" },
-  { id: "personality", label: "studio.stepPersonality", section: "profile" },
-  { id: "look", label: "studio.stepLook", section: "avatar" },
-  { id: "avatar", label: "studio.stepAvatar", section: "avatar" },
-  { id: "voice", label: "studio.stepVoice", section: "voice" },
-  { id: "done", label: "studio.stepDone", section: null },
-];
-
-function stepsDone(p: AvatarProject, m: Mate): Record<StepId, boolean> {
-  const st = p.studio!;
-  const skipped = st.avatar_skipped;
-  // (a new mate has no avatar until one is made or the user brings their own file)
-  const own = m.avatar.kind !== "none";
-  return {
-    concept: !!(st.concept.pitch || (m.name.trim() && m.persona.description.trim())),
-    personality: !!(m.persona.personality.trim() && prefsOf(m).speech_style.trim()),
-    look: skipped || own || !!p.brief.design.prompt || p.brief.reference.files.length > 0 || p.status !== "interview",
-    avatar: skipped || own || p.status === "ready" || p.status === "applied",
-    voice: st.voice_ok,
-    done: !!st.finished_at,
-  };
-}
-
-function Steps({ project, mate, onPick, compact }: { project: AvatarProject; mate: Mate; onPick: (s: SectionId) => void; compact?: boolean }) {
-  const t = useT();
-  const done = stepsDone(project, mate);
-  const cur = STEPS.findIndex((s) => !done[s.id]);
-  return (
-    <ScrollRow as="ol" watch={cur} className={`items-center gap-1 ${compact ? "-mx-3 px-3" : "justify-center"}`} data-testid="studio-steps" aria-label={t("studio.stepsLabel")}>
-      {STEPS.map((s, i) => {
-        const state = done[s.id] ? "done" : i === cur ? "current" : "todo";
-        return (
-          <li key={s.id} className="flex shrink-0 items-center gap-1">
-            {i > 0 && <span className={`h-px w-3 sm:w-5 ${done[STEPS[i - 1].id] ? "bg-success/50" : "bg-border"}`} aria-hidden />}
-            <button
-              type="button"
-              disabled={!s.section}
-              onClick={() => s.section && onPick(s.section)}
-              className={`flex items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-[3px] text-[11.5px] transition ${
-                state === "current"
-                  ? "border-accent/60 bg-accent-soft font-medium text-content"
-                  : state === "done"
-                    ? "border-success/30 text-content-dim hover:bg-surface-3"
-                    : "border-border/70 text-content-faint hover:bg-surface-3"
-              } disabled:cursor-default disabled:hover:bg-transparent`}
-              aria-current={state === "current" ? "step" : undefined}
-              data-step={s.id}
-              data-state={state}
-            >
-              {state === "done" ? <Icon name="check" size={10} className="text-success" /> : <span className="text-[10px] tabular-nums opacity-70">{i + 1}</span>}
-              {t(s.label)}
-            </button>
-          </li>
-        );
-      })}
-    </ScrollRow>
-  );
 }
 
 /** a small dropdown (drafts, projects, more): closes on a press outside or Escape */
@@ -208,16 +179,23 @@ function RunBar({ project, creating, activity, act, onShow }: { project: AvatarP
               ? t("studio.cvAgentWriting")
               : activity.thinking
                 ? t("studio.cvThinking")
-                : t("studio.cvIdle");
+                : creating
+                  ? t("studio.cvIdle")
+                  : t("studio.cvIdleEdit");
   const waitNode = wait === "pick" ? "candidates" : wait === "home" ? "home" : wait === "stills" ? "set:faces" : wait ? "estimate" : null;
   return (
     <div className={`flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-1.5 sm:px-4 ${wait ? "border-warning/30 bg-warning/[0.06]" : "border-border/60 bg-surface/60"}`} data-testid="studio-run" data-status={project.status} data-wait={wait ?? ""}>
-      <span className="shrink-0 text-[12px] font-semibold tabular-nums text-content" data-testid="studio-progress">
-        {t("studio.cvProgress", { done: prog.done, total: prog.total })}
-      </span>
-      <span className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-surface-3 sm:w-32" aria-hidden>
-        <span className="block h-full rounded-full bg-success transition-[width] duration-700 ease-out" style={{ width: `${pct}%` }} />
-      </span>
+      {/* (how far the making is: once there is a run to count; the guide counts the steps) */}
+      {(project.plan || project.confirmation) && (
+        <>
+          <span className="shrink-0 text-[12px] font-semibold tabular-nums text-content" data-testid="studio-progress">
+            {t("studio.cvProgress", { done: prog.done, total: prog.total })}
+          </span>
+          <span className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-surface-3 sm:w-32" aria-hidden>
+            <span className="block h-full rounded-full bg-success transition-[width] duration-700 ease-out" style={{ width: `${pct}%` }} />
+          </span>
+        </>
+      )}
       <span className={`flex min-w-0 flex-1 items-center gap-1.5 text-[12px] ${wait ? "text-warning" : running ? "text-accent" : "text-content-dim"}`}>
         <Icon name={wait ? "bell" : running ? "spinner" : project.status === "paused" ? "pause" : "sparkles"} size={12} spin={running && !wait} className="shrink-0" />
         <span className="truncate" data-testid="studio-run-label">{label}</span>
@@ -348,7 +326,18 @@ export default function MateStudio() {
   const [error, setError] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"agent" | "canvas">("agent");
+  /** the phone's tab */
+  const [tab, setTab] = useState<"guide" | "canvas" | "agent">("guide");
+  /** the right side's tab (desktop) */
+  const [side, setSideState] = useState<"guide" | "agent">(() => (localStorage.getItem(SIDE_KEY) === "agent" ? "agent" : "guide"));
+  const setSide = (v: "guide" | "agent") => {
+    setSideState(v);
+    try {
+      localStorage.setItem(SIDE_KEY, v);
+    } catch {
+      /* private mode */
+    }
+  };
   /** the node or tile whose sheet is open over the canvas */
   const [sheet, setSheet] = useState<string | null>(null);
   const [dialog, setDialog] = useState<NewMateTab | null>(null);
@@ -465,12 +454,18 @@ export default function MateStudio() {
     [pid, project?.studio?.filled, since, take],
   );
 
-  /** open a node's sheet (a node or tile key, or a section of the old right side: the agent's "Show", a step) */
+  /** open a node's window (a node or tile key, or a section: the agent's "Show") */
   const show = (id: SectionId | string) => {
     if (!project) return;
     setSheet(nodeOfSection(id, project));
-    if (phone) setTab("canvas");
   };
+  // 메이트 편집 opened on one of its windows (her wardrobe from the outfits window, …): once she is there
+  useEffect(() => {
+    if (!pid) return;
+    const n = useStudio.getState().takeNode();
+    if (n) setSheet(n);
+  }, [pid]);
+  const guide = useGuideState(pid);
 
   // ── phone: the Settings tab is marked when the agent filled something there (or a decision waits) ──
   const fills = useMemo(() => Object.values(project?.studio?.filled ?? {}).map((e) => e.at), [project?.studio?.filled]);
@@ -556,7 +551,7 @@ export default function MateStudio() {
     ? t("studio.titleNew")
     : project?.outfit
       ? t("studio.titleOutfit", { name: mate?.name || "" })
-      : t("studio.titleAvatar", { name: mate?.name || "" });
+      : t("studio.titleEdit", { name: mate?.name || "" });
   const name = mate ? mate.name || t("studio.untitled") : "";
   const credits = project?.confirmation ? (
     <span className="pill bg-surface-3 tabular-nums text-content-dim" title={t("avatar.creditsCounted")} data-testid="studio-credits">
@@ -738,11 +733,11 @@ export default function MateStudio() {
         {mate && !phone && <MateThumb mate={mate} className="h-8 w-8" />}
         <div className="min-w-0 flex-1 leading-tight">
           <div className="flex min-w-0 items-center gap-1.5">
-            <Icon name="sparkles" size={13} className="shrink-0 text-accent" />
+            <Icon name={isNew || project?.outfit ? "sparkles" : "pencil"} size={13} className="shrink-0 text-accent" />
             <h1 className="truncate text-[14px] font-semibold" data-testid="studio-title">
               {title}
             </h1>
-            {!phone && project && !isNew && <StatusPill project={project} />}
+            {!phone && project && !isNew && project.status !== "interview" && <StatusPill project={project} />}
           </div>
           {(isNew || createdHere) && (
             <div className="truncate text-[11.5px] text-content-faint" data-testid="studio-draft-name">
@@ -771,9 +766,12 @@ export default function MateStudio() {
         )}
         {createBtn}
       </div>
-      {project && mate && (
+      {/* (a run going: its steps; the guide has the rest) */}
+      {project && mate && (project.plan || project.confirmation) && (
         <div className={`border-t border-border/50 px-3 [@media(max-height:500px)]:hidden ${phone ? "py-1.5" : "py-2"}`}>
-          {isNew ? <Steps project={project} mate={mate} onPick={show} compact={phone} /> : <div className={phone ? "" : "flex justify-center"}><StepBar project={project} nowrap={phone} /></div>}
+          <div className={phone ? "" : "flex justify-center"}>
+            <StepBar project={project} nowrap={phone} />
+          </div>
           {phone && credits && <div className="mt-1.5 flex">{credits}</div>}
         </div>
       )}
@@ -886,6 +884,41 @@ export default function MateStudio() {
       placeholder={isNew ? t("studio.composerNew") : undefined}
     />
   );
+  const look = lookPathOf(project, mate, guide.look);
+  const toAi = (text: string) => {
+    setSide("agent");
+    if (phone) setTab("agent");
+    setSheet(null);
+    if (!chat.send(text)) setError(t("studio.aiOffline"));
+  };
+  const pickLook = (path: LookPath | null) => {
+    guide.setLook(path);
+    // (later: the avatar is skipped on the server, so Create needs nothing more; another way takes it back)
+    if (isNew && pid) {
+      if (path === "later" && !project.studio?.avatar_skipped) void act(() => skipAvatar(pid, true));
+      else if (path !== "later" && project.studio?.avatar_skipped) void act(() => skipAvatar(pid, false));
+    }
+  };
+  const guideEl = (
+    <StudioGuide
+      project={project}
+      mate={mate}
+      creating={isNew}
+      env={env}
+      reloadEnv={reloadEnv}
+      api={api}
+      busy={busy}
+      streaming={chat.streaming}
+      checked={guide.checked}
+      onCheck={guide.check}
+      look={look}
+      onLook={pickLook}
+      onOpen={setSheet}
+      onAi={toAi}
+      onCreate={isNew ? finish : undefined}
+      onDone={exit}
+    />
+  );
   const sheetEl = sheet && (
     <NodeSheet
       key={sheet}
@@ -903,8 +936,12 @@ export default function MateStudio() {
       onClose={() => setSheet(null)}
       onOpen={setSheet}
       onVoiceTested={() => pid && void studioVoiceOk(pid).then(take).catch(() => {})}
-      onSkip={(skip) => pid && void act(() => skipAvatar(pid, skip))}
+      onSkip={(skip) => pickLook(skip ? "later" : null)}
       onCreate={isNew ? finish : undefined}
+      onAi={toAi}
+      look={look}
+      onLook={pickLook}
+      onCheck={guide.check}
     />
   );
   const approve = () => pid && void act(() => checkpoint(pid, "approve"));
@@ -917,40 +954,44 @@ export default function MateStudio() {
         </div>
       )}
       <div className="relative flex min-h-0 flex-1">
-        <StudioCanvas project={project} mate={mate} creating={isNew} activity={activity} open={sheet} busy={busy} onOpen={setSheet} onApprove={approve} onCreate={isNew ? finish : undefined} />
-        {sheetEl && (
-          <div className={`absolute inset-y-0 right-0 z-20 flex w-full animate-fade-in ${phone ? "" : "max-w-[460px]"}`} data-testid="studio-sheet-wrap">
-            {sheetEl}
-          </div>
-        )}
+        <StudioCanvas project={project} mate={mate} creating={isNew} activity={activity} open={sheet} busy={busy} onOpen={setSheet} onApprove={approve} onCreate={isNew ? finish : undefined} fileMode={look === "file" && !project.outfit} />
       </div>
     </div>
   );
 
+  const aiDot = chat.streaming && <span className="ml-1 inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent" />;
   if (phone) {
+    const tabBtn = (id: "guide" | "canvas" | "agent", icon: IconName, label: string, extra?: ReactNode) => (
+      <button role="tab" aria-selected={tab === id} className="nav-tab inline-flex flex-1 items-center justify-center gap-1.5" data-active={tab === id} onClick={() => setTab(id)} data-testid={`studio-tab-${id}`}>
+        <Icon name={icon} size={13} /> {label}
+        {extra}
+      </button>
+    );
     return (
       <div ref={rootRef} className="touch-ui flex h-full flex-col" data-testid="mate-studio" data-kind={kind} data-layout="tabs">
         {header}
         <div className="flex shrink-0 gap-1 border-b border-border/60 px-3 py-1.5" role="tablist">
-          <button role="tab" aria-selected={tab === "agent"} className="nav-tab inline-flex flex-1 items-center justify-center gap-1.5" data-active={tab === "agent"} onClick={() => setTab("agent")} data-testid="studio-tab-agent">
-            <Icon name="sparkles" size={13} /> {t("studio.tabAgent")}
-            {chat.streaming && <span className="ml-1 inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent" />}
-          </button>
-          <button role="tab" aria-selected={tab === "canvas"} className="nav-tab inline-flex flex-1 items-center justify-center gap-1.5" data-active={tab === "canvas"} onClick={() => setTab("canvas")} data-testid="studio-tab-canvas">
-            <Icon name="layers" size={13} /> {t("studio.tabCanvas")}
-            {tab !== "canvas" && unseen > 0 ? (
+          {tabBtn("guide", "map", t("studio.tabGuide"))}
+          {tabBtn(
+            "canvas",
+            "layers",
+            t("studio.tabCanvas"),
+            tab !== "canvas" && unseen > 0 ? (
               <span className="ml-1 rounded-full bg-success px-1.5 text-[10px] font-semibold leading-4 text-white" data-testid="studio-canvas-badge">
                 {unseen}
               </span>
             ) : (
               tab !== "canvas" && waits && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-warning" data-testid="studio-canvas-dot" />
-            )}
-          </button>
+            ),
+          )}
+          {tabBtn("agent", "sparkles", t("studio.tabAgent"), aiDot)}
         </div>
         {banner}
-        {/* (both stay mounted: switching tabs keeps the conversation's scroll and the canvas's camera) */}
+        {/* (all stay mounted: switching tabs keeps the conversation's scroll and the canvas's camera) */}
+        <div className={`min-h-0 flex-1 flex-col pb-safe ${tab === "guide" ? "flex" : "hidden"}`}>{guideEl}</div>
         <div className={`min-h-0 flex-1 flex-col ${tab === "agent" ? "flex" : "hidden"}`}>{agent}</div>
         <div className={`min-h-0 flex-1 flex-col pb-safe ${tab === "canvas" ? "flex" : "hidden"}`}>{canvas}</div>
+        {sheetEl}
         {dialogs}
       </div>
     );
@@ -964,9 +1005,9 @@ export default function MateStudio() {
           {canvas}
         </section>
         {folded ? (
-          <section className="flex w-11 shrink-0 flex-col items-center gap-2 border-l border-border/70 bg-surface/40 py-3" aria-label={t("studio.tabAgent")} data-testid="studio-agent-rail">
+          <section className="flex w-11 shrink-0 flex-col items-center gap-2 border-l border-border/70 bg-surface/40 py-3" aria-label={t("studio.sideLabel")} data-testid="studio-agent-rail">
             <button className="btn-ghost !p-2" onClick={() => fold(false)} title={t("studio.chatUnfold")} aria-label={t("studio.chatUnfold")} data-testid="studio-agent-unfold">
-              <Icon name="chat" size={16} />
+              <Icon name="map" size={16} />
             </button>
             {chat.streaming && <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent" />}
             {waits && <span className="h-1.5 w-1.5 rounded-full bg-warning" />}
@@ -974,15 +1015,27 @@ export default function MateStudio() {
         ) : (
           <>
             <ChatSplitter width={chatW} onChange={onChatW} container={box} />
-            <section className="relative flex min-h-0 shrink-0 flex-col border-l border-border/50 bg-surface/30" style={{ width: chatW }} aria-label={t("studio.tabAgent")} data-testid="studio-agent">
-              <button className="btn-ghost absolute right-2 top-2 z-10 !p-1.5 text-content-faint" onClick={() => fold(true)} title={t("studio.chatFold")} aria-label={t("studio.chatFold")} data-testid="studio-agent-fold">
-                <Icon name="chevron-left" size={13} className="rotate-180" />
-              </button>
-              {agent}
+            <section className="relative flex min-h-0 shrink-0 flex-col border-l border-border/50 bg-surface/30" style={{ width: chatW }} aria-label={t("studio.sideLabel")} data-testid="studio-agent" data-side={side}>
+              <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-1.5" role="tablist">
+                <button role="tab" aria-selected={side === "guide"} className="nav-tab inline-flex flex-1 items-center justify-center gap-1.5 !py-1" data-active={side === "guide"} onClick={() => setSide("guide")} data-testid="studio-side-guide">
+                  <Icon name="map" size={13} /> {t("studio.tabGuide")}
+                </button>
+                <button role="tab" aria-selected={side === "agent"} className="nav-tab inline-flex flex-1 items-center justify-center gap-1.5 !py-1" data-active={side === "agent"} onClick={() => setSide("agent")} data-testid="studio-side-agent">
+                  <Icon name="sparkles" size={13} /> {t("studio.tabAgent")}
+                  {side !== "agent" && aiDot}
+                </button>
+                <button className="btn-ghost shrink-0 !p-1.5 text-content-faint" onClick={() => fold(true)} title={t("studio.chatFold")} aria-label={t("studio.chatFold")} data-testid="studio-agent-fold">
+                  <Icon name="chevron-left" size={13} className="rotate-180" />
+                </button>
+              </div>
+              {/* (both stay mounted: the conversation keeps its scroll) */}
+              <div className={`min-h-0 flex-1 flex-col ${side === "guide" ? "flex" : "hidden"}`}>{guideEl}</div>
+              <div className={`min-h-0 flex-1 flex-col ${side === "agent" ? "flex" : "hidden"}`}>{agent}</div>
             </section>
           </>
         )}
       </div>
+      {sheetEl}
       {dialogs}
     </div>
   );

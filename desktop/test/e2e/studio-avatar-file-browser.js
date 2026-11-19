@@ -5,8 +5,9 @@
 //   NODE_PATH=<dir with playwright-core> CHROME=<chromium binary> \
 //     node desktop/test/e2e/studio-avatar-file-browser.js http://127.0.0.1:18983 rewind-test-only <shots dir>
 //
-// Checks: a new mate's studio → Avatar → Bring a file (a Live2D model in a zip) → she has it at once, the Look and Avatar
-// steps are done, the agent hears of it (a divider, and it answers); the mapping of her emotions shows in the section.
+// Checks: a new mate's studio → the Guide's 모습 step → 내 파일 쓰기 → the file window (a Live2D model in a zip) → she has it
+// at once, her emotions matched to its expressions by name (nothing asked of the AI), the emotion window shows the matches
+// and its Done finishes the step; the canvas turns to the file → emotions → mate.
 "use strict";
 const assert = require("assert/strict");
 const fs = require("fs");
@@ -84,52 +85,47 @@ function zip(files) {
     fs.writeFileSync(file, zip({ "hiyori/hiyori.model3.json": JSON.stringify(model), "hiyori/hiyori.moc3": "MOC3", "hiyori/exp/f01.exp3.json": "{}",
       "hiyori/exp/f05.exp3.json": "{}", "hiyori/m/idle.motion3.json": "{}", "hiyori/m/tap.motion3.json": "{}" }));
 
-    step("a new mate's studio; the Avatar section offers a file of one's own");
+    step("a new mate's studio; the Guide's look step offers a file of one's own");
     const p = await ctx.newPage();
     p.on("pageerror", (e) => errors.push(e.message));
     await p.goto(`${SERVER}/?view=mate&create=new`);
-    await p.waitForSelector('[data-testid="studio-steps"]', { timeout: 60000 });
+    await p.waitForSelector('[data-testid="studio-guide"][data-mode="create"]', { timeout: 60000 });
     await until("the draft in the URL", () => /create=mate_/.test(p.url()));
     const mid = new URL(p.url()).searchParams.get("create");
-    const state = (id) => p.locator(`[data-testid="studio-steps"] [data-step="${id}"]`).getAttribute("data-state");
-    assert.notEqual(await state("avatar"), "done");
-    // (the canvas's Look node: its sheet has her avatar now, Bring a file, the emotion map)
-    const openAvatar = async () => {
-      if (!(await p.locator('[data-testid="node-sheet"][data-node="brief"]').count())) {
-        await p.click('[data-testid="sc-node-brief"] .scn-hit');
-        await p.waitForSelector('[data-testid="node-sheet"][data-node="brief"]');
-      }
-    };
-    await openAvatar();
-    await p.locator('[data-testid="studio-avatar-bring"]').waitFor();
-    await p.screenshot({ path: path.join(SHOTS, "01-studio-avatar-section.png") });
+    const state = (id) => p.locator(`[data-testid="guide-step-${id}"]`).getAttribute("data-state");
+    assert.notEqual(await state("look"), "done");
+    await p.click('[data-testid="guide-step-look-toggle"]');
+    await p.click('[data-testid="look-file"]');
+    await p.click('[data-testid="guide-file-open"]');
+    await p.waitForSelector('[data-testid="look-import"]');
+    await p.screenshot({ path: path.join(SHOTS, "01-studio-file-window.png") });
 
-    step("Bring a file: a Live2D model — she has it at once, the Look and Avatar steps are done");
+    step("a Live2D model: she has it at once, her emotions matched by name");
     const uploaded = p.waitForResponse((r) => r.url().includes(`/api/mates/${mid}/avatar/import`) && r.request().method() === "POST");
-    const told = p.waitForResponse((r) => r.url().includes("/brought-avatar"));
-    await p.setInputFiles('[data-testid="studio-avatar-file"]', file);
+    await p.setInputFiles('[data-testid="look-file-input"]', file);
     assert.equal((await uploaded).status(), 200);
-    assert.equal((await told).status(), 200);
-    const mate = await (await ctx.request.get(`${SERVER}/api/mates/${mid}`)).json();
-    assert.equal(mate.avatar.kind, "live2d");
-    await until("the Avatar step done", async () => (await state("avatar")) === "done");
-    assert.equal(await state("look"), "done");
-    assert.match(await p.locator('[data-testid="studio-emotion-map"]').innerText(), /연결된 표정이 아직 없어요/);
+    await p.waitForSelector('[data-testid="look-import"][data-kind="live2d"]', { timeout: 30000 });
+    await until("matched by name", async () => {
+      const m = await (await ctx.request.get(`${SERVER}/api/mates/${mid}`)).json();
+      return m.avatar.kind === "live2d" && m.avatar.live2d.emotions?.smile === "F01_smile" && m.avatar.live2d.emotions?.sad === "F05_cry";
+    }, 20000);
+    assert.match(await p.locator('[data-testid="look-import-done"]').innerText(), /2개/);
+    await p.screenshot({ path: path.join(SHOTS, "02-studio-file-imported.png") });
 
-    step("the agent hears of it: a divider, then its answer");
-    await until("the divider", async () => (await p.locator('[data-testid="avatar-event"]').allInnerTexts()).some((x) => x.includes("아바타 파일을 넣었어요")), 30000);
-    await sleep(4000);
-    await p.screenshot({ path: path.join(SHOTS, "02-studio-avatar-brought.png") });
+    step("the emotion window: the matches; its Done finishes the look step");
+    await p.click('[data-testid="look-import-next"]');
+    await p.waitForSelector('[data-testid="look-mapper"]');
+    assert.equal(await p.locator('[data-testid="look-map-smile-face"]').inputValue(), "F01_smile");
+    assert.equal(await p.locator('[data-testid="look-map-sad-face"]').inputValue(), "F05_cry");
+    await p.screenshot({ path: path.join(SHOTS, "03-studio-emotions.png") });
+    await p.click('[data-testid="look-mapper-done"]');
+    await until("the look step done", async () => (await state("look")) === "done");
 
-    step("her emotions mapped (as the agent's map_avatar_emotions leaves it): the section shows them");
-    const now = await (await ctx.request.get(`${SERVER}/api/mates/${mid}`)).json();
-    const r = await ctx.request.patch(`${SERVER}/api/mates/${mid}`, { data: { avatar: { ...now.avatar, live2d: { ...now.avatar.live2d, emotions: { joy: "F01_smile", sad: "F05_cry" } } } } });
-    assert.ok(r.ok(), `patch ${r.status()}`);
-    await p.reload();
-    await p.waitForSelector('[data-testid="studio-steps"]', { timeout: 60000 });
-    await openAvatar();
-    await until("the mapping shown", async () => /joy → F01_smile/.test(await p.locator('[data-testid="studio-emotion-map"]').innerText()), 20000);
-    await p.screenshot({ path: path.join(SHOTS, "03-studio-emotion-map.png") });
+    step("the canvas: the file and her emotions, nothing drawn");
+    await p.waitForSelector('[data-testid="sc-node-import"]');
+    await p.waitForSelector('[data-testid="sc-node-motions"]');
+    assert.equal(await p.locator('[data-testid="sc-node-estimate"]').count(), 0);
+    await p.screenshot({ path: path.join(SHOTS, "04-studio-file-canvas.png") });
 
     assert.deepEqual(errors, [], "no page errors");
     console.log("OK");

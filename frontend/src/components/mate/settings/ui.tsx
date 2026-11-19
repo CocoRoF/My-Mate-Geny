@@ -106,7 +106,7 @@ export function SaveBar({ saver, onSave, dirty, label, onReset }: { saver: Retur
   // (a phone keeps the room for the form until there is something to save)
   if (small && !dirty && !saver.busy && !saver.ok && !saver.err) return null;
   const bar = (
-    <div className={`flex items-center justify-end gap-3 ${slot ? "mx-auto max-w-xl px-4 py-2" : "sticky bottom-0 z-10 -mx-1 rounded-xl bg-surface/90 px-1 py-2 backdrop-blur"}`}>
+    <div className={`flex items-center justify-end gap-3 ${slot ? "mx-auto max-w-xl px-4 py-2" : "sticky bottom-0 z-10 -mx-1 rounded-xl bg-surface/90 px-1 py-2 backdrop-blur"}`} data-dirty={dirty ? "1" : "0"}>
       {saver.err && <span className="min-w-0 flex-1 text-[12px] text-danger break-words">{saver.err}</span>}
       {!saver.err && dirty && <span className="min-w-0 flex-1 text-[11.5px] text-content-faint">{t("mateSettings.uiUnsaved")}</span>}
       {saver.ok && (

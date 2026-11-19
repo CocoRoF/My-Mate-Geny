@@ -400,8 +400,6 @@ const ko: Messages<"mateSettings"> = {
   dangerRestoreBtn: "기본 제공 메이트 되살리기",
 
   // MateSettings
-  tabProfile: "프로필",
-  tabStyle: "대화 방식",
   relTitle: "관계",
   relHint: "{name:과} 나 사이는 함께한 시간만큼 가까워지고, 한동안 뜸하면 조금씩 식어요. 말투로 드러날 뿐 죄책감이나 압박을 주지 않고, 어느 단계에서든 똑같이 도와줘요.",
   relEnabled: "관계",
@@ -501,7 +499,6 @@ const ko: Messages<"mateSettings"> = {
   styleAvoid: "피할 주제",
   styleAvoidHint: "이 주제는 부드럽게 거절하고 화제를 돌려요.",
   styleAvoidPh: "예: 정치, 전 애인 이야기",
-  tabAvatar: "아바타·의상",
   outfitWardrobe: "의상",
   outfitWardrobeHint: "의상을 고르면 아래에서 그 의상을 설정해요. 입히면 표정과 동작까지 한 번에 바뀌어요.",
   outfitDefault: "기본",
@@ -701,5 +698,7 @@ const ko: Messages<"mateSettings"> = {
   tabState: "기질",
   tabCommon: "공통",
   deskShowsPicked: "{name} — 메이트 화면에서 고른 메이트예요.",
+  editCard: "{name} 편집하기",
+  editCardSub: "이름·성격·말투·기질·모습·목소리·언어 모델은 메이트 편집에서 바꿔요",
 };
 export default ko;

@@ -1,22 +1,32 @@
 /**
- * A node's sheet on the studio canvas (docs/avatar-create.md §11 "The canvas"): what a click on a node or a tile opens
- * beside the canvas — the same settings and controls the studio always had, one node at a time: the concept, profile,
- * conversation style, voice and model (fields that save themselves, the agent's fills with Undo), the references,
- * what the agent wrote down to make, the estimate and its Confirm (the ONLY place a run starts), the candidates to
- * pick from, the base picture to approve, the faces, each set's clips, one picture or clip up close with its redo,
- * the checks with the run's controls, and the mate at the end (try her moods, apply, create).
+ * A node's window in the studio (docs/avatar-create.md §11 "The canvas"): what a click on a node, a tile or a step of
+ * the guide opens — a window in the middle of the screen over the canvas (the whole screen on a phone), one node at a
+ * time: the concept, profile, conversation style, temperament, voice and model (a new mate's fields save themselves,
+ * the agent's fills with Undo; an existing mate's are her settings, with Save), how her look is made, the file she
+ * comes from and her emotions matched to it, her wardrobe, the references, what the agent wrote down to make, the
+ * estimate and its Confirm (the ONLY place a run starts), the candidates to pick from, the base picture to approve,
+ * the faces, each set's clips, one picture or clip up close with its redo, the checks with the run's controls, and
+ * the mate at the end (try her moods, apply, create). Closing with unsaved settings asks first.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { uploadReference, type AvatarEnv, type AvatarProject, type StudioInfo } from "../../../../api/avatar";
 import type { Mate } from "../../../../api/mates";
 import type { MateConversation } from "../../../../mate/useMateConversation";
+import { usePhone } from "../../../../lib/device";
 import { tr, useT, type MsgKey } from "../../../../i18n";
+import { confirmDialog } from "../../../ui/ConfirmDialog";
 import Icon, { type IconName } from "../../../ui/Icon";
 import { BriefCard, Checkpoint, Clips, EnvNotice, EstimateCard, ExtraCard, Finish, Gallery, Progress, RedoButton, Thumb, unit, type Act } from "../../avatar/AvatarPanel";
+import AvatarTab from "../../settings/AvatarTab";
 import ModelTab from "../../settings/ModelTab";
+import ProfileTab from "../../settings/ProfileTab";
+import StyleTab from "../../settings/StyleTab";
+import TemperamentTab from "../../settings/TemperamentTab";
 import VoiceTab from "../../settings/VoiceTab";
 import { SaveBarSlot } from "../../settings/ui";
 import { FieldsCtx, type FieldsApi } from "../fields";
+import type { GuideStepId, LookPath } from "../guide";
+import { EmotionMapper, FileImport, LookChooser } from "../LookFile";
 import { AvatarStage, ConceptSection, ProfileSection, StyleSection } from "../StudioSettings";
 import { candidatesOf, checksOf, rowsOf, SET_KINDS, type SetKey } from "./graph";
 import { labelOr } from "./StudioCanvas";
@@ -40,12 +50,27 @@ export interface NodeSheetProps {
   onVoiceTested: () => void;
   onSkip: (skip: boolean) => void;
   onCreate?: () => void;
+  /** to the AI tab, with this message */
+  onAi?: (text: string) => void;
+  /** how her look is made (the guide's choice) */
+  look: LookPath | null;
+  onLook: (path: LookPath | null) => void;
+  /** a step of the guide the user finished here */
+  onCheck: (step: GuideStepId | "file") => void;
 }
+
+/** windows with a lot side by side (a preview beside a list, a gallery): wider */
+const WIDE = new Set(["motions", "import", "wardrobe", "candidates", "estimate", "set:faces", "check", "home"]);
 
 const TITLE: Record<string, { key: MsgKey; icon: IconName }> = {
   concept: { key: "studio.secConcept", icon: "sparkles" },
-  profile: { key: "studio.secProfile", icon: "user" },
+  profile: { key: "studio.gProfile", icon: "user" },
   style: { key: "studio.secStyle", icon: "chat" },
+  temperament: { key: "studio.secTemperament", icon: "heart" },
+  look: { key: "studio.gLook", icon: "image" },
+  import: { key: "studio.cvFile", icon: "upload" },
+  motions: { key: "studio.cvMap", icon: "play" },
+  wardrobe: { key: "studio.lookWardrobe", icon: "shirt" },
   refs: { key: "studio.cvRefs", icon: "image" },
   voice: { key: "studio.secVoice", icon: "volume" },
   model: { key: "studio.secModel", icon: "brain" },
@@ -211,32 +236,76 @@ function Checks({ project, act }: { project: AvatarProject; act: Act }) {
 }
 
 export default function NodeSheet(props: NodeSheetProps) {
-  const { node, project, mate, env, creating, act, reloadEnv, conv, api, busy, send, onClose, onOpen, onVoiceTested, onSkip, onCreate } = props;
+  const { node, project, mate, env, creating, act, reloadEnv, conv, api, busy, send, onVoiceTested, onSkip, onCreate, onAi, look, onLook, onCheck } = props;
   const t = useT();
+  const phone = usePhone();
   const studio = project.studio as StudioInfo | undefined;
   const isTile = node.startsWith("still:") || node.startsWith("clip:");
   const head = TITLE[node];
   const tileName = isTile ? labelOr(t, node.startsWith("still:") ? `studio.still_${node.slice(6)}` : `studio.clip_${node.slice(5)}`, node.split(":")[1]) : "";
   const panel = useRef<HTMLDivElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     panel.current?.scrollTo({ top: 0 });
   }, [node]);
   useEffect(() => {
+    dialog.current?.focus({ preventScroll: true });
+  }, []);
+  // (settings not saved yet: asked before they are thrown away)
+  const leave = async (then: () => void) => {
+    if (slot?.querySelector('[data-dirty="1"]') && !(await confirmDialog({ body: t("studio.unsavedClose"), confirmLabel: t("mateSettings.uiDiscard"), danger: true }))) return;
+    then();
+  };
+  const onClose = () => void leave(props.onClose);
+  const onOpen = (key: string) => void leave(() => props.onOpen(key));
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !(e.target as Element)?.closest?.("input,textarea,select")) onClose();
+      // (not while a question is open over it: that one answers Escape)
+      if (e.key !== "Escape" || e.defaultPrevented || (e.target as Element)?.closest?.("input,textarea,select") || document.querySelector('[data-testid="confirm-dialog"]')) return;
+      closeRef.current();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [onClose]);
+  }, []);
   const panelStudio = studio ? { kind: studio.kind, mateId: mate.id, mateName: mate.name || t("studio.untitled") } : undefined;
   const pending = project.extras.filter((x) => x.status === "pending");
 
   let body: ReactNode = null;
   if (isTile) body = <TileDetail project={project} act={act} tileKey={node} />;
   else if (node === "concept" && studio) body = <ConceptSection studio={studio} />;
-  else if (node === "profile") body = <ProfileSection mate={mate} />;
-  else if (node === "style") body = <StyleSection mate={mate} />;
+  // (a new mate's fields save themselves and show the agent's fills; an existing mate's are her settings, with Save)
+  else if (node === "profile") body = creating ? <ProfileSection mate={mate} /> : <ProfileTab key={mate.id} mate={mate} onOpenStyle={() => onOpen("style")} />;
+  else if (node === "style") body = creating ? <StyleSection mate={mate} /> : <StyleTab key={mate.id} mate={mate} conv={conv} />;
+  else if (node === "temperament") body = <TemperamentTab key={mate.id} mate={mate} />;
+  else if (node === "look")
+    body = (
+      <LookChooser
+        path={look}
+        creating={creating}
+        onPick={(p) => {
+          onLook(p);
+          if (p === "file") props.onOpen("import");
+          else props.onClose();
+        }}
+        onWardrobe={creating ? undefined : () => onOpen("wardrobe")}
+      />
+    );
+  else if (node === "import") body = <FileImport mate={mate} onNext={() => onOpen("motions")} onImported={() => onCheck("file")} />;
+  else if (node === "motions")
+    body = (
+      <EmotionMapper
+        mate={mate}
+        onAi={onAi}
+        onDone={() => {
+          onCheck("look");
+          props.onClose();
+        }}
+      />
+    );
+  else if (node === "wardrobe") body = <AvatarTab key={mate.id} mate={mate} conv={conv} />;
   else if (node === "refs") body = <Refs project={project} send={send} />;
   else if (node === "voice")
     body = (
@@ -249,7 +318,7 @@ export default function NodeSheet(props: NodeSheetProps) {
   else if (node === "brief")
     body = (
       <>
-        <AvatarStage project={project} mate={mate} kind={creating ? "new" : "existing"} onSkip={onSkip} />
+        <AvatarStage project={project} mate={mate} kind={creating ? "new" : "existing"} onSkip={onSkip} onBring={() => onOpen("import")} />
         <BriefCard project={project} studio />
         <Hint>{t("studio.cvBriefHint")}</Hint>
       </>
@@ -327,7 +396,7 @@ export default function NodeSheet(props: NodeSheetProps) {
         {project.preview && (project.status === "ready" || project.status === "applied") ? (
           <Finish project={project} act={act} studio={panelStudio} />
         ) : (
-          <AvatarStage project={project} mate={mate} kind={creating ? "new" : "existing"} onSkip={onSkip} />
+          <AvatarStage project={project} mate={mate} kind={creating ? "new" : "existing"} onSkip={onSkip} onBring={() => onOpen("import")} />
         )}
         {creating && onCreate && (
           <div className="flex justify-end">
@@ -339,25 +408,38 @@ export default function NodeSheet(props: NodeSheetProps) {
       </>
     );
 
+  const wide = WIDE.has(node) || isTile;
   return (
     <FieldsCtx.Provider value={api}>
-      <aside className="flex h-full min-h-0 flex-col border-l border-border/70 bg-surface/95 shadow-float backdrop-blur-xl" data-testid="node-sheet" data-node={node} aria-label={head ? t(head.key) : tileName}>
-        <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-2.5">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface-3 text-content-dim">
-            <Icon name={head?.icon ?? (node.startsWith("clip:") ? "play" : "image")} size={14} />
-          </span>
-          <h2 className="min-w-0 flex-1 truncate text-[14px] font-semibold">{head ? t(head.key) : tileName}</h2>
-          <button className="btn-ghost !px-2" onClick={onClose} aria-label={t("common.close")} data-testid="node-sheet-close">
-            <Icon name="x" size={15} />
-          </button>
-        </div>
-        <SaveBarSlot.Provider value={slot}>
-          <div ref={panel} className="fit-fields scrollbar-stable min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-            {body}
+      <div className={`fixed inset-0 z-[60] flex justify-center ${phone ? "" : "items-center p-6"}`} data-testid="studio-sheet-wrap">
+        <div className="absolute inset-0 bg-scrim/50 backdrop-blur-[2px] animate-fade-in" onClick={onClose} data-testid="node-sheet-scrim" />
+        <div
+          ref={dialog}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          aria-label={head ? t(head.key) : tileName}
+          className={`relative flex min-h-0 flex-col bg-surface shadow-float outline-none animate-fade-in ${phone ? "h-full w-full pt-safe" : `max-h-[88vh] w-full rounded-2xl border border-border ${wide ? "max-w-[920px]" : "max-w-[640px]"}`}`}
+          data-testid="node-sheet"
+          data-node={node}
+        >
+          <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-3">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+              <Icon name={head?.icon ?? (node.startsWith("clip:") ? "play" : "image")} size={15} />
+            </span>
+            <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">{head ? t(head.key) : tileName}</h2>
+            <button className="btn-ghost !px-2" onClick={onClose} aria-label={t("common.close")} data-testid="node-sheet-close">
+              <Icon name="x" size={16} />
+            </button>
           </div>
-        </SaveBarSlot.Provider>
-        <div ref={setSlot} className="shrink-0" />
-      </aside>
+          <SaveBarSlot.Provider value={slot}>
+            <div ref={panel} className="fit-fields scrollbar-stable min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
+              {body}
+            </div>
+          </SaveBarSlot.Provider>
+          <div ref={setSlot} className={`shrink-0 ${phone ? "" : "overflow-hidden rounded-b-2xl"}`} />
+        </div>
+      </div>
     </FieldsCtx.Provider>
   );
 }

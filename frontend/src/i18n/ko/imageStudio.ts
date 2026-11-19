@@ -2,7 +2,7 @@ import type { Messages } from "..";
 
 const ko: Messages<"imageStudio"> = {
   tab: "Image Studio",
-  hint: "이 컴퓨터의 GPU로 그림·영상 모델을 돌려요. 여기서 준비하고 아바타 만들기에서 써요.",
+  hint: "이 컴퓨터의 GPU로 그림·영상 모델을 돌려요. 여기서 준비하고 메이트 만들기에서 써요.",
   gatePill: "{name} · {used} / {total} GB",
   notHere: "이 컴퓨터에서는 못 써요",
 
@@ -42,9 +42,9 @@ const ko: Messages<"imageStudio"> = {
   queueIdle: "돌고 있는 작업이 없어요.",
   cancel: "취소",
 
-  ovAvatar: "아바타 만들기에서",
+  ovAvatar: "메이트 만들기에서",
   ovAvatarHint:
-    "모델을 설치해 두면 아바타 만들기의 각 단계를 Higgsfield 대신 이 컴퓨터에서 돌릴 수 있어요 (0 크레딧). 단계마다 견적 화면에서 골라요.",
+    "모델을 설치해 두면 메이트 만들기의 각 단계를 Higgsfield 대신 이 컴퓨터에서 돌릴 수 있어요 (0 크레딧). 단계마다 견적 화면에서 골라요.",
   stage_design: "후보 시안",
   stage_home: "기준 그림",
   stage_stills: "표정",
@@ -79,7 +79,7 @@ const ko: Messages<"imageStudio"> = {
   step_finishing: "마무리하는 중",
   step_masking: "인물 찾는 중",
   step_animating: "움직임 만드는 중",
-  src_avatar: "아바타 만들기",
+  src_avatar: "메이트 만들기",
   src_studio: "Image Studio",
 
   mdAll: "전체 ({n})",
@@ -193,10 +193,10 @@ const ko: Messages<"imageStudio"> = {
   save: "저장",
   reset: "기본값으로",
   setModels: "용도별 모델",
-  setModelsHint: "아바타 만들기와 써 보기에서 써요. 자동이면 설치된 모델 중 추천 순서가 가장 앞선 것을 써요.",
+  setModelsHint: "메이트 만들기와 써 보기에서 써요. 자동이면 설치된 모델 중 추천 순서가 가장 앞선 것을 써요.",
   setAuto: "자동 ({name})",
   setNone: "설치된 모델 없음",
-  setAvatar: "아바타 만들기: 단계별 기본 엔진",
+  setAvatar: "메이트 만들기: 단계별 기본 엔진",
   setAvatarHint:
     "새 견적에서 단계마다 먼저 골라 둘 엔진이에요. 견적에서 단계별로 다시 바꿀 수 있고, 모델이 설치되지 않은 단계는 Higgsfield에서 돌아요.",
   setRecipe: "{name}: 설정",

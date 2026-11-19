@@ -1,6 +1,6 @@
 /**
  * The Mate Create studio in the Mate view (docs/avatar-create.md §11): open or not, for a new mate's draft
- * (`create`) or an existing mate's avatar (`avatar`), and which project. Its own screen — lib/nav.ts makes every
+ * (`create`) or an existing mate (`avatar` — 메이트 편집: everything about her is changed there), and which project. Its own screen — lib/nav.ts makes every
  * change a history entry (`/?view=mate&create=<draft>`, `/?view=mate&avatar=<mate>`), so back closes it.
  */
 import { create } from "zustand";
@@ -29,6 +29,11 @@ interface StudioState {
   askGuide: (mateId: string | null) => void;
   openCreate: (draftId: string) => void;
   openAvatar: (mateId: string, projectId?: string | null) => void;
+  /** 메이트 편집: her studio, with one node's window open (temperament, wardrobe, voice, …) */
+  openEdit: (mateId: string, node?: string | null) => void;
+  /** the node whose window opens once the studio has loaded (taken once) */
+  node: string | null;
+  takeNode: () => string | null;
   /** the project filling one outfit of her wardrobe */
   openOutfit: (mateId: string, outfitId: string) => Promise<void>;
   setProject: (projectId: string | null) => void;
@@ -49,9 +54,16 @@ export const useStudio = create<StudioState>((set, get) => ({
   startError: null,
   notice: null,
   guideFor: null,
+  node: null,
   askGuide: (guideFor) => set({ guideFor }),
   openCreate: (draftId) => set({ open: true, kind: "create", mateId: draftId, projectId: null, startError: null }),
   openAvatar: (mateId, projectId = null) => set({ open: true, kind: "avatar", mateId, projectId, startError: null }),
+  openEdit: (mateId, node = null) => set({ open: true, kind: "avatar", mateId, projectId: null, startError: null, node }),
+  takeNode: () => {
+    const n = get().node;
+    if (n) set({ node: null });
+    return n;
+  },
   openOutfit: async (mateId, outfitId) => {
     if (get().starting) return;
     set({ starting: true, startError: null });
@@ -73,6 +85,6 @@ export const useStudio = create<StudioState>((set, get) => ({
       set({ starting: false, startError: (e as Error).message || tr("studio.startFailed") });
     }
   },
-  close: () => set({ open: false, starting: false }),
+  close: () => set({ open: false, starting: false, node: null }),
   note: (notice) => set({ notice }),
 }));

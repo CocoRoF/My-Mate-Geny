@@ -157,7 +157,7 @@ Each character's own numbers, from her persona (`TEMPERAMENTS`):
   makes her pull back (pestering angers her ×1.4, silence less); `secure` (한채린): as usual.
 
 **Every mate has one.** Any mate's temperament can be read from her persona by a model (`derive_temperament`, POST
-`/api/mates/{id}/gss/temperament/derive`), kept in `prefs.temperament`, edited in Mate settings → 기질, and merged over a built-in's own.
+`/api/mates/{id}/gss/temperament/derive`), kept in `prefs.temperament`, edited in 메이트 편집 → 기질 (the studio's temperament window), and merged over a built-in's own.
 
 ## 4. Her body and her day
 
@@ -363,7 +363,7 @@ only a third time is too many.
   - The user sees it only where it belongs:
     - the ♥ status window (메이트 상태): 지금 has every feeling and what is still with her; 관계 has the bonds and the
       promises; 기록 has the journal;
-    - Mate settings → 기질: her temperament, the one setting here.
+    - 메이트 편집 → 기질: her temperament, the one setting here.
 - **Developer tools**, not the user's, so there is no route or screen for them:
   - The simulator ([`gss/simulate.py`](../backend/app/mate/gss/simulate.py)) runs a script of messages, her replies and
     events through the same engine on fresh copies. It can try a temperament or a starting affinity. Its presets are
@@ -406,7 +406,7 @@ Where the Geny-State-System was thin, what was done about it (2026-11-17), and w
 | 4 | More than one number | §5: trust, romance, respect | the stage following closeness and trust together (today trust only tempers what she is told) |
 | 5 | Remembered episodes | §9 | patterns by kind ("when you're tired"), not only by count |
 | 6 | Promises both ways | §8 | her promises kept or not, judged from her later replies |
-| 7 | A temperament for every mate | §3: read from the persona, conflict and attachment styles, editable in Mate settings → 기질 | — |
+| 7 | A temperament for every mate | §3: read from the persona, conflict and attachment styles, editable in 메이트 편집 → 기질 | — |
 | 8 | Repair both ways | §2: space, making up, owning her own snaps, broken promises | gestures (a gift, effort over days) counted as part of repair |
 | 9 | Beyond her words | §6 "Beyond her words": voice, face strength, reply timing | quick bursts when excited (the chat splits by line, not sentence) |
 | 10 | Goals of her own | [mate-life.md](mate-life.md) "Her goals" | — |

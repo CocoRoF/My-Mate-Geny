@@ -112,8 +112,8 @@ const project = (page) => page.evaluate(async () => {
 
 async function openAvatarCreate(page, { pick = null } = {}) {
   await page.goto(`${SERVER}/?view=mate`);
-  await page.waitForSelector('[data-testid="mate-avatar-create"]', { timeout: 30000 });
-  await page.click('[data-testid="mate-avatar-create"]');
+  await page.waitForSelector('[data-testid="mate-edit"]', { timeout: 30000 });
+  await page.click('[data-testid="mate-edit"]');
   await page.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"]');
   if (pick !== null) await pickProject(page, pick);
 }
@@ -163,9 +163,9 @@ async function main() {
   page.on("pageerror", (e) => console.log("  pageerror:", e.message));
   step("open Avatar Create from the Mate view");
   await page.goto(`${SERVER}/?view=mate`);
-  await page.waitForSelector('[data-testid="mate-avatar-create"]', { timeout: 30000 });
+  await page.waitForSelector('[data-testid="mate-edit"]', { timeout: 30000 });
   await shot(page, "00-mate-view-button-dark-en");
-  await page.click('[data-testid="mate-avatar-create"]');
+  await page.click('[data-testid="mate-edit"]');
   await page.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"][data-layout="split"]');
   await page.waitForSelector('[data-testid="studio-canvas"] [data-testid="sc-node-estimate"]');
   await until("the agent's first turn", async () => (await page.locator('[data-testid="avatar-turn"]').count()) > 0, 30000);
@@ -300,7 +300,7 @@ async function main() {
   }, 30000);
   await sleep(2000);
   await shot(page, "12-mate-with-new-avatar-dark-en");
-  await page.click('[data-testid="mate-avatar-create"]');
+  await page.click('[data-testid="mate-edit"]');
   await page.waitForSelector('[data-testid="sc-node-mate"]');
   await openNode(page, "mate");
   await page.waitForSelector('[data-testid="avatar-restore"]');

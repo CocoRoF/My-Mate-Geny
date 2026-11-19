@@ -61,8 +61,11 @@ const get = async (ctx, url) => (await ctx.request.get(SERVER + url)).json();
 async function openTab(p) {
   await p.goto(`${SERVER}/?view=mate`);
   await p.waitForSelector('[data-testid="mate-settings-open"]', { timeout: 30000 });
-  await p.click('[data-testid="mate-settings-open"]');
-  await p.click('[data-testid="mate-tab-avatar"]');
+  // (her wardrobe is in 메이트 편집 → 모습 → 옷장·세부 설정)
+  await p.waitForSelector('[data-testid="mate-edit"]', { timeout: 30000 });
+  await p.click('[data-testid="mate-edit"]');
+  await p.click('[data-testid="guide-step-look-toggle"]');
+  await p.locator('[data-testid="look-wardrobe"], [data-testid="guide-look-wardrobe"]').first().click();
   await p.waitForSelector('[data-testid="outfit-wardrobe"]');
 }
 const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id}"]`);
@@ -146,7 +149,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
 
     step("the value set by hand opens it just the same, with word of it over the panel");
     await p.click('[data-testid="mate-settings-close"]');
-    await p.click('[data-testid="mate-relation-open"]');
+    await p.click('[data-testid=\"mate-status-open\"]'); await p.click('[data-testid=\"stage-status-more\"]');
     await p.click('[data-testid="mate-relation-panel-adjust"]');
     const set = p.locator('[data-testid="mate-relation-set"]');
     await set.waitFor();
@@ -221,7 +224,6 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     step("her default set can be edited and worn again while another is on");
     await tile(p, "default").click();
     await until("default selected", async () => (await p.locator('[data-testid="outfit-wear"]').count()) === 1);
-    await p.waitForSelector('[data-testid="mate-avatar-ai-open"]');
     assert.equal(await p.locator('[data-testid="mate-avatar-kind-video"]').getAttribute("class").then((c) => c.includes("border-accent")), true);
 
     step("AI: that outfit's own project, nothing spent, her own picture as the reference");
@@ -336,7 +338,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
           return body?.getAttribute("data-mate-clip") === "shy" || [...(body?.querySelectorAll("img") ?? [])].some((i) => /\/shy\b/.test(i.src));
         }), 40000);
       }
-      await here.locator('[data-testid="mate-relation-open"]').click();
+      await here.locator('[data-testid="mate-status-open"]').click(); await here.locator('[data-testid="stage-status-more"]').click();
       const row = (emotion) => here.locator(`[data-testid="mate-state-feeling"][data-emotion="${emotion}"]`);
       await row("shy").waitFor({ timeout: 15000 });
       assert.equal(await here.locator('[data-testid="mate-state-feeling"]').count(), 8, "every emotion has its value");

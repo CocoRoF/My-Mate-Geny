@@ -149,18 +149,23 @@ async function desktop(browser, lang, theme) {
   await openMateSettings(page);
   assert.equal(await count(page, '[data-testid="mate-global-settings-open"], [data-testid="mate-global-settings"], [data-testid="mate-open-global"]'), 0);
   const tabs = await page.$$eval('[data-testid="mate-settings"] [role="tab"]', (xs) => xs.map((x) => x.dataset.testid.replace("mate-tab-", "")));
-  assert.deepEqual(tabs, ["profile", "style", "avatar", "voice", "model", "bond", "danger"]);
+  // (who she is — profile, style, look, voice, model — is changed in 메이트 편집)
+  assert.deepEqual(tabs, ["bond", "common", "danger"]);
   await shot(page, `${tag}-mate-profile`);
 
   step(`${tag}: 대화 방식 shows your name, read-only, with a link to Account`);
-  await page.click('[data-testid="mate-tab-style"]');
+  await page.click('[data-testid="mate-settings-edit"]');
+  await page.click('[data-testid="guide-step-style-toggle"]');
+  await page.click('[data-testid="guide-style-open"]');
   await page.waitForSelector('[data-testid="mate-user-name"]');
   assert.equal((await page.textContent('[data-testid="mate-user-name"]')).trim(), name);
   assert.equal(await count(page, 'input[data-testid="mate-user-name"]'), 0, "not a second copy to edit");
   await shot(page, `${tag}-mate-style`);
 
   step(`${tag}: 음성 — the volume is this device's: a line and a link`);
-  await page.click('[data-testid="mate-tab-voice"]');
+  await page.click('[data-testid="node-sheet-close"]');
+  await page.click('[data-testid="guide-step-voice-toggle"]');
+  await page.click('[data-testid="guide-voice-open"]');
   await page.waitForSelector('[data-testid="mate-volume-settings"]');
   assert.equal(await count(page, '[data-testid="mate-volume-slider"]'), 0);
   await page.click('[data-testid="mate-volume-settings"]');
@@ -191,8 +196,8 @@ async function desktop(browser, lang, theme) {
 
   step(`${tag}: the ♥ panel is for looking; its 설정 opens 관계와 기억`);
   await page.goto(`${SERVER}/?view=mate`);
-  await page.waitForSelector('[data-testid="mate-relation-open"]', { timeout: 30000 });
-  await page.click('[data-testid="mate-relation-open"]');
+  await page.waitForSelector('[data-testid="mate-status-open"]', { timeout: 30000 });
+  await page.click('[data-testid=\"mate-status-open\"]'); await page.click('[data-testid=\"stage-status-more\"]');
   await page.waitForSelector('[data-testid="mate-relation-panel"]');
   assert.equal(await count(page, '[data-testid="mate-relation-panel"] [data-testid="mate-relation-set"]'), 0);
   await page.click('[data-testid="bond-tab-memory"]');

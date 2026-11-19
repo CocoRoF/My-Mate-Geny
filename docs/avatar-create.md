@@ -109,8 +109,8 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
 ## 2. Where
 
 - The mate picker → **New mate**: the studio for a new mate (§11).
-- Mate view header: **Avatar Create** (✨) and Mate settings → Avatar → **Create with AI**: the studio for the mate on
-  screen — the same layout (the canvas left, the agent right), her latest avatar project
+- Mate view header: **메이트 편집** (✏, also the card on top of Mate settings): the studio for the mate on screen — the
+  same layout (the canvas left, the Guide and the AI right), her latest avatar project
   (Projects ▾: the others, a new one, delete).
 
 ## 3. The agent
@@ -249,36 +249,79 @@ reserve); the light tier saves 2.75 per clip. The estimate card always shows Hig
 ## 11. The Mate Create studio
 
 **Where.** The mate picker's **New mate** (a fresh draft and its studio at once; the picker also lists the drafts to
-resume), the desktop app's mate chat window (**+** → the console at `/?view=mate&create=new`), ✨ / Create with AI for
-an existing mate. A screen of its own: `/?view=mate&create=<draft id>` or `/?view=mate&avatar=<mate id>[&project=<id>]`
+resume), the desktop app's mate chat window (**+** → the console at `/?view=mate&create=new`), and for an existing mate
+**메이트 편집** — the first button of the Mate view's header (✏; on a phone in ⋯), the card on top of Mate settings, her
+guide's look step, the outfits window's 관리 (it opens on her wardrobe). Everything about who she is is changed here
+and only here (owner 2026-11-19: "메이트의 어떤 특정한 값들을 변경하는 것은 전부 메이트 편집에서만"): profile,
+conversation style, temperament, look and wardrobe, voice, language model; Mate settings keep 관계와 기억 · 공통 ·
+삭제. A screen of its own: `/?view=mate&create=<draft id>` or `/?view=mate&avatar=<mate id>[&project=<id>]`
 (frontend `lib/navUrl.ts`; `create=new` makes a draft and replaces that entry) — back returns to the Mate, forward and a
 reload come back to the same draft.
 
-**Layout.** Header: back (= Save draft & exit), the title (새 메이트 만들기 / ‹name›의 아바타), the draft's name, the
-credits (≈ estimate, then spent / cap), Drafts ▾ or Projects ▾, ⋯ (Start from a mate…, Import a mate pack…, Quick
-create (name only)…, Discard draft), **Save draft & exit**, **Create mate** (enabled with a name and a description or
-personality; its tooltip says what is missing). Below it the steps — Concept → Personality → Look → Avatar → Voice →
-Done (done ✓ / current / to do; a click opens that node's sheet) — or, for an existing mate, the avatar's own steps.
-Desktop: **the canvas on the left, the agent on the right** (owner 2026-11-15, after Ailism Mate's graph editor: a
-canvas and a chat, but every decision of ours — the estimate, the pick, the approvals — right on it); the agent's width
-is dragged from its edge (←/→, double-click or Home resets; localStorage `hrh_studio_chat`, 400 px by default, at least
-340, the canvas at least 420) and folds to a rail (`hrh_studio_chat_folded`). Phone: two tabs, **Agent | Canvas**;
-Canvas carries the number of fields the agent filled since you last looked (or a dot when an estimate / checkpoint /
-extra waits). Both stay mounted (no lost scroll, camera or typing). An extra's card is on the Agent tab too, right
-above the message box. `desktop/test/e2e/mate-studio-phone-browser.js`.
+**Layout.** Header: back (= Save draft & exit), the title (새 메이트 만들기 / ‹name› 편집 / ‹name›의 새 의상), the
+draft's name, the credits (≈ estimate, then spent / cap), Drafts ▾ or Projects ▾, ⋯ (Start from a mate…, Import a mate
+pack…, Quick create (name only)…, Discard draft), **Save draft & exit**, **Create mate** (enabled with a name and a
+description or personality; its tooltip says what is missing). Below it, while a run is asked for or going, the run's
+own steps. Desktop: **the canvas on the left; on the right two tabs, 가이드 | AI** (owner 2026-11-19: the studio was
+built around the AI helping — "그게 아니라 앞에서부터 하나씩 가이드가 있도록": the Guide walks a beginner through in order,
+the AI is the stronger help beside it; the tab is remembered, `hrh_studio_side`, the Guide first). The right side's
+width is dragged from its edge (←/→, double-click or Home resets; localStorage `hrh_studio_chat`, 400 px by default, at
+least 340, the canvas at least 420) and folds to a rail (`hrh_studio_chat_folded`). Phone: three tabs, **가이드 | 캔버스
+| AI**; Canvas carries the number of fields the agent filled since you last looked (or a dot when an estimate /
+checkpoint / extra waits). All stay mounted (no lost scroll, camera or typing). An extra's card is on the AI tab too,
+right above the message box. `desktop/test/e2e/mate-studio-phone-browser.js`, `desktop/test/e2e/mate-edit-guide-browser.js`.
+
+**The guide** (`StudioGuide.tsx`, its state pure in `guide.ts`, `frontend/test/studio-guide.test.ts`). The steps in the
+one order a beginner follows, each a card: **콘셉트** (optional) → **이름과 성격** → **대화 방식** → **기질** (optional)
+→ **모습** → **목소리** → **언어 모델** (optional) → **완성**, with how far along (n/7). The step to do now is open: what to
+decide in a sentence, the one or two fields it takes right there (the pitch with example chips; the name and
+personality; the speech level and what she calls you — the same self-saving fields with the agent's fills and Undo),
+**자세히 정하기** (that node's window), **AI에게 맡기기** (to the AI tab with a message for that step: concept directions,
+fill in the profile, decide how she talks, suggest a voice, sum up her look and estimate, match a model's emotions) and
+**다음** (an optional step: **건너뛰기**; temperament and model: **이대로 둘게요**). A step is done by what the project and
+the mate say (a name and who she is, a speech level or address or habits, a tested voice, her look made or skipped) or
+by the user passing it (this browser: `hrh_studio_guide_<project>`); the open step never moves by itself while they type
+in it. **모습** branches: **AI로 그리기** (the run's own steps, each a press away: sum up her look and get an estimate —
+the AI does it, a reference picture first if they have one — → check the estimate → pick a design → approve the base
+picture → approve the faces → the rest by itself, "go on, no need to wait" → done), **내 파일 쓰기** (upload → fit the
+size and place → match her emotions), **나중에 하기** (the avatar skipped on the server; Create needs nothing more); a run
+asked for decides it, then the user's pick, then a Live2D / LivLiv look she has. Editing an existing mate: the same
+steps (no 완성), each one open to change (**바꾸기** opens its window, which holds her full settings with Save), her
+wardrobe from the look step, **완료** at the bottom. An outfit project: the picture way's steps only.
+
+**Her look from a file** (`LookFile.tsx`; nothing generated, nothing spent). **The file window** (`import`): drop or
+pick a `.zip` (a Live2D model's folder with its model3.json, a clip / picture pack) or a `.livliv` (`POST
+/api/mates/{id}/avatar/import`, the same import as before; replacing a look she has asks first). Right after it her
+emotions are matched to the model's expressions — and to its motion groups whose names say so (Idle / Tap groups are
+left alone) — by their names (`guide.suggestMap`: the emotion's own name, then its words in English, Japanese and
+Korean; a short word only as a word of its own), saved at once, and it says how many; then what the file is (Live2D
+model · n expressions · m motion groups), the Live2D runtime notice when it is missing, a live preview with **size**,
+**left · right**, **up · down** and **motion while idle**, all saving themselves, **다른 파일로 바꾸기** and **다음: 감정
+연결**. **The emotion window** (`motions`): her, large, on the left; **모델 둘러보기** — each of the model's own
+expressions and motions as a chip that plays it on her (names like `exp_03` say nothing until seen; a motion plays
+through a stand-in emotion only the preview has); then for each of her 13 emotions an expression (자동 — what plays
+then: a near emotion's choice or an expression of that name —, 표정 없음, or one of the model's) and, for Live2D, a
+motion; a change plays at once, ▶ replays; **이름으로 자동 연결**, **AI에게 맡기기** (`map_avatar_emotions`), what a touch
+on each hit area does (터치하면 하는 동작), **모두 지우기**, and **다 됐어요** (the guide's look step done). The canvas
+turns to the file branch: 입력 → 파일 → 감정 연결 → 완성. Importing here no longer wakes the agent (it sees the new look
+with the next `<studio_update>`); asking it is a press.
 
 **The canvas** (`canvas/StudioCanvas.tsx`, its state pure in `canvas/graph.ts`, `frontend/test/studio-graph.test.ts`).
 Seven columns, left to right, nodes joined by curves that light up as things flow:
 
 | Column | Nodes |
 |---|---|
-| 입력 · 누구인지 | Concept (pitch, style, palette swatches), Profile, Conversation style, References (thumbnails, how they are used), Voice (✓ once tested), Language model — an outfit project shows the outfit instead |
+| 입력 · 누구인지 | Concept (pitch, style, palette swatches), 이름과 성격, Conversation style, Temperament (her own or from her personality), References (thumbnails, how they are used), Voice (✓ once tested), Language model — an outfit project shows the outfit instead |
 | 외형·견적 · 무엇을, 얼마에 | Look (the agent's design prompt, aspect, quality, how many clips and faces), **Estimate** (none yet → the total, the time and **Review and confirm** → once confirmed, credits spent / cap with a bar; an extra waiting) |
 | 기준 그림 · 모든 영상의 출발점 | Candidates (a grid; drawing ones blurred and sweeping, the picked one marked; **Pick one** when it waits), **Base picture** (rules: waist up facing you, fixed camera, plain background; **Approve** right on it at its checkpoint) |
 | 세트 규칙 | one rule node per set — 표정과 눈·입 (the stills; **Faces OK, make the clips** at their checkpoint), 쉬는 상태, 대화 상태 (talk, listen, think), 반응, 자리 비움 — with when it plays and its rule, how many, making / failed / all done |
 | 동시 생성 | every still and clip of the set as a tile (3:4; planned → waiting → making (blurred, sweeping) → finishing (matte) → done (develops, a green line under it) / failed (red); a reaction's tile shows the face it turns to; a clip plays while hovered; a failed check is marked "Redo") |
 | 검사 · 쓸 수 있는지 | required fields, base 1/1, faces n/n, clips n/n, then the clip checks — same first and last frame, starts on the base, clean background — and how many should be made again |
 | 완성 · 메이트 하나로 | her name, her avatar playing (the finished one, the one she has, or the base picture dimmed), **Create mate** / Apply / Wear it |
+
+Her look from a file instead (`fileMode`: the guide's 내 파일 쓰기, or a Live2D / LivLiv look she has with no run): four
+columns — 입력 → **파일** (what it is, its file name; Upload when there is none) → **감정 연결** (how many of her
+emotions are matched, a few of them) → 완성 (`graph.fileLinesOf`).
 
 The camera: drag anywhere (a few pixels before it stops being a click), the wheel zooms where the pointer is (ctrl+wheel
 = a trackpad pinch), two fingers pinch, arrows move, + / - zoom, 0 or **Fit** fits (never below 70 %, the words stay
@@ -292,16 +335,20 @@ going. Above the canvas a bar: **n / m done** (required fields + the base + ever
 No graph library: the nodes are plain elements in a CSS grid, the lines one SVG measured from their boxes, so words of
 any length just fit.
 
-**A node's sheet** (`canvas/NodeSheet.tsx`): a click on a node or a tile opens it over the right of the canvas (the
-agent stays in view; Esc or × closes; full width on a phone): Concept / Profile / Conversation style (the fields
-below), References (upload — the agent is told — and how they are used), Voice (the Voice tab, the agent's voice
+**A node's window** (`canvas/NodeSheet.tsx`): a click on a node, a tile or a guide step opens it **in the middle of the
+screen** over a dimmed studio (owner 2026-11-19: "모달 형식으로 가운데"; wide for the emotion window, the file, the
+wardrobe, the estimate, the candidates and the faces; the whole screen on a phone; Esc, × or a click outside closes —
+asking first when settings aren't saved): Concept / 이름과 성격 / Conversation style (a new mate: the fields below; an
+existing mate: her full settings — icon, birthday, how she may change herself — with Save), Temperament (her
+temperament, with Save), how her look is made, the file, the emotions, her wardrobe (the outfits and every set's
+pictures, clips and expressions), References (upload — the agent is told — and how they are used), Voice (the Voice tab, the agent's voice
 character as a hint), Language model (the Model tab), Look (the brief, her avatar now, Skip the avatar), **Estimate**
 (the estimate card with Confirm — the ONLY place a run starts — extras, the processing tools, then the progress with
 Pause / Resume / Cancel), Candidates (pick at the checkpoint, else the gallery), Base picture (approve / back / redo),
 Faces (approve, each with its redo), a set (its clips with checks and redo), **a tile up close** (the still, or the clip
 playing, what it is, its check numbers, the error, redo at its price), Checks (what is missing, the rolled-up checks,
-the failed clips, the progress), the mate (the finished avatar with the moods to try, Apply / Restore, Bring a file,
-Create mate). The agent's **Show** opens the matching node.
+the failed clips, the progress), the mate (the finished avatar with the moods to try, Apply / Restore, a file of
+one's own → the file window, Create mate). The agent's **Show** opens the matching node.
 
 **The mate's settings, live** (the Concept, Profile and Conversation style sheets; `StudioSettings` sections):
 **Concept** (pitch, her role for you, interests, backstory, the look: art style, mood, look, outfit, palette with
@@ -312,7 +359,7 @@ speech habits, length, emotion, warmth / humor / initiative, topics to avoid; do
 field saves itself (0.65 s after the last key or on leaving it). A field the agent filled glows for a moment and
 carries **Filled by the agent · Undo** (back to the value before it wrote); editing a field removes its badge.
 
-**The creation agent** (`AvatarChat`, on the right): its lines, its cards (distinct from plain messages: an accent
+**The creation agent** (`AvatarChat`, the AI tab): its lines, its cards (distinct from plain messages: an accent
 frame and a label) — **concept directions** (`ask_user` kind `concepts`: 2–4 big cards with a name, a one-line pitch
 and a palette strip; "describe your own"), choices, sliders, uploads, text, the estimate with Confirm — **filled-in
 cards** for each `update_mate_draft` (which settings, Show), tool chips and the run's events as dividers.
@@ -342,16 +389,17 @@ The system prompt for a new mate (`prompt.py` STUDIO_NEW) starts with the concep
 speech level / address / tone), then the avatar part as in §3 (no "which mate"); for an existing mate the avatar part
 with a note that her profile changes only when the user asks. The brief's target is always the studio's mate.
 
-**An avatar the user brings.** Instead of a generated avatar she can have one from a file: the Avatar section's
-**Bring a file (zip · livliv)** — a Live2D model, a LivLiv package or a video / photo pack, the same import as Mate
-settings → Avatar (`POST /api/mates/{id}/avatar/import`) — goes on her at once and counts as the Look and Avatar steps.
-The agent hears of it (`POST …/studio/{pid}/brought-avatar` → an `avatar_brought` event, a divider in the chat) and
-sees what the model has: `get_project` → `studio.avatar` = `{kind, expressions, motion_groups (Live2D), emotions,
+**An avatar the user brings.** Instead of a generated avatar she can have one from a file: the guide's 모습 → **내 파일
+쓰기** (or a file of one's own from the Look / mate windows) opens the file window — a Live2D model, a LivLiv package or a
+video / photo pack (`POST /api/mates/{id}/avatar/import`) — and it goes on her at once ("Her look from a file" above).
+The guide's file window matches her emotions by name itself and does not wake the agent (it would cost a turn the user
+didn't ask for); `POST …/studio/{pid}/brought-avatar` (an `avatar_brought` event, a divider in the chat) is still there
+for a client that wants the agent to answer. The agent sees what the model has: `get_project` → `studio.avatar` = `{kind, expressions, motion_groups (Live2D), emotions,
 emotion_motions}` (read from the model's `model3.json` / the package's `expressions`); an avatar changed elsewhere
 reaches it as an `avatar:` line of `<studio_update>`. With `map_avatar_emotions {expressions {emotion: expression},
 motions {emotion: motion group}}` it maps those to her emotion tags (`app/avatar/studio.py` `emotion_map`: only the
-model's own names and her tags, merged, `""` unmaps; never the model itself) and says what it mapped; the section shows
-the mapping, Mate settings → Avatar changes it.
+model's own names and her tags, merged, `""` unmaps; never the model itself) and says what it mapped — when the user
+asks (the emotion window's AI에게 맡기기, or in the chat); the emotion window shows and changes the mapping.
 
 **Credits.** Unchanged (§4): nothing that spends runs before the user's Confirm; `update_mate_draft`, Create mate and
 the concept never touch the plan or the gate.
@@ -376,8 +424,8 @@ candidates, what waits, progress, checks, tools → nodes, the lines).
 ## 12. Outfits
 
 The project that fills one outfit of a mate's wardrobe (docs/mate.md "Outfits"): the same project, agent, estimate, gate,
-checkpoints and processing as any avatar, with `doc.outfit = {id, name, note, stored}`. Opened from Mate settings → Avatar
-& outfits, with an outfit picked: `POST /api/avatar/studio {mate_id, language, outfit: {id}}` (an outfit has one project,
+checkpoints and processing as any avatar, with `doc.outfit = {id, name, note, stored}`. Opened from 메이트 편집 → 모습 →
+옷장·세부 설정, with an outfit picked: `POST /api/avatar/studio {mate_id, language, outfit: {id}}` (an outfit has one project,
 opened again where it stopped; the normal avatar studio never opens it).
 
 - **The start.** Her default set's picture is copied in as the first reference (`redraw`; the agent can't change it, and

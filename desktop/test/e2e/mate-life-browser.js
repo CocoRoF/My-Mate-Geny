@@ -142,8 +142,9 @@ async function goToMate(ctx) {
     await page.keyboard.press("Escape");
 
     // her clip library: stills only, a click plays the one clip in a window
-    await page.locator(T("mate-settings-open")).click();
-    await page.locator(T("mate-tab-avatar")).click();
+    await page.locator(T("mate-edit")).click();
+    await page.locator(T("guide-step-look-toggle")).click();
+    await page.locator('[data-testid="look-wardrobe"], [data-testid="guide-look-wardrobe"]').first().click();
     await page.locator(T("mate-clip-library")).waitFor();
     await page.locator('[data-testid^="mate-clip-card-"] img').first().waitFor();
     const cards = await page.locator('[data-testid^="mate-clip-card-"]').count();

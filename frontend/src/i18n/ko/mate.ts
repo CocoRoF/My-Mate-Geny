@@ -128,7 +128,7 @@ const ko: Messages<"mate"> = {
   alarmNoNote: "알람",
   alarmCancel: "알람 취소",
   callRingBody: "{name:이} 전화를 걸었어요",
-  callNoStt: "이 기기에서는 음성 인식을 쓸 수 없어요. 목소리는 들리지만 내 말은 전해지지 않아요. 메이트 설정 → 음성에서 음성 인식을 설정해 주세요.",
+  callNoStt: "이 기기에서는 음성 인식을 쓸 수 없어요. 목소리는 들리지만 내 말은 전해지지 않아요. 메이트 편집 → 목소리에서 음성 인식을 설정해 주세요.",
   callMicDenied: "마이크 권한이 없어요. 통화하려면 앱에 마이크를 허용해 주세요.",
   callNoMic: "마이크를 찾을 수 없어요.",
   callSttServer: "{engine:으로} 듣고 있어요",
@@ -302,8 +302,8 @@ const ko: Messages<"mate"> = {
   readingAloudTap: "목소리로 답하기: 켜짐 · 끄기",
 
   micNoMate: "메이트 없음",
-  micOff: "음성 입력이 꺼져 있어요 — 메이트 설정 → 음성에서 음성 인식 엔진을 고르세요.",
-  micNoBrowserStt: "이 앱에는 내장 음성 인식이 없어요 — 메이트 설정 → 음성에서 ElevenLabs 실시간, OpenAI 또는 Whisper를 고르세요.",
+  micOff: "음성 입력이 꺼져 있어요 — 메이트 편집 → 목소리에서 음성 인식 엔진을 고르세요.",
+  micNoBrowserStt: "이 앱에는 내장 음성 인식이 없어요 — 메이트 편집 → 목소리에서 ElevenLabs 실시간, OpenAI 또는 Whisper를 고르세요.",
   micNoRecorder: "이 브라우저에서는 녹음할 수 없어요 (https 보안 페이지가 필요해요).",
   micRefused: "마이크 사용이 거부됐어요.",
   sttFailed: "음성 인식에 실패했어요 ({reason}).",
@@ -456,5 +456,9 @@ const ko: Messages<"mate"> = {
   emotion_agree: "동의",
   emotion_greet: "인사",
   emotion_sleepy: "졸림",
+  edit: "메이트 편집",
+  editTitle: "{name}의 이름·성격·말투·기질·모습·목소리를 바꿔요",
+  status: "상태 보기",
+  statusTitle: "{name}의 상태 — 지금 기분, 우리 사이, 하루",
 };
 export default ko;

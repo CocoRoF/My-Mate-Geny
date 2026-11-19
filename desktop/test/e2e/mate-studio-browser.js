@@ -213,7 +213,7 @@ async function main() {
   assert.equal(p.studio.mate.persona.personality, "Calm, attentive and warm, with a gentle teasing streak.");
   assert.ok(p.studio.filled["persona.description"] && p.studio.filled["concept.pitch"]);
   assert.equal(p.studio.concept.voice, "soft, warm, a little low");
-  await page.waitForSelector('[data-testid="studio-steps"] [data-step="concept"][data-state="done"]');
+  await page.waitForSelector('[data-testid="guide-step-concept"][data-state="done"]');
 
   step("the user edits a field in the sheet → saved, no badge; the agent sees it next turn");
   await page.fill('[data-testid="studio-persona-personality"]', "Cheerful and blunt, but kind.");
@@ -357,7 +357,7 @@ async function main() {
   await page.keyboard.press("Escape");
 
   step("the existing mate's ✨ → the same layout, her finished avatar in the mate node");
-  await page.click('[data-testid="mate-avatar-create"]');
+  await page.click('[data-testid="mate-edit"]');
   await page.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"][data-layout="split"]');
   assert.match(page.url(), /\?view=mate&avatar=/);
   await page.waitForSelector('[data-testid="sc-node-mate"].is-ready');

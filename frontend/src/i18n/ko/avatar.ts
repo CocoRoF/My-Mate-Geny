@@ -1,15 +1,10 @@
 import type { Messages } from "../index";
 
 const avatar: Messages<"avatar"> = {
-  title: "아바타 만들기",
-  openTitle: "{name}의 움직이는 아바타를 AI(Higgsfield)로 만들어요",
   close: "메이트로 돌아가기",
   projects: "프로젝트",
-  createWithAi: "AI로 만들기",
-  createWithAiHint: "에이전트가 몇 가지를 묻고 Higgsfield 작업마다 가격을 알려 줘요. 확인하면 기본 제공 메이트 같은 영상 아바타를 만들어요: 기준 그림, 표정 그림, 반복되는 움직임 영상.",
-  createWithAiBtn: "아바타 만들기 열기",
   deleteConfirm: "“{name}” 프로젝트와 그림·영상을 모두 지울까요?",
-  chatEmpty: "에이전트가 준비하고 있어요…",
+  chatEmpty: "AI가 준비하고 있어요…",
   composerPlaceholder: "답하거나 원하는 걸 말해 주세요…",
   attach: "그림 첨부",
   send: "보내기",

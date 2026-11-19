@@ -407,7 +407,7 @@ Qwen3-TTS with no clip).
 
 ## A mate on the local engine
 
-Mate settings → Voice → engine **로컬**:
+메이트 편집 → 목소리 → engine **로컬**:
 
 - `tts.model` — her model (empty: the default above). A model that was removed falls back to the default
   (`VoiceHost.model_for`).

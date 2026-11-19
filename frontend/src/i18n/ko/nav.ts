@@ -12,7 +12,6 @@ const ko: Messages<"nav"> = {
   sessionsNeedLogin: "다시 로그인해야 하는 계정이 있어요 (설정 → 공급자)",
   providersNone: "연결된 공급자가 없어요. 채팅하려면 공급자를 연결해 주세요",
   newChat: "새 채팅",
-  tagline: "나의 메이트 + 에이전트 콘솔",
   refreshTitle: "새로고침 — 채팅 목록을 다시 불러오고 이 채팅을 다시 동기화해요",
   searchSessions: "세션 검색",
   sessions: "세션",

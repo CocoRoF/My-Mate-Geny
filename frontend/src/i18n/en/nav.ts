@@ -11,7 +11,6 @@ export default {
   providersNone: "No provider is connected — connect one to start chatting",
   sessionsNeedLogin: "An account's login needs a new sign-in (Settings → Providers)",
   newChat: "New chat",
-  tagline: "your mate + agent console",
   refreshTitle: "Refresh — reload chats and resync this one",
   searchSessions: "Search sessions",
   sessions: "Sessions",

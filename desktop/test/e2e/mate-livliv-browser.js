@@ -85,8 +85,9 @@ async function context(browser, { mateId, phone = false }) {
     await p.screenshot({ path: path.join(SHOTS, "livliv-smile.png"), clip: box });
 
     step("Settings → Avatar: what the package says, its expression map, and an import that takes .livliv");
-    await p.click('[data-testid="mate-settings-open"]');
-    await p.click('[data-testid="mate-tab-avatar"]');
+    await p.click('[data-testid="mate-edit"]');
+    await p.click('[data-testid="guide-step-look-toggle"]');
+    await p.locator('[data-testid="look-wardrobe"], [data-testid="guide-look-wardrobe"]').first().click();
     await p.waitForSelector('[data-testid="mate-livliv-info"]');
     const info = await p.locator('[data-testid="mate-livliv-info"]').innerText();
     assert.ok(info.includes(lv.name), info);
