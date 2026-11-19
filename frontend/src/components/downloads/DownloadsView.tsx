@@ -207,11 +207,19 @@ export default function DownloadsView() {
     if (!apk) return;
     setLanError("");
     try {
-      setLanLink(await phoneLink(apk.name));
+      const link = await phoneLink(apk.name);
+      if (!link) throw new Error("unsupported");
+      setLanLink(link);
     } catch (e: any) {
       setLanError(String(e?.message || e).includes("noLan") ? t("downloads.phoneNoLan") : t("downloads.phoneFailed"));
     }
   };
+  // (the link works for half an hour: then the code goes, and the button is back)
+  useEffect(() => {
+    if (!lanLink) return;
+    const t = setTimeout(() => setLanLink(null), Math.max(0, lanLink.until - Date.now()));
+    return () => clearTimeout(t);
+  }, [lanLink]);
   const androidQr = (list: AppAsset[]) => phoneUrl(list) || lanLink?.url;
   const ios = rel?.ios;
   const legacy = assets.some((a) => a.name.startsWith("hr-harnessor")) && !assets.some((a) => a.name.startsWith("my-mate-geny"));
