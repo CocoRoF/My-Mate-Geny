@@ -77,6 +77,12 @@ const ko: Messages<"files"> = {
   rootFolder: "폴더",
   rootOpened: "열어 둔 폴더",
   notFound: "찾을 수 없음: {path}",
+  // 에이전트가 적은 경로에 아무것도 없을 때 (stores/workbenchStore.ts showNear)
+  openedSimilar: "{name} 파일은 없어요. 대신 그 이름으로 만들어진 {similar} 파일을 열었어요",
+  similarFolder: "{name} 파일은 없어요. 같은 폴더에 비슷한 파일이 있어요: {similar}",
+  patternFolder: "{name:은} 여러 파일을 뜻하는 이름이에요. 해당하는 파일 {count}개가 있는 폴더를 열었어요",
+  notYetFolder: "{name} 파일은 아직 없어요 (나중에 만들어지거나 지워졌을 수 있어요). 들어갈 폴더를 열었어요",
+  notYetNearest: "{name} 파일은 아직 없어요. 지금 있는 가장 가까운 폴더({folder})를 열었어요",
   thisServer: "이 서버",
   // tabs
   chatTab: "채팅",

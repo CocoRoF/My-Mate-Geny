@@ -123,5 +123,16 @@ def test_resolve_uses_the_chats_working_folders(tmp_path):
         r = client.get("/api/fs/resolve", params={"path": "docs/mate.md", "session_id": s["id"], "roots": ["/"]}).json()
         assert r["matches"] == [{"path": str(repo / "docs" / "mate.md"), "is_dir": False}]
         r = client.get("/api/fs/resolve", params={"path": "nothing/here.md", "session_id": s["id"], "roots": ["/"]}).json()
-        assert r["matches"] == []
+        assert r["matches"] == [] and "near" not in r
+        # nothing there, near=1: its folder and what in it was meant — relative or absolute
+        r = client.get("/api/fs/resolve", params={"path": "docs/mates.md", "session_id": s["id"], "roots": ["/"],
+                                                  "near": "1"}).json()
+        assert r["matches"] == [] and r["near"]["folder"] == str(repo / "docs")
+        assert r["near"]["similar"] == [str(repo / "docs" / "mate.md")] and r["near"]["how"] == "similar"
+        r = client.get("/api/fs/resolve", params={"path": str(repo / "docs" / "later.md"), "session_id": s["id"],
+                                                  "near": "1"}).json()
+        assert r["near"]["folder"] == str(repo / "docs") and r["near"]["own_folder"] and r["near"]["similar"] == []
+        r = client.get("/api/fs/resolve", params={"path": str(repo / "docs" / "mate.md"), "session_id": s["id"],
+                                                  "near": "1"}).json()
+        assert r["matches"] == [{"path": str(repo / "docs" / "mate.md"), "is_dir": False}] and "near" not in r
         client.delete(f"/api/sessions/{s['id']}")

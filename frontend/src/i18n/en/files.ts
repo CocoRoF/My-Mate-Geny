@@ -76,6 +76,12 @@ export default {
   rootFolder: "folder",
   rootOpened: "opened",
   notFound: "Not found: {path}",
+  // a path the agent printed that isn't there (stores/workbenchStore.ts showNear)
+  openedSimilar: "{name} isn't there — opened {similar}, made under that name instead",
+  similarFolder: "{name} isn't there — files like it in its folder: {similar}",
+  patternFolder: "{name} stands for several files — their folder is open ({count})",
+  notYetFolder: "{name} isn't there yet (made later, or removed) — its folder is open",
+  notYetNearest: "{name} isn't there yet — the nearest folder of it that exists is open ({folder})",
   thisServer: "this server",
   // tabs
   chatTab: "Chat",

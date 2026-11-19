@@ -14,6 +14,7 @@ remote paths go over SFTP through the connection's connector.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import codecs
 import mimetypes
 import os
@@ -218,11 +219,14 @@ async def resolve_path(
     session_id: str | None = Query(default=None),
     connection_id: str | None = Query(default=None),
     roots: list[str] = Query(default=[]),
+    near: bool = Query(default=False),
     svc: WorkspaceService = Depends(workspace_service),
 ) -> dict:
     """Where a relative path the agent printed really is: the roots the client
     tried, then the folders this chat has been working in (its recent tool
-    calls and answers), then a bounded search (see ``path_resolver``)."""
+    calls and answers), then a bounded search (see ``path_resolver``).
+    ``near``: when nothing is there (absolute paths too) — the folder it belongs in and the files there it most
+    likely means (made later, made again under another name, a name standing for several: ``path_resolver.near``)."""
     mentioned: list[str] = []
     if session_id:
         rows = request.app.state.db.query(
@@ -234,6 +238,12 @@ async def resolve_path(
     if connection_id:
         c = _remote(svc, connection_id)
         ref = path_resolver.clean_ref(path)
+        if ref.startswith("/"):
+            found = []
+            with contextlib.suppress(Exception):
+                info = await c.explore(ref, "stat")
+                found = [{"path": info["path"], "is_dir": info["is_dir"]}]
+            return {"matches": found, **({"near": await _remote_near(c, ref, roots, mentioned)} if near and not found else {})}
         cands = [posixpath.join(b, ref) for b in roots]
         cands += path_resolver.direct_hits(ref, mentioned)
         cands += [posixpath.join(b, ref) for b in path_resolver.candidate_bases(mentioned)[:24]]
@@ -246,9 +256,57 @@ async def resolve_path(
             found.append({"path": info["path"], "is_dir": info["is_dir"]})
             if len(found) >= 5:
                 break
-        return {"matches": found}
-    hits = await asyncio.to_thread(path_resolver.resolve, path, [os.path.expanduser(r) for r in roots], mentioned)
-    return {"matches": [{"path": h, "is_dir": os.path.isdir(h)} for h in hits if not is_secret(h)]}
+        return {"matches": found, **({"near": await _remote_near(c, ref, roots, mentioned)} if near and not found else {})}
+    tried = [os.path.expanduser(r) for r in roots]
+    ref = path_resolver.clean_ref(path)
+    if ref.startswith(("/", "~")):
+        full = os.path.expanduser(ref)
+        hits = [full] if os.path.exists(full) else []
+    else:
+        hits = await asyncio.to_thread(path_resolver.resolve, path, tried, mentioned)
+    out: dict = {"matches": [{"path": h, "is_dir": os.path.isdir(h)} for h in hits if not is_secret(h)]}
+    if near and not out["matches"]:
+        found = await asyncio.to_thread(path_resolver.near, os.path.expanduser(ref), tried, mentioned)
+        if found is not None:
+            found["similar"] = [p for p in found["similar"] if not is_secret(p)]
+            out["near"] = found
+    return out
+
+
+async def _remote_near(c: RemoteSshConnector, ref: str, roots: list[str], mentioned: list[str]) -> dict | None:
+    """``path_resolver.near`` on an SSH host: fewer places (each look is a round trip), the same answer."""
+    async def isdir(p: str) -> bool:
+        try:
+            return bool((await c.explore(p, "stat"))["is_dir"])
+        except Exception:  # noqa: BLE001 - not there / unreadable
+            return False
+
+    best: tuple[int, int, str, str] | None = None
+    for rank, cand in enumerate(path_resolver.near_candidates(ref, roots, mentioned, limit=12)[:16]):
+        d, up = posixpath.dirname(cand), 1
+        while d and up <= 4 and d not in path_resolver._TOP_LEVEL:
+            if await isdir(d):
+                if best is None or (up, rank) < best[:2]:
+                    best = (up, rank, d, cand)
+                break
+            d, up = posixpath.dirname(d), up + 1
+        if best is not None and best[0] == 1:
+            break
+    if best is None:
+        return None
+    up, _, folder, cand = best
+    names: list[str] = []
+    how, score = None, 0.0
+    if up == 1:
+        with contextlib.suppress(Exception):
+            listing = await c.explore(folder, "list")
+            names, how, score = path_resolver.similar_names(posixpath.basename(cand), [e["name"] for e in listing.get("entries") or []])
+    own = len(posixpath.dirname(ref).split("/")) if posixpath.dirname(ref) and not ref.startswith("/") else 0
+    if not names and not ref.startswith("/") and up > own:
+        return None
+    return {"folder": folder, "own_folder": up == 1, "expected": cand, "similar": [posixpath.join(folder, n) for n in names],
+            "how": how, "score": round(score, 3),
+            "sure": path_resolver.sure_match(posixpath.basename(cand), names, how, score)}
 
 
 @router.get("/text")
