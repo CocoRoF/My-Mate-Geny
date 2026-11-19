@@ -26,6 +26,7 @@ on:
       - ".github/workflows/apps.yml"
       - ".github/scripts/apps_*.py"
       - ".github/scripts/asc.py"
+      - ".github/scripts/ios_signing.py"
   workflow_dispatch:
     inputs:
       platforms:
