@@ -245,7 +245,12 @@ async def lifespan(app: FastAPI):
         except Exception:  # noqa: BLE001 - the app works without it; Settings → 디바이스 인증 shows it off
             logging.getLogger(__name__).exception("Geny Net failed to start")
 
+    # chats the last run of the server cut off (a deploy, a reboot, a crash) go on by themselves (services/turn_resume.py)
+    session_service.start_resumer()
     yield
+    # first thing on the way down: the running turns are marked cut off (to go on once the server is back) before
+    # anything else stops under them
+    await session_service.begin_shutdown()
     if app.state.net is not None:
         await app.state.net.stop()
     await setup.service.stop()

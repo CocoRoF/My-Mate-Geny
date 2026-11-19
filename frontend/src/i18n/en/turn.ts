@@ -52,6 +52,7 @@ export default {
   toolsN: { one: "{count} tool", other: "{count} tools" },
   failedN: { one: "{count} failed", other: "{count} failed" },
   stopped: "Stopped",
+  cutByRestart: "Cut off by a server restart",
   failed: "Failed",
   retryTitle: "Send the same message again",
   continue: "Continue",

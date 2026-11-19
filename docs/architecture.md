@@ -60,6 +60,8 @@ is seen as it ends. Every change moves the list version on `/ws/sessions`, so
 every device follows without polling. Mate conversations keep none.
 
 A chat can go back to before any message the user sent, and be copied: docs/session-timeline.md.
+A chat cut off from outside — the server restarting under it (a deploy, a reboot, a crash) or the connection to the
+model dropping — goes on by itself once it can: docs/resume.md.
 
 ## Event schema
 

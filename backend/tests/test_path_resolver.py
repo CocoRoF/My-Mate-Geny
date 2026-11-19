@@ -99,7 +99,7 @@ def test_a_file_not_made_yet_points_at_the_folder_it_will_be_in(tmp_path):
 
 
 def test_a_file_made_again_under_another_name_is_found_by_its_likeness(tmp_path):
-    ws, ag, mentioned = _work(tmp_path)
+    _, ag, mentioned = _work(tmp_path)
     for ref in (str(ag / "Agent심의앱_1.1.0_결과요약.docx"), "Agent심의앱_1.1.0_결과요약.docx"):
         got = pr.near(ref, ["/home"], mentioned)
         assert got["how"] == "similar" and got["similar"] == [str(ag / "Agent심의앱_1.1.0_결과보고.docx")]
@@ -109,6 +109,7 @@ def test_a_file_made_again_under_another_name_is_found_by_its_likeness(tmp_path)
 def test_a_name_standing_for_several_files_finds_them(tmp_path):
     _, ag, mentioned = _work(tmp_path)
     got = pr.near("심의보고서_V3-xx_Agent1.1.0.docx", ["/home"], mentioned)
+    assert got["folder"] == str(ag)
     assert got["how"] == "pattern" and [p.rsplit("/", 1)[1] for p in got["similar"]] == [
         "심의보고서_V3-01_Agent1.1.0.docx", "심의보고서_V3-02_Agent1.1.0.docx", "심의보고서_V3-05_Agent1.1.0.docx"]
     assert pr.name_pattern("index.html") is None and pr.name_pattern("box_xxl.css") is None

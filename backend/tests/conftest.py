@@ -99,6 +99,8 @@ _default("AVATAR_ROOT", lambda: _temp("hrh_test_avatars_"))
 _default("VOICE_HOME", lambda: _temp("hrh_test_voice_"))
 # no registry / GitHub lookups from the CLI-versions service (tests/test_cli_tools.py fakes them)
 os.environ.setdefault("CLI_UPDATE_CHECK", "false")
+# no automatic continues of cut-off chats (tests/test_turn_resume.py turns them on for itself)
+os.environ.setdefault("RESUME_CUT_OFF", "false")
 os.environ.setdefault("MEMORY_CONSOLIDATION_ENABLED", "false")
 os.environ.setdefault("LIFE_WORLD", "false")  # (no weather / holiday lookups: app/mate/life/world.py)
 

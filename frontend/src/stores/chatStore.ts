@@ -96,7 +96,7 @@ export interface Turn {
   tools: ToolActivity[];
   complete: boolean;
   status?: TurnStatus;
-  error?: { code: string; message: string };
+  error?: { code: string; message: string; reason?: string };
   costUsd?: number;
   model?: string;
   usage?: Record<string, any>;
@@ -553,7 +553,8 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       const t = liveTurn(turns, at);
       finish(t, at);
       t.status = code === "turn.interrupted" ? "interrupted" : "error";
-      t.error = { code, message };
+      // (reason "server": cut off by a restart — it goes on by itself: backend services/turn_resume.py)
+      t.error = { code, message, ...(data.reason ? { reason: String(data.reason) } : {}) };
       if (data.cost_kind === "turn") {
         // A stopped / failed turn that still ran: its tokens count too.
         t.costUsd = turnCost(data);
