@@ -93,8 +93,10 @@ function Face({ s, ringing }: { s: CallState; ringing?: boolean }) {
   );
 }
 
-function RoundButton({ icon, label, onClick, tone, pressed, testid, rotate }: {
+function RoundButton({ icon, label, onClick, tone, pressed, testid, rotate, lit }: {
   icon: IconName; label: string; onClick: () => void; tone: "on" | "off" | "end" | "accept"; pressed?: boolean; testid: string; rotate?: boolean;
+  /** (the mute button) lit while their voice is heard */
+  lit?: boolean;
 }) {
   const cls = {
     on: "bg-content text-bg",
@@ -109,8 +111,9 @@ function RoundButton({ icon, label, onClick, tone, pressed, testid, rotate }: {
         onClick={onClick}
         aria-label={label}
         aria-pressed={pressed}
-        className={`grid h-[4.5rem] w-[4.5rem] place-items-center rounded-full shadow-float transition active:scale-95 max-[360px]:h-16 max-[360px]:w-16 [@media(max-height:560px)]:h-14 [@media(max-height:560px)]:w-14 ${cls}`}
+        className={`grid h-[4.5rem] w-[4.5rem] place-items-center rounded-full shadow-float transition active:scale-95 max-[360px]:h-16 max-[360px]:w-16 [@media(max-height:560px)]:h-14 [@media(max-height:560px)]:w-14 ${cls} ${lit ? "ring-4 ring-success/70" : ""}`}
         data-testid={testid}
+        data-lit={lit ? "true" : undefined}
       >
         <Icon name={icon} size={28} className={rotate ? "rotate-[135deg]" : ""} />
       </button>
@@ -127,17 +130,16 @@ function CallScreen() {
   const name = s.mate?.name || s.call?.name || "";
   useBackHandler(live, () => s.minimize(true));
   return (
-    <div className="fixed inset-0 z-[90] flex flex-col overflow-hidden bg-bg text-content animate-fade-in" role="dialog" aria-modal="true" aria-label={name} data-testid="call-screen" data-phase={s.phase}>
+    // (in the desktop app below its own title bar — never under it; elsewhere the whole screen)
+    <div className="fixed inset-x-0 bottom-0 top-[var(--window-chrome-height,0px)] z-[90] flex flex-col overflow-hidden bg-bg text-content animate-fade-in" role="dialog" aria-modal="true" aria-label={name} data-testid="call-screen" data-phase={s.phase}>
       <Backdrop tone={s.phase === "ended" ? "end" : "call"} />
       <div className="relative flex min-h-0 flex-1 flex-col pt-safe pb-safe">
-        <div className="flex h-16 items-center justify-between px-4">
-          {/* (the mic: lit while they are heard) */}
-          <span className={`grid h-9 w-9 place-items-center rounded-full transition ${s.userTalking && !s.muted ? "bg-success text-white" : "text-content-faint"}`} aria-hidden>
-            <Icon name={s.muted ? "mic-off" : "mic"} size={17} />
-          </span>
+        {/* (the chat while on the call: said in words — the call goes on in a pill at the top) */}
+        <div className="flex h-14 items-center px-3">
           {live && (
-            <button type="button" onClick={() => s.minimize(true)} className="grid h-11 w-11 place-items-center rounded-full bg-surface-3/80 text-content hover:bg-surface-3" aria-label={t("mate.callMinimize")} title={t("mate.callMinimize")} data-testid="call-minimize">
-              <Icon name="minimize" size={19} />
+            <button type="button" onClick={() => s.minimize(true)} className="flex items-center gap-1 rounded-full py-1.5 pl-2 pr-3.5 text-[14px] text-content-dim transition hover:bg-surface-3/70 hover:text-content" data-testid="call-minimize">
+              <Icon name="chevron-down" size={18} />
+              {t("mate.callMinimize")}
             </button>
           )}
         </div>
@@ -160,7 +162,7 @@ function CallScreen() {
         <div className="flex items-start justify-center gap-8 px-6 pb-8 max-[360px]:gap-5 [@media(max-height:560px)]:pb-4">
           <RoundButton icon="volume" label={t("mate.callSpeaker")} onClick={s.toggleSpeaker} tone={s.speaker ? "on" : "off"} pressed={s.speaker} testid="call-speaker" />
           <RoundButton icon="phone" rotate label={t("mate.callEnd")} onClick={live ? s.hangup : s.dismiss} tone="end" testid="call-end" />
-          <RoundButton icon="mic-off" label={t("mate.callMute")} onClick={s.toggleMute} tone={s.muted ? "on" : "off"} pressed={s.muted} testid="call-mute" />
+          <RoundButton icon="mic-off" label={t("mate.callMute")} onClick={s.toggleMute} tone={s.muted ? "on" : "off"} pressed={s.muted} testid="call-mute" lit={live && s.userTalking && !s.muted} />
         </div>
       </div>
     </div>
@@ -174,7 +176,7 @@ function IncomingCall() {
   const why = s.call?.reason ? (`mate.callWhy_${s.call.reason}` as MsgKey) : null;
   useBackHandler(true, () => {}); // (Back doesn't answer or turn it down)
   return (
-    <div className="fixed inset-0 z-[90] flex flex-col overflow-hidden bg-bg text-content animate-fade-in" role="dialog" aria-modal="true" aria-label={t("mate.callIncoming")} data-testid="call-incoming">
+    <div className="fixed inset-x-0 bottom-0 top-[var(--window-chrome-height,0px)] z-[90] flex flex-col overflow-hidden bg-bg text-content animate-fade-in" role="dialog" aria-modal="true" aria-label={t("mate.callIncoming")} data-testid="call-incoming">
       <Backdrop tone="ring" />
       <div className="relative flex min-h-0 flex-1 flex-col items-center pt-safe pb-safe text-center">
         <div className="mt-[12vh] text-[15px] text-content-dim [@media(max-height:620px)]:mt-8">{t("mate.callIncoming")}</div>
@@ -200,7 +202,7 @@ function CallPill() {
   const now = useNow(!!s.connectedAt);
   const name = s.mate?.name || s.call?.name || "";
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.4rem)] z-[85] flex justify-center px-3 animate-fade-in">
+    <div className="pointer-events-none fixed inset-x-0 top-[calc(var(--window-chrome-height,0px)+env(safe-area-inset-top)+3.4rem)] z-[85] flex justify-center px-3 animate-fade-in">
       <div className="pointer-events-auto flex h-11 max-w-full items-center gap-1 rounded-full bg-success py-1 pl-1 pr-1 text-white shadow-float" data-testid="call-pill">
         <button type="button" onClick={() => s.minimize(false)} className="flex min-w-0 items-center gap-2 rounded-full pl-0.5 pr-2" aria-label={t("mate.callExpand")} title={t("mate.callExpand")}>
           {s.mate ? <MateThumb mate={s.mate} className="h-9 w-9" /> : <Icon name="phone" size={16} />}
@@ -227,7 +229,7 @@ function ElsewherePill({ call }: { call: NonNullable<CallState["elsewhere"]> }) 
   const started = call.answered_at ? Date.parse(call.answered_at) : NaN;
   const now = useNow(Number.isFinite(started), 1000);
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.4rem)] z-[85] flex justify-center px-3 animate-fade-in">
+    <div className="pointer-events-none fixed inset-x-0 top-[calc(var(--window-chrome-height,0px)+env(safe-area-inset-top)+3.4rem)] z-[85] flex justify-center px-3 animate-fade-in">
       <div className="flex h-9 max-w-full items-center gap-2 rounded-full border border-success/40 bg-surface-2/95 px-3 text-[12.5px] text-content shadow-float" data-testid="call-elsewhere" role="status">
         <Icon name="phone" size={13} className="shrink-0 text-success" />
         <span className="min-w-0 truncate">{t("mate.callElsewhere", { name: call.name })}</span>
