@@ -17,6 +17,7 @@ def module():
 def test_dmg_stages_the_app_and_applications_without_mounting(tmp_path, monkeypatch):
     mod = module()
     monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)  # (a developer's Mac: nothing else is touched)
     app = tmp_path / "mac-arm64/My Mate Geny.app"
     binary = app / "Contents/MacOS/My Mate Geny"
     binary.parent.mkdir(parents=True)
@@ -40,6 +41,47 @@ def test_dmg_stages_the_app_and_applications_without_mounting(tmp_path, monkeypa
     assert [c[1] for c in calls] == ["create", "verify"]
     assert not list(tmp_path.glob(".dmg-stage-*"))
     assert binary.read_bytes() == b"app"
+
+
+def test_on_the_actions_runners_xprotect_is_stopped_before_the_image(tmp_path, monkeypatch):
+    """XProtect scanned each file hdiutil wrote: one image took 1 to 13 minutes on the runners"""
+    mod = module()
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    binary = tmp_path / "mac-arm64/My Mate Geny.app/Contents/MacOS/My Mate Geny"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"app")
+    calls = []
+
+    class Done:
+        returncode = 1  # (pgrep: none left)
+
+    def run(argv, **kw):
+        calls.append(argv[:2] if argv[0] != "sudo" else argv[:4])
+        if argv[:2] == ["hdiutil", "create"]:
+            Path(argv[-1]).write_bytes(b"dmg")
+        return Done()
+
+    monkeypatch.setattr(mod.subprocess, "run", run)
+    mod.build(tmp_path, "0.4.99", "arm64")
+    assert calls[0] == ["sudo", "-n", "pkill", "-9"]
+    assert calls.index(["hdiutil", "create"]) > calls.index(["pgrep", "XProtect"])
+
+
+def test_each_architecture_has_its_own_feed(tmp_path):
+    mod = module()
+    for arch in ("arm64", "x64"):
+        for ext in ("zip", "dmg"):
+            (tmp_path / f"my-mate-geny-1.1.1-macos-{arch}.{ext}").write_bytes(f"{arch}{ext}".encode())
+    feed = mod.write_feed(tmp_path, "1.1.1", "arm64")
+    assert feed.name == "latest-mac-arm64.yml"
+    text = feed.read_text()
+    assert "macos-arm64.zip" in text and "macos-arm64.dmg" in text and "x64" not in text
+    # the zip first: what a signed app updates itself from
+    assert text.index("arm64.zip") < text.index("arm64.dmg")
+    assert 'version: "1.1.1"' in text
+    with pytest.raises(RuntimeError):
+        mod.write_feed(tmp_path, "1.1.2", "arm64")
 
 
 def test_feed_covers_both_architectures_with_real_hashes(tmp_path):
