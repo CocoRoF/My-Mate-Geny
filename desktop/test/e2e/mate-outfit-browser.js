@@ -160,7 +160,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     step("the value set by hand opens it just the same, with word of it over the panel");
     await closeTab(p);
     await p.click('[data-testid=\"mate-status-open\"]'); await p.click('[data-testid=\"stage-status-more\"]');
-    await p.click('[data-testid="mate-relation-panel-adjust"]');
+    await p.click('[data-testid="stage-status-settings"]');
     const set = p.locator('[data-testid="mate-relation-set"]');
     await set.waitFor();
     const byHand = async (v) => {
@@ -460,7 +460,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       await wear("default");
       await showing(here, USUAL);
 
-      await here.locator('[data-testid="mate-relation-panel-close"]').click();  // (on a phone it would cover her)
+      await here.locator('[data-testid="stage-status-close"]').click();  // (on a phone it would cover her)
       for (const [label, size] of [["a phone", { width: 390, height: 844 }], ["a narrow window", { width: 460, height: 900 }]]) {
         await here.setViewportSize(size);
         await showing(here, USUAL);

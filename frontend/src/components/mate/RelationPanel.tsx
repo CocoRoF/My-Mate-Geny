@@ -1,10 +1,9 @@
 /**
- * The Relationship panel (docs/mate-memory-affinity.md §6.1) — memora's relationship page, as a side panel of the
- * Mate view (header ♥ or the indicator) and of the desktop Mate chat window. View-first: where you two are (stage
- * ring, affinity, mood, days together, streak), what the next stage still needs (the earned part and the warmth part —
- * the stage is the lower of the two), stats, 30 days of affinity, milestones and anniversaries, the change journal
- * (filters, by day) and her latest memories. This heart panel owns both memory and relationship management,
- * including their preferences. It follows the server's pushes (mates.changed → the store).
+ * The relationship (docs/mate-memory-affinity.md §6.1) — memora's relationship page, now the 관계 tab of her one status
+ * window (stage/StatusWindow.tsx, since 2026-11-20: the ♥ panel beside the conversation and the stage's status window
+ * were one thing shown twice). View-first: where you two are (stage ring, affinity, mood, days together, streak), what
+ * the next stage still needs (the earned part and the warmth part — the stage is the lower of the two), stats, 30 days
+ * of affinity, milestones and anniversaries, the change journal (filters, by day) and her latest memories.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ALL_STAGES, getRelationJournal, patchRelation, type Mate, type RelationChange, type RelationJournal, type RelationStage, RELATION_STAGES, SOUR_STAGES } from "../../api/mates";
@@ -12,22 +11,11 @@ import { useMateStore } from "../../stores/mateStore";
 import { fmtDate, fmtTime, relTime } from "../../i18n/format";
 import { useT, type MsgKey, type TFunction } from "../../i18n";
 import Icon from "../ui/Icon";
-import ScrollRow from "../ui/ScrollRow";
 import { STAGE_COLOR, STAGE_LABEL } from "./RelationRing";
 import { StateCard, stateName, stateWhy } from "./StateCard";
-import MemoryNotebook from "./MemoryNotebook";
-import MemoryNetwork from "./memory/MemoryNetwork";
-import StudyPanel from "./memory/StudyPanel";
 import { milestoneText, whyText } from "./settings/RelationshipTab";
 import { CHANGE_FILTERS, chartSummary, deltaText, filterChanges, groupByDay, localDay, nextAnniversary, STATE_EMOJI, type ChangeFilter } from "../../mate/relationJournal";
 
-export type RelationLink = "relation" | "memory" | "network" | "study";
-const TABS: { id: RelationLink; icon: "heart" | "brain" | "network" | "book"; label: MsgKey }[] = [
-  { id: "relation", icon: "heart", label: "mateSettings.relTitle" },
-  { id: "memory", icon: "brain", label: "mateSettings.memTitle" },
-  { id: "network", icon: "network", label: "memgraph.tab" },
-  { id: "study", icon: "book", label: "memgraph.studyTab" },
-];
 
 const STAGE_DESC: Record<RelationStage, MsgKey> = {
   hostile: "mate.relPanelStageDescHostile",
@@ -55,15 +43,14 @@ const KIND_LABEL: Record<string, MsgKey> = {
 };
 const PAGE = 25;
 
-/** `onSettings`: Mate settings → 관계와 기억, where the relationship and her memory are set (this panel is for looking) */
-export default function RelationPanel({ mate, onClose, onSettings, initialTab = "relation" }: { mate: Mate; onClose: () => void; onSettings: () => void; initialTab?: RelationLink }) {
+/**
+ * Where you two are — the 관계 tab of her status window (stage/StatusWindow.tsx): the stage ring, affinity, mood, days
+ * together, what the next stage still needs, stats, 30 days of affinity, milestones and anniversaries, the change journal
+ * and her latest memories. It follows the server's pushes (mates.changed → the store). `onMemory`: her memories in full
+ * (the 기억 tab).
+ */
+export function RelationView({ mate, onMemory, className = "space-y-4", children }: { mate: Mate; onMemory: () => void; className?: string; children?: ReactNode }) {
   const t = useT();
-  const [tab, setTab] = useState<RelationLink>(initialTab);
-  // the other tab starts at its top
-  const body = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    body.current?.scrollTo(0, 0);
-  }, [tab]);
   const [j, setJ] = useState<RelationJournal | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -98,82 +85,47 @@ export default function RelationPanel({ mate, onClose, onSettings, initialTab = 
 
   const v = j?.relation;
   return (
-    <div className="flex h-full flex-col" data-testid="mate-relation-panel">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-        <Icon name="heart" size={15} className="text-content-faint" />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[14px] font-semibold">{t("mate.bondTitle")}</h2>
-          <p className="truncate text-[11px] text-content-faint">{t("mate.relPanelSub", { name: mate.name })}</p>
-        </div>
-        <button
-          onClick={onSettings}
-          className="btn-ghost shrink-0 !px-2.5 !py-1 text-[12px]"
-          title={t("mate.bondAdjust")}
-          aria-label={t("mate.bondAdjust")}
-          data-testid="mate-relation-panel-adjust"
-        >
-          <Icon name="sliders" size={13} /> <span className="hidden min-[400px]:inline">{t("mate.bondAdjust")}</span>
-        </button>
-        <button onClick={onClose} className="btn-ghost !px-2" aria-label={t("common.close")} data-testid="mate-relation-panel-close">
-          <Icon name="x" size={16} />
-        </button>
-      </div>
-      <ScrollRow className="shrink-0 gap-1 border-b border-border px-4 py-2" role="tablist" aria-label={t("mate.bondTitle")} watch={tab}>
-        {TABS.map(({ id, icon, label }) => (
-          <button type="button" role="tab" key={id} aria-selected={tab === id}
-            className={`shrink-0 whitespace-nowrap ${tab === id ? "btn-soft" : "btn-ghost"}`} data-testid={`bond-tab-${id}`} onClick={() => setTab(id)}>
-            <Icon name={icon} size={14} />
-            {t(label)}
-          </button>
-        ))}
-      </ScrollRow>
-      <div ref={body} className="fit-fields min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
-        <div className={`mx-auto space-y-4 pb-6 ${tab === "network" ? "max-w-6xl" : "max-w-xl"}`}>
-          {tab === "network" ? <MemoryNetwork key={mate.id} mate={mate} onStudy={() => setTab("study")} />
-          : tab === "study" ? <StudyPanel key={mate.id} mate={mate} />
-          : tab === "memory" ? <MemoryNotebook key={mate.id} mate={mate} onSettings={onSettings} /> : <>
-          {err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{t("mate.relPanelError", { error: err })}</p>}
-          {!j || !v ? (
-            !err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>
+    <div className={className} data-testid="mate-relation-panel">
+      {err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{t("mate.relPanelError", { error: err })}</p>}
+      {!j || !v ? (
+        !err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>
+      ) : (
+        <>
+          {!v.enabled ? (
+            <Card testId="mate-relation-panel-off">
+              <p className="text-[14px] font-semibold text-content">{t("mate.relPanelOffTitle")}</p>
+              <p className="mt-1 text-[12.5px] leading-relaxed text-content-dim">{t("mate.relPanelOffBody", { name: mate.name })}</p>
+              <button className="btn-primary mt-3 !py-1.5 text-[12.5px]" disabled={busy} onClick={() => void turnOn({ enabled: true })} data-testid="mate-relation-panel-turn-on">
+                {busy && <Icon name="spinner" size={13} spin />} {t("mate.relPanelTurnOn")}
+              </button>
+            </Card>
           ) : (
             <>
-              {!v.enabled ? (
-                <Card testId="mate-relation-panel-off">
-                  <p className="text-[14px] font-semibold text-content">{t("mate.relPanelOffTitle")}</p>
-                  <p className="mt-1 text-[12.5px] leading-relaxed text-content-dim">{t("mate.relPanelOffBody", { name: mate.name })}</p>
-                  <button className="btn-primary mt-3 !py-1.5 text-[12.5px]" disabled={busy} onClick={() => void turnOn({ enabled: true })} data-testid="mate-relation-panel-turn-on">
-                    {busy && <Icon name="spinner" size={13} spin />} {t("mate.relPanelTurnOn")}
+              {v.paused && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-warning/30 bg-warning/[0.07] px-3 py-2.5" data-testid="mate-relation-panel-paused">
+                  <Icon name="pause" size={14} className="shrink-0 text-warning" />
+                  <div className="min-w-0 flex-1 basis-48">
+                    <p className="text-[12.5px] font-medium text-warning">{t("mate.relPanelPausedTitle")}</p>
+                    <p className="text-[11.5px] text-content-dim">{t("mate.relPanelPausedBody")}</p>
+                  </div>
+                  <button className="btn-soft shrink-0 !py-1 text-[12px]" disabled={busy} onClick={() => void turnOn({ paused: false })} data-testid="mate-relation-panel-resume">
+                    <Icon name="play" size={12} /> {t("mate.relPanelResume")}
                   </button>
-                </Card>
-              ) : (
-                <>
-                  {v.paused && (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-warning/30 bg-warning/[0.07] px-3 py-2.5" data-testid="mate-relation-panel-paused">
-                      <Icon name="pause" size={14} className="shrink-0 text-warning" />
-                      <div className="min-w-0 flex-1 basis-48">
-                        <p className="text-[12.5px] font-medium text-warning">{t("mate.relPanelPausedTitle")}</p>
-                        <p className="text-[11.5px] text-content-dim">{t("mate.relPanelPausedBody")}</p>
-                      </div>
-                      <button className="btn-soft shrink-0 !py-1 text-[12px]" disabled={busy} onClick={() => void turnOn({ paused: false })} data-testid="mate-relation-panel-resume">
-                        <Icon name="play" size={12} /> {t("mate.relPanelResume")}
-                      </button>
-                    </div>
-                  )}
-                  <Hero j={j} mate={mate} />
-                  <StateCard mate={mate} />
-                  <NextStage j={j} mate={mate} />
-                </>
+                </div>
               )}
-              <Stats j={j} />
-              <Chart j={j} />
-              <Milestones j={j} />
-              <Changes changes={j.changes} />
-              <Memories j={j} mate={mate} onManage={() => setTab("memory")} />
+              <Hero j={j} mate={mate} />
+              <StateCard mate={mate} />
+              <NextStage j={j} mate={mate} />
             </>
           )}
-          </>}
-        </div>
-      </div>
+          <Stats j={j} />
+          <Chart j={j} />
+          <Milestones j={j} />
+          <Changes changes={j.changes} />
+          <Memories j={j} mate={mate} onManage={onMemory} />
+        </>
+      )}
+      {children}
     </div>
   );
 }

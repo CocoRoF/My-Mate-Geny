@@ -75,7 +75,7 @@ const shot = async (page, name, el) => {
 async function openPanel(page, tab) {
   await page.goto(`${SERVER}/?view=mate`);
   await page.click('[data-testid=\"mate-status-open\"]'); await page.click('[data-testid=\"stage-status-more\"]');
-  await page.click(`[data-testid="bond-tab-${tab}"]`);
+  await page.click(`[data-testid="stage-status-tab-${tab}"]`);
 }
 
 async function main() {
@@ -168,7 +168,7 @@ async function main() {
     await page.waitForSelector('[data-testid="memory-graph-fullscreen"]', { state: "detached" });
 
     step("the Study tab: her notes, a running study live, a new topic and a page, curiosity");
-    await page.click('[data-testid="bond-tab-study"]');
+    await page.click('[data-testid="stage-status-tab-study"]');
     await page.waitForSelector('[data-testid="study-card"][data-state="done"]');
     await page.locator('[data-testid="study-card"][data-state="done"] button').first().click();
     await page.waitForSelector('[data-testid="study-summary"]');
@@ -197,7 +197,7 @@ async function main() {
       await p.waitForSelector('[data-testid="memory-network"] canvas');
       await sleep(1500);
       await shot(p, `10-network-${tag}`);
-      await p.click('[data-testid="bond-tab-study"]');
+      await p.click('[data-testid="stage-status-tab-study"]');
       await p.waitForSelector('[data-testid="study-card"]');
       await shot(p, `11-study-${tag}`);
       step(`screens: ${tag}`);

@@ -151,11 +151,11 @@ const NAV_BAR = 48;
     step("the heart opens her relationship");
     await page.click('[data-testid=\"mate-status-open\"]'); await page.click('[data-testid=\"stage-status-more\"]');
     await page.waitForSelector('[data-testid="mate-relation-panel"]');
-    await page.click('[data-testid="mate-relation-panel-close"]');
+    await page.click('[data-testid="stage-status-close"]');
 
     step("a value set by hand opens the locked outfit, with word of it on the screen");
     await page.click('[data-testid=\"mate-status-open\"]'); await page.click('[data-testid=\"stage-status-more\"]');
-    await page.click('[data-testid="mate-relation-panel-adjust"]');
+    await page.click('[data-testid="stage-status-settings"]');
     const set = page.locator('[data-testid="mate-relation-set"]');
     await set.waitFor();
     await page.locator('[data-testid="mate-relation-slider"]').evaluate((el) => {

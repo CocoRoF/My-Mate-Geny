@@ -40,8 +40,8 @@ import { sharedAuthStatus } from "../../api/admin";
 import { automated, GUIDE_SEEN_KEY, guideSeen, markGuideSeen } from "../../mate/guide";
 
 const MateSettings = lazy(() => import("./settings/MateSettings"));
-const RelationPanel = lazy(() => import("./RelationPanel"));
 const StatusWindow = lazy(() => import("./stage/StatusWindow"));
+import type { StatusTab } from "./stage/StatusWindow";
 const PlacesWindow = lazy(() => import("./stage/PlacesWindow"));
 const OutfitsWindow = lazy(() => import("./stage/OutfitsWindow"));
 const GamesWindow = lazy(() => import("./stage/GamesWindow"));
@@ -107,20 +107,28 @@ export default function MateView() {
   const touch = useTouchFirst();
   const short = useShortScreen();
   const keyboard = useKeyboardOpen();
-  // one panel slot: Mate settings or the ♥ panel (app-wide settings are Settings' own: openAppSettings)
-  const [panel, setPanel] = useState<"mate" | "relation" | null>(null);
+  // one panel slot: Mate settings (app-wide settings are Settings' own: openAppSettings). Her status — the relationship,
+  // her memories and all that is — is one window (StatusWindow), never a panel beside the conversation.
+  const [panel, setPanel] = useState<"mate" | null>(null);
   // her menu on the stage: one window at a time, over her (a sheet on a phone)
   const [stageWindow, setStageWindow] = useState<StageWindowKind | null>(null);
   const game = useGameView(mate);
   const [mateTab, setMateTab] = useState<"bond" | undefined>(undefined);
-  const [bondTab, setBondTab] = useState<"memory" | "relation">("relation");
+  // her status window: which tab it opens on (a link to her memories, the relationship), and a fresh one each time
+  const [statusTab, setStatusTab] = useState<StatusTab>("now");
+  const [statusSeq, setStatusSeq] = useState(0);
+  const openStatus = (tab: StatusTab) => {
+    setStatusTab(tab);
+    setStatusSeq((n) => n + 1);
+    setPanel(null);
+    setStageWindow("status");
+  };
   const mateOpen = panel === "mate";
   const settings = panel !== null;
   const closePanels = () => setPanel(null);
   const openMate = (tab?: SettingsTab) => {
     if (tab) {
-      setBondTab(tab);
-      setPanel("relation");
+      openStatus(tab);
       return;
     }
     setMateTab(undefined);
@@ -130,13 +138,16 @@ export default function MateView() {
     if (mateOpen) return setPanel(null);
     openMate();
   };
-  const openWindow = (k: StageWindowKind) => setStageWindow((w) => (w === k ? null : k));
+  const openWindow = (k: StageWindowKind) => {
+    if (k === "status" && stageWindow !== "status") return openStatus("now");
+    setStageWindow((w) => (w === k ? null : k));
+  };
   // a link from another window: the ♥ panel, or Mate settings → 관계와 기억 (settings-relation / settings-memory)
   useEffect(() => {
     const link = takeMatePanelLink();
     if (!link) return;
     if (link.mate) useMateStore.getState().setActive(link.mate);
-    if (link.panel === "relation") setPanel("relation");
+    if (link.panel === "relation") openStatus("relation");
     else {
       setMateTab("bond");
       setPanel("mate");
@@ -582,20 +593,7 @@ export default function MateView() {
 
   const settingsPanel = settings && (
     <Suspense fallback={<PageLoading />}>
-      {mateOpen ? (
-        <MateSettings key={mateTab ?? ""} mate={mate} onClose={closePanels} initialTab={mateTab} onGuide={() => setGuide(mate.id)} onEdit={() => useStudio.getState().openEdit(mate.id)} />
-      ) : (
-        <RelationPanel
-          key={bondTab}
-          mate={mate}
-          onClose={closePanels}
-          initialTab={bondTab}
-          onSettings={() => {
-            setMateTab("bond");
-            setPanel("mate");
-          }}
-        />
-      )}
+      <MateSettings key={mateTab ?? ""} mate={mate} onClose={closePanels} initialTab={mateTab} onGuide={() => setGuide(mate.id)} onEdit={() => useStudio.getState().openEdit(mate.id)} />
     </Suspense>
   );
 
@@ -614,14 +612,17 @@ export default function MateView() {
     <Suspense fallback={null}>
       {stageWindow === "status" ? (
         <StatusWindow
-          key={mate.id}
+          key={`${mate.id}:${statusSeq}`}
           mate={mate}
           phone={compact}
+          wide={!compact}
+          initialTab={statusTab}
           onClose={closeWindow}
           onSay={say}
-          onRelation={() => {
+          onSettings={() => {
             closeWindow();
-            setPanel("relation");
+            setMateTab("bond");
+            setPanel("mate");
           }}
         />
       ) : stageWindow === "places" ? (

@@ -261,7 +261,7 @@ const offScreen = (page) =>
     await page.screenshot({ path: path.join(SHOTS, "mate-phone-header.png"), clip: { x: 0, y: 0, width: 360, height: 110 } });
     await page.click(TEST("mate-status-open")); await page.click(TEST("stage-status-more"));
     await page.waitForSelector(TEST("mate-relation-panel"));
-    await page.click(TEST("mate-relation-panel-close"));
+    await page.click(TEST("stage-status-close"));
 
     step("her wardrobe: a set larger than its tile stays inside it, the name stays readable");
     await page.click(TEST("mate-more"));
