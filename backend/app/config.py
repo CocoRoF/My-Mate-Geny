@@ -170,6 +170,10 @@ class Settings(BaseSettings):
     # Retry-After respected). false = no requests; cached / live numbers only.
     plan_usage_fetch: bool = True
 
+    # chats cut off from outside — a restart, a reboot, a crash, a dropped connection to the model — go on by
+    # themselves (app/services/turn_resume.py). false: they stay stopped (their Continue button); tests.
+    resume_cut_off: bool = True
+
     # her day's real world (app/mate/life/world.py): the weather where the user is (Open-Meteo) and their public holidays
     # (Nager.Date) — off: a made-up sky and weekends only (tests, no network)
     life_world: bool = True

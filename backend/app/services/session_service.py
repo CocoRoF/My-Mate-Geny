@@ -28,9 +28,11 @@ import os
 import re
 import time
 import traceback
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from app.mate.capture import CaptureError
+from app.config import settings
 from app.db import Database
 from app.providers import get_provider
 from app.providers.accounts import (
@@ -55,6 +57,8 @@ from app.providers.claude_engine import ClaudeEngine
 from app.higgsfield.agent import HiggsfieldAgent, clean_settings, session_settings
 from app.services._ids import new_id, now_iso
 from app.services.turn_cost import needs_normalizing, normalize_events
+from app.services.turn_resume import (BACKOFF, MAX_ATTEMPTS, WINDOW_S, TurnJournal, continue_prompt, cut_reason,
+                                      orphan_turns, wait_reachable)
 from app.services.history_aggregates import SessionAggregates
 from app.services.history_page import HistoryPager
 from app.services.context_handoff import build_blocks, catchup_preamble, handoff_preamble, ENGINE_LABEL
@@ -193,6 +197,15 @@ class SessionService:
             self._avatar_sids = {r["id"] for r in self._db.query("SELECT id FROM sessions WHERE kind = 'avatar'")}
         except Exception:  # noqa: BLE001 - very old test DBs
             pass
+        # Turns cut off from outside (a restart, a dropped connection) go on by themselves (services/turn_resume.py):
+        # the journal outlives the process; continues waiting to run, per chat; set once the server is going down.
+        self.journal = TurnJournal(db)
+        self._continues: dict[str, asyncio.Task] = {}
+        self._shutting_down = False
+        self._resumer: asyncio.Task | None = None
+        # the turns whose end (turn.complete / error) has been seen, still wrapping up: a shutdown then isn't a cut
+        self._turn_end_seen: dict[str, dict[str, Any]] = {}
+        self.auto_continue = settings.resume_cut_off
         # Engines don't survive a restart: tasks still marked running are gone.
         try:
             self._db.execute(
@@ -931,7 +944,11 @@ class SessionService:
             raise TurnBusyError("a turn is already running in this session")
         if sid in self.timeline.busy:
             raise TurnBusyError("this chat is being rewound")
+        if self._shutting_down:
+            raise TurnBusyError("the server is restarting")
         self.get(sid)
+        if (meta or {}).get("kind") != "resume":
+            self._cancel_continue(sid)  # (the user's own message takes over a continue still waiting)
         rows = (
             self._attachments.pending(sid, attachment_ids)
             if attachment_ids and self._attachments is not None
@@ -1088,16 +1105,24 @@ class SessionService:
         self._publish(sid, {"type": "run.state", "data": {"running": True}})
         outcome: dict[str, Any] = {"status": "error", "text": "", "error": None, "trigger": "turn",
                                    "input": (user_input or "")[:4000], "meta": meta}
+        resume = (meta or {}).get("kind") == "resume"
+        self._journal_begin(sid, "resume" if resume else "turn", "" if resume else user_input,
+                            attempt=int((meta or {}).get("attempt") or 0))
         try:
             async for ev in self.run_turn(sid, user_input, rows=rows, client_msg_id=client_msg_id, meta=meta):
                 _note_outcome(outcome, ev)
+                if ev.type in ("turn.complete", "error") and not ev.data.get("superseded"):
+                    self._turn_end_seen[sid] = {"type": ev.type, **ev.data}
                 self._publish(sid, ev.to_dict())
         except asyncio.CancelledError:
-            ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user",
-                                                   **self._stopped_spend(sid)})
-            _note_outcome(outcome, ev)
-            self._add_event(sid, ev)
-            self._publish(sid, ev.to_dict())
+            if self._shutting_down:
+                outcome.update(status="cut", error="server restart")  # (begin_shutdown has said so in the chat)
+            else:
+                ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user",
+                                                       **self._stopped_spend(sid)})
+                _note_outcome(outcome, ev)
+                self._add_event(sid, ev)
+                self._publish(sid, ev.to_dict())
         except Exception as exc:  # noqa: BLE001 - surface + log, never crash the loop
             self._log(
                 "error", "ws", f"chat turn crashed: {exc}", code="exec.turn.crashed",
@@ -1112,9 +1137,15 @@ class SessionService:
         finally:
             self._tasks.pop(sid, None)
             self._turn_meta.pop(sid, None)
-            self._record_result(sid, outcome)
-            self._publish(sid, {"type": "run.state", "data": {"running": False}})
-            self._turn_ended(sid, outcome)
+            self._turn_end_seen.pop(sid, None)
+            if self._shutting_down:
+                # cut off by the server going down: no result, no "done" call — it goes on once the server is back
+                pass
+            else:
+                self._record_result(sid, outcome)
+                self._publish(sid, {"type": "run.state", "data": {"running": False}})
+                self._after_turn(sid, outcome)
+                self._turn_ended(sid, outcome)
 
     async def run_turn(
         self,
@@ -1494,6 +1525,12 @@ class SessionService:
                             if note is not None:
                                 self._add_event(sid, note)
                                 yield note
+                        if not progressed and persistent:
+                            # The engine has this turn's message now (its transcript is written as it goes): should the
+                            # server die before the turn ends, the continue mustn't hand it over a second time.
+                            live = holder.get("slot")
+                            if live is not None and live.engine.cli_session_id:
+                                self._set_cli_session(sid, live.engine.cli_session_id, provider_name)
                         progressed = True
                     if ev.type in ("turn.complete", "error"):
                         changed = await self._changes_event(st)
@@ -1728,6 +1765,7 @@ class SessionService:
         ev.data = {**ev.data, "images": stored}
 
     async def _record_event(self, sid: str, ev: ProviderEvent, st: dict[str, Any]) -> None:
+        self.journal.beat(sid)  # (still running: how long ago a crash cut it off is known at startup)
         """Persist one turn event + side effects (assistant message, engine
         watermark, admin logs, artifact images)."""
         ctx = st["ctx"]
@@ -2206,7 +2244,7 @@ class SessionService:
     # ---- engine callbacks: auto turns, background tasks, live usage ----
 
     def _on_auto_turn(self, sid: str, stream: AsyncIterator[ProviderEvent], inbox: TurnInbox) -> None:
-        if sid in self.timeline.busy:  # (being rewound: whatever this turn would add, the rewind takes back)
+        if sid in self.timeline.busy or self._shutting_down:  # (being rewound: whatever this turn would add, the rewind takes back)
             asyncio.create_task(_drain_quietly(stream))
             return
         running = self._tasks.get(sid)
@@ -2250,6 +2288,7 @@ class SessionService:
             self._pool.begin_turn(slot.lease)  # an active turn on the engine's account
         self._publish(sid, {"type": "run.state", "data": {"running": True}})
         outcome: dict[str, Any] = {"status": "error", "text": "", "error": None, "trigger": "auto"}
+        self._journal_begin(sid, "auto", "")
         try:
             with contextlib.suppress(Exception):
                 st["changes"] = await self._snapshot_before(
@@ -2274,13 +2313,18 @@ class SessionService:
                         self._publish(sid, spent.to_dict())
                 await self._record_event(sid, ev, st)
                 _note_outcome(outcome, ev)
+                if ev.type in ("turn.complete", "error") and not ev.data.get("superseded"):
+                    self._turn_end_seen[sid] = {"type": ev.type, **ev.data}
                 self._publish(sid, ev.to_dict())
         except asyncio.CancelledError:
-            await self._report_changes(sid, st)
-            ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user"})
-            _note_outcome(outcome, ev)
-            self._add_event(sid, ev)
-            self._publish(sid, ev.to_dict())
+            if self._shutting_down:
+                outcome.update(status="cut", error="server restart")
+            else:
+                await self._report_changes(sid, st)
+                ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user"})
+                _note_outcome(outcome, ev)
+                self._add_event(sid, ev)
+                self._publish(sid, ev.to_dict())
         except Exception as exc:  # noqa: BLE001
             self._log("error", "ws", f"auto turn crashed: {exc}", code="exec.autoturn.crashed",
                       detail={"traceback": traceback.format_exc()}, session_id=sid)
@@ -2290,13 +2334,16 @@ class SessionService:
             if self._inboxes.get(sid) is inbox:
                 self._inboxes.pop(sid, None)
             self._tasks.pop(sid, None)
+            self._turn_end_seen.pop(sid, None)
             self.active_runs.pop(sid, None)
             self._report_outcome("claude", slot.lease if slot else None, st, ctx, sid, release=False)
             if self._pool is not None and slot is not None:
                 self._pool.end_turn(slot.lease)
-            self._record_result(sid, outcome)
-            self._publish(sid, {"type": "run.state", "data": {"running": False}})
-            self._turn_ended(sid, outcome)
+            if not self._shutting_down:
+                self._record_result(sid, outcome)
+                self._publish(sid, {"type": "run.state", "data": {"running": False}})
+                self._after_turn(sid, outcome)
+                self._turn_ended(sid, outcome)
 
     def _on_task(self, sid: str, task: dict[str, Any]) -> None:
         prev = self._db.query_one("SELECT status FROM bg_tasks WHERE session_id = ? AND task_id = ?",
@@ -2476,7 +2523,206 @@ class SessionService:
         so each chat's next turn starts the new binary (``--resume`` keeps the conversation)."""
         return await self._engines.retire_stale(reason)
 
+    # ---- turns cut off from outside go on by themselves (services/turn_resume.py)
+
+    def _journal_begin(self, sid: str, trigger: str, request: str, attempt: int = 0) -> None:
+        try:
+            provider = (self.active_runs.get(sid) or {}).get("provider") or self.get(sid).get("provider")
+            self.journal.begin(sid, trigger=trigger, provider=provider, request=request or "", attempt=attempt)
+        except Exception as exc:  # noqa: BLE001 - never a reason a turn can't run
+            self._log("warning", "resume", f"turn journal: {exc}", code="resume.journal_failed", session_id=sid)
+
+    def _resumable(self, sid: str) -> bool:
+        """Agent chats only: a mate's or an avatar's turns are of the moment, not work to finish."""
+        return not (self.is_mate_session(sid) or sid in self._avatar_sids)
+
+    def _after_turn(self, sid: str, outcome: dict[str, Any]) -> None:
+        """A turn ended on its own: nothing to continue — unless the connection to the model dropped (or its process
+        died) under it, then it goes on after a pause."""
+        try:
+            reason = transient_cut(outcome) if self._resumable(sid) and self.auto_continue else None
+            row = self.journal.get(sid) if reason else None
+            if reason is None or row is None:
+                self.journal.end(sid)
+                return
+            attempt = int(row.get("attempts") or 0) + 1
+            if attempt > MAX_ATTEMPTS[reason]:
+                self.journal.end(sid)
+                self._resume_notice(sid, "turn.resume_gave_up", "warning", reason=reason, attempts=attempt - 1)
+                return
+            self.journal.interrupt(sid, reason)
+            delay = BACKOFF[reason][min(attempt - 1, len(BACKOFF[reason]) - 1)]
+            self._schedule_continue(sid, reason, attempt, delay, detail=str(outcome.get("error") or "")[:200])
+        except Exception as exc:  # noqa: BLE001
+            self._log("warning", "resume", f"after a turn: {exc}", code="resume.after_failed", session_id=sid)
+
+    def _resume_notice(self, sid: str, code: str, level: str = "info", **data: Any) -> None:
+        messages = {
+            "turn.resume_scheduled": "The connection dropped — going on by itself in {delay} s",
+            "turn.resume_waiting": "Waiting for the connection to come back — it goes on by itself then",
+            "turn.resume_gave_up": "Stopped going on by itself after {attempts} tries — press Continue to try again",
+            "turn.resume_offline": "The connection didn't come back — press Continue when it has",
+        }
+        ev = ProviderEvent(type="notice", data={"level": level, "code": code,
+                                                "message": messages.get(code, code).format(**{k: data.get(k, "") for k in ("delay", "attempts")}),
+                                                **data})
+        with contextlib.suppress(Exception):
+            self._add_event(sid, ev)
+            self._publish(sid, ev.to_dict())
+
+    def _cancel_continue(self, sid: str) -> None:
+        task = self._continues.pop(sid, None)
+        if task is not None and not task.done():
+            task.cancel()
+
+    def _schedule_continue(self, sid: str, reason: str, attempt: int, delay: float, detail: str = "") -> None:
+        if self._shutting_down:
+            return
+        self._cancel_continue(sid)
+        if reason != "restart" and delay >= 5:
+            self._resume_notice(sid, "turn.resume_scheduled", reason=reason, delay=int(delay), attempt=attempt,
+                                max=MAX_ATTEMPTS[reason])
+        self._continues[sid] = asyncio.create_task(self._continue(sid, reason, attempt, delay, detail))
+
+    async def _continue(self, sid: str, reason: str, attempt: int, delay: float, detail: str) -> None:
+        me = asyncio.current_task()
+        try:
+            await asyncio.sleep(delay)
+            try:
+                provider = self.get(sid)["provider"]
+            except KeyError:
+                self.journal.end(sid)
+                return
+            online = await wait_reachable(provider, on_wait=lambda: self._resume_notice(sid, "turn.resume_waiting"))
+            if not online:
+                self.journal.end(sid)
+                self._resume_notice(sid, "turn.resume_offline", "warning")
+                return
+            if sid in self._tasks or self._shutting_down or not self.exists(sid):
+                return  # (the user's own turn took over: it starts a chain of its own)
+            self._seen_through_cut(sid)
+            self._log("info", "resume", f"continuing a chat cut off ({reason}, {attempt}/{MAX_ATTEMPTS[reason]})",
+                      code="resume.continue", detail={"reason": reason, "attempt": attempt}, session_id=sid)
+            self.start_turn(sid, continue_prompt(reason, attempt=attempt, detail=detail if reason != "restart" else ""),
+                            meta={"internal": True, "kind": "resume", "reason": reason, "attempt": attempt})
+        except asyncio.CancelledError:
+            pass
+        except TurnBusyError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            self._log("warning", "resume", f"could not continue: {exc}", code="resume.failed",
+                      detail={"traceback": traceback.format_exc()}, session_id=sid)
+        finally:
+            if self._continues.get(sid) is me:
+                self._continues.pop(sid, None)
+
+    def _seen_through_cut(self, sid: str) -> None:
+        """Before a continue: the engine has what the cut-off turn was given (its transcript is written as it goes)
+        when the turn got as far as working on it — so the catch-up doesn't hand the request over again. (Turns from
+        before the early watermark in _run_turn.)"""
+        session = self.get(sid)
+        provider = session["provider"]
+        own = self._cli_state(session).get(provider) or {}
+        start = self._db.query_one("SELECT id, created_at FROM events WHERE session_id = ? AND type = 'session.start'"
+                                   " ORDER BY id DESC LIMIT 1", (sid,))
+        if not own.get("id") or start is None or str(own.get("seen") or "") >= start["created_at"]:
+            return
+        worked = self._db.query_one(
+            "SELECT MAX(created_at) AS at FROM events WHERE session_id = ? AND id > ? AND type IN"
+            " ('tool.use', 'tool.result', 'text.delta', 'thinking.start')", (sid, start["id"]))
+        if worked is not None and worked["at"]:
+            state = self._cli_state(session)
+            state[provider] = {**own, "seen": worked["at"]}
+            self._db.execute("UPDATE sessions SET cli_sessions = ? WHERE id = ?", (json.dumps(state), sid))
+
+    async def begin_shutdown(self) -> None:
+        """The server is going down (first thing on the way: app/main.py): the running turns are marked cut off —
+        said in their chats, kept in the journal to go on once it's back — and ended now, before their engines die
+        under them (which would read as failures: an error, a "done" call, a failed badge)."""
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        for sid in list(self._continues):
+            self._cancel_continue(sid)  # (its journal row stays: it goes on after the restart instead)
+        running = list(self._tasks.items())
+        for sid, task in running:
+            with contextlib.suppress(Exception):
+                ended = self._turn_end_seen.get(sid)
+                if ended is not None:
+                    # (its answer is in; only the wrap-up was left: not cut off — unless it ended on a dropped
+                    # connection, which goes on after the restart instead of after its pause)
+                    reason = cut_reason(ended) if ended["type"] == "error" and self._resumable(sid) and self.auto_continue else None
+                    if reason:
+                        self.journal.interrupt(sid, reason)
+                    else:
+                        self.journal.end(sid)
+                    task.cancel()
+                    continue
+                if self._resumable(sid):
+                    self.journal.interrupt(sid, "restart")
+                    ev = ProviderEvent(type="error", data={
+                        "code": "turn.interrupted", "reason": "server",
+                        "message": "The server restarted — this goes on by itself once it's back",
+                        **self._stopped_spend(sid)})
+                else:
+                    self.journal.end(sid)
+                    ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "reason": "server",
+                                                           "message": "The server restarted"})
+                self._add_event(sid, ev)
+                self._publish(sid, ev.to_dict())
+            task.cancel()
+        if running:
+            await asyncio.wait([t for _, t in running], timeout=3)
+
+    def start_resumer(self, delay: float = 8.0) -> None:
+        """At startup: the turns the last run of the server cut off go on (after ``delay``: the rest of the app is
+        up first; one after another, a few seconds apart — each starts an engine)."""
+        if self.auto_continue:
+            self._resumer = asyncio.create_task(self._resume_cut_off(delay))
+
+    async def _resume_cut_off(self, delay: float) -> None:
+        try:
+            await asyncio.sleep(delay)
+            todo: list[tuple[str, str, int]] = []
+            seen: set[str] = set()
+            for row in self.journal.all():
+                sid = row["session_id"]
+                seen.add(sid)
+                reason = row.get("reason") if row.get("status") == "interrupted" and row.get("reason") else "restart"
+                attempt = int(row.get("attempts") or 0) + 1
+                if not self.exists(sid) or not self._resumable(sid) or turn_resume_age(row) > WINDOW_S:
+                    self.journal.end(sid)
+                    continue
+                if attempt > MAX_ATTEMPTS.get(reason, 3):
+                    self.journal.end(sid)
+                    self._resume_notice(sid, "turn.resume_gave_up", "warning", reason=reason, attempts=attempt - 1)
+                    continue
+                todo.append((sid, reason, attempt))
+            # chats cut off before the journal existed: their last turn started lately and never ended
+            for o in orphan_turns(self._db):
+                sid = o["session_id"]
+                if sid in seen or sid in self._tasks or not self._resumable(sid):
+                    continue
+                self.journal.begin(sid, trigger="turn", provider=self.get(sid).get("provider"))
+                self.journal.interrupt(sid, "restart")
+                todo.append((sid, "restart", 1))
+            for i, (sid, reason, attempt) in enumerate(todo):
+                if sid in self._tasks:
+                    continue
+                self.journal.interrupt(sid, reason)
+                self._log("info", "resume", f"a chat was cut off by the last restart: continuing ({attempt})",
+                          code="resume.found", detail={"reason": reason, "attempt": attempt}, session_id=sid)
+                self._schedule_continue(sid, reason, attempt, delay=i * 6.0)
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            self._log("error", "resume", f"resuming cut-off chats failed: {exc}", code="resume.startup_failed",
+                      detail={"traceback": traceback.format_exc()})
+
     async def shutdown(self) -> None:
+        await self.begin_shutdown()
+        if self._resumer is not None:
+            self._resumer.cancel()
         await self.remote_jobs.close()
         await self._engines.shutdown_all()
         if self._harness_reaper is not None:
@@ -2500,7 +2746,23 @@ def _note_outcome(outcome: dict[str, Any], ev: ProviderEvent) -> None:
             outcome["refused"] = True  # (a mate who chose not to answer: app.mate.trigger.silence.deliver_reply)
     elif ev.type == "error":
         stopped = ev.data.get("code") == "turn.interrupted"
-        outcome.update(status="stopped" if stopped else "error", error=ev.data.get("message") or ev.data.get("code"))
+        outcome.update(status="stopped" if stopped else "error", error=ev.data.get("message") or ev.data.get("code"),
+                       err={k: ev.data.get(k) for k in ("code", "message", "api_error")})
+
+
+def transient_cut(outcome: dict[str, Any]) -> str | None:
+    """A turn that failed because the model couldn't be reached (or its process died): "network" / "engine"."""
+    if outcome.get("status") != "error":
+        return None
+    return cut_reason(outcome.get("err"))
+
+
+def turn_resume_age(row: dict[str, Any]) -> float:
+    """Seconds since a journal row's turn last showed life."""
+    try:
+        return time.time() - datetime.fromisoformat(str(row.get("beat_at"))).timestamp()
+    except (TypeError, ValueError):
+        return float("inf")
 
 
 def _json_or_none(raw: Any) -> Any:

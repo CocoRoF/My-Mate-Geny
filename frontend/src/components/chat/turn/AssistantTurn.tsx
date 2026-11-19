@@ -94,7 +94,8 @@ function Footer({ turn }: { turn: Turn }) {
   const isLast = useChatStore((s) => s.turns[s.turns.length - 1]?.key === turn.key);
   const prevUser = useChatStore((s) => {
     if (s.turns[s.turns.length - 1]?.key !== turn.key) return null;
-    for (let j = s.turns.length - 2; j >= 0; j--) if (s.turns[j].role === "user") return s.turns[j];
+    // (the user's own request: a note the system sent — an automatic continue — isn't what Retry should send again)
+    for (let j = s.turns.length - 2; j >= 0; j--) if (s.turns[j].role === "user" && !s.turns[j].meta?.internal) return s.turns[j];
     return null;
   });
   const isStreaming = useChatStore((s) => s.isStreaming);
@@ -115,7 +116,11 @@ function Footer({ turn }: { turn: Turn }) {
   ].filter(Boolean);
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-[10.5px] text-content-faint">
-      {turn.status === "interrupted" && <span className="pill bg-surface-3 text-content-dim">{t("turn.stopped")}</span>}
+      {turn.status === "interrupted" && (
+        <span className="pill bg-surface-3 text-content-dim" data-testid="turn-stopped">
+          {turn.error?.reason === "server" ? t("turn.cutByRestart") : t("turn.stopped")}
+        </span>
+      )}
       <span className="font-mono">{parts.join(" · ")}</span>
       <TurnCost turn={turn} />
       {turn.endedAt ? (

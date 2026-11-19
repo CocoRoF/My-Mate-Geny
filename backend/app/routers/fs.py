@@ -14,8 +14,8 @@ remote paths go over SFTP through the connection's connector.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import codecs
+import contextlib
 import mimetypes
 import os
 import posixpath

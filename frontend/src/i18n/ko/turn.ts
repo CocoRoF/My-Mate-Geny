@@ -53,6 +53,7 @@ const ko: Messages<"turn"> = {
   toolsN: "도구 {count}개",
   failedN: "{count}개 실패",
   stopped: "중지됨",
+  cutByRestart: "서버 재시작으로 끊김",
   failed: "실패",
   retryTitle: "같은 메시지를 다시 보내요",
   continue: "계속",

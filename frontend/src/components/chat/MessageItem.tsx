@@ -27,6 +27,23 @@ export default memo(function MessageItem({ turn }: { turn: Turn }) {
       </div>
     );
   }
+  if (turn.role === "user" && turn.meta?.internal && turn.meta?.kind === "resume") {
+    // (a chat cut off by a restart or a dropped connection, going on by itself: backend services/turn_resume.py —
+    // the note the agent was sent isn't something the user said)
+    const reason = String(turn.meta?.reason || "restart");
+    return (
+      <div className="flex items-center gap-3 py-1 text-[11.5px] text-content-faint animate-fade-in" data-testid="resume-turn">
+        <span className="h-px flex-1 bg-border" />
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="refresh" size={12} />
+          {tr(reason === "network" ? "chat.resumeNetwork" : reason === "engine" ? "chat.resumeEngine" : "chat.resumeRestart", {
+            n: Number(turn.meta?.attempt) || 1,
+          })}
+        </span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+    );
+  }
   if (turn.role === "user" && turn.meta?.hidden) return null; // (the user deleted it)
   if (turn.role === "user") {
     const atts = turn.attachments || [];

@@ -11,5 +11,10 @@ export function noticeText(code: string | undefined, data: Record<string, any> |
     const name = (useI18n.getState().lang === "ko" ? gift.ko || gift.en : gift.en || gift.ko) || String(data?.item ?? "");
     return tr("life.gaveNotice", { name: String(data?.name ?? ""), gift: name });
   }
+  // (backend services/turn_resume.py: a chat cut off from outside, going on by itself)
+  if (code === "turn.resume_scheduled") return tr("chat.resumeScheduled", { delay: Number(data?.delay) || 0 });
+  if (code === "turn.resume_waiting") return tr("chat.resumeWaiting");
+  if (code === "turn.resume_gave_up") return tr("chat.resumeGaveUp", { n: Number(data?.attempts) || 0 });
+  if (code === "turn.resume_offline") return tr("chat.resumeOffline");
   return message;
 }
