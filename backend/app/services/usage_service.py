@@ -14,14 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.db import Database
-from app.services.turn_cost import TurnCostNormalizer, engine_of, turn_cost
-
-
-def _tok(usage: dict, key: str) -> int:
-    try:
-        return int(usage.get(key, 0) or 0)
-    except (TypeError, ValueError):
-        return 0
+from app.services.turn_cost import Prices, TurnCostNormalizer, costed, engine_of, tokens as token_kinds
 
 
 class UsageService:
@@ -50,6 +43,7 @@ class UsageService:
         by_day: dict[str, dict] = defaultdict(lambda: {"turns": 0, "cost_usd": 0.0, "tokens": 0})
         recent: list[dict] = []
         norms: dict[str, TurnCostNormalizer] = defaultdict(TurnCostNormalizer)
+        prices = Prices(self._db)
 
         for r in rows:
             try:
@@ -63,16 +57,14 @@ class UsageService:
             # turn that still ran); plain errors carry no usage.
             if r["type"] == "error" and not data.get("cost_kind"):
                 continue
-            usage = data.get("usage") or {}
-            cost = turn_cost(data) or 0.0
-            inp = _tok(usage, "input_tokens")
-            out = _tok(usage, "output_tokens")
-            cread = _tok(usage, "cache_read_input_tokens")
-            cwrite = _tok(usage, "cache_creation_input_tokens")
+            model = data.get("model") or r["model"] or "unknown"
+            data = {**data, "provider": data.get("provider") or engine_of(model) or r["provider"], "model": model}
+            cost = costed(data, prices)[0] or 0.0
+            kinds = token_kinds(data.get("usage") or {})  # (Codex: its cached input split out of input)
+            inp, out, cread, cwrite = kinds["input"], kinds["output"], kinds["cache_read"], kinds["cache_write"]
             tokens = inp + out + cread + cwrite
             if r["type"] == "error" and not tokens and not cost:
                 continue
-            model = data.get("model") or r["model"] or "unknown"
             # The engine that ran THIS turn (recorded since engines can be
             # switched mid-chat); older turns are inferred from the model.
             provider = data.get("provider") or engine_of(model) or r["provider"] or "unknown"

@@ -81,17 +81,10 @@ def _usage_add(acc: dict[str, int], usage: Any) -> None:
     if not isinstance(usage, dict):
         return
 
-    def num(k: str) -> int:
-        try:
-            return int(float(usage.get(k) or 0))
-        except (TypeError, ValueError):
-            return 0
+    from app.services.turn_cost import tokens
 
-    out, inp, cread, cwrite = num("output_tokens"), num("input_tokens"), num("cache_read_input_tokens"), \
-        num("cache_creation_input_tokens")
-    if not cread and usage.get("cached_input_tokens") is not None:
-        cread = num("cached_input_tokens")
-        inp = max(0, inp - cread)
+    t = tokens(usage)
+    inp, cread, cwrite, out = t["input"], t["cache_read"], t["cache_write"], t["output"]
     acc["input_tokens"] += inp
     acc["cache_read_input_tokens"] += cread
     acc["cache_creation_input_tokens"] += cwrite

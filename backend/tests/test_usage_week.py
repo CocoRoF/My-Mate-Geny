@@ -30,8 +30,8 @@ def test_seven_days_source_models_tokens_cost_and_legacy_boundary(db,tmp_path):
 
 def test_local_calendar_zero_fill_unknown_cost_and_invalid_json(db,tmp_path):
  svc,atts,store,mates,_=_services(db);sid=svc.create(provider='codex',workspace_path=str(tmp_path))['id']
- event(svc,sid,'2026-10-27T15:01:00+00:00',provider='codex',cost_kind='none',usage={'output_tokens':3}) # Oct 28 KST included
- event(svc,sid,'2026-10-27T14:59:00+00:00',provider='codex',cost_kind='none',usage={'output_tokens':900})
+ event(svc,sid,'2026-10-27T15:01:00+00:00',provider='codex',model='gpt-unpriced',cost_kind='none',usage={'output_tokens':3}) # Oct 28 KST included
+ event(svc,sid,'2026-10-27T14:59:00+00:00',provider='codex',model='gpt-unpriced',cost_kind='none',usage={'output_tokens':900})
  db.execute("INSERT INTO events(session_id,seq,type,data,created_at) VALUES (?,0,'turn.complete','broken','2026-11-01')",(sid,))
  r=week(db,'Asia/Seoul',now=NOW);assert r['total']['tokens']==3 and r['total']['unknown_cost_turns']==1
  assert r['daily'][0]['day']=='2026-10-28' and r['daily'][0]['chat']['tokens']==3
@@ -45,3 +45,13 @@ def test_top_five_recorded_source_and_unbilled_errors(db,tmp_path):
  r=week(db,now=NOW);assert r['total']['turns']==7
  internal=r['sources'][2];assert [i['title'] for i in internal['items']]==['6','5','4','3','2']
  assert r['sources'][0]['turns']==0 and internal['share']==1
+
+
+def test_codex_turns_count_their_cache_apart_and_cost_what_their_tokens_would(db,tmp_path):
+ svc,atts,store,mates,_=_services(db);sid=svc.create(provider='codex',workspace_path=str(tmp_path))['id']
+ event(svc,sid,'2026-11-02T00:00:00+00:00',provider='codex',model='gpt-6.1-sol',cost_kind='none',
+       usage={'input_tokens':1_000_000,'cached_input_tokens':900_000,'output_tokens':10_000})
+ r=week(db,'UTC',now=NOW);t=r['total']
+ assert (t['input'],t['cache_read'],t['output'],t['tokens'])==(100_000,900_000,10_000,1_010_000)
+ assert t['unknown_cost_turns']==0 and t['cost_usd']==pytest.approx((100_000*2+900_000*0.1+10_000*10)/1e6)
+

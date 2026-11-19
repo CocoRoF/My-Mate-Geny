@@ -1738,6 +1738,13 @@ class SessionService:
         if ev.type in ("turn.complete", "error"):
             source = "mate" if sid in self._mate_sids else "internal" if sid in self._avatar_sids else "chat"
             ev.data = {**ev.data, "provider": st["provider"], "usage_source": source}  # numbers/enum only; no extra content copy
+            if st["provider"] == "codex" and ev.data.get("cost_kind") == "none" and ev.data.get("usage"):
+                # (Codex reports tokens, not cost: what they would cost on the API, at the model's price, when it has one)
+                from app.services.turn_cost import Prices, estimate
+
+                est = estimate(ev.data, Prices(self._db)(ev.data.get("model") or st["model"]))
+                if est is not None:
+                    ev.data = {**ev.data, "cost_usd": round(est, 6), "cost_kind": "estimated"}
         elif ev.type == "session.start":
             # Which account ran this turn — kept with the chat, so it's auditable.
             ev.data = {**ev.data, "account": ctx.get("account"), "account_id": ctx.get("account_id")}

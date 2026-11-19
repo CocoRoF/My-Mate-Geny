@@ -9,8 +9,12 @@ are never copied into aggregation. The result is not a second ledger and does no
 
 Input + output + cache-read + cache-write tokens define the ratios. Costs use the same TurnCostNormalizer as
 history and the session panel. Legacy cumulative Claude costs are primed with preceding terminal events before
-slicing the window; existing historical best-effort limits still apply. Codex/unreported costs are unknown,
-not zero-priced subscription consumption. These token ratios cannot represent a provider's subscription quota.
+slicing the window; existing historical best-effort limits still apply. Codex reports tokens, not cost: its
+cached input is inside `input_tokens` (`cached_input_tokens`) and is split out as cache-read (`turn_cost.tokens`,
+the same split the chat shows), its sub-agents' tokens count for the turn that spawned them, and a Codex turn's
+API-equivalent is its tokens at the model's price (the OpenAI catalog's, else the list price; base rates, since a
+turn is many calls summed): recorded as `cost_kind: "estimated"` since 1.0, worked out on reading for older turns
+(`turn_cost.costed`). A model without a price stays unknown, never zero-priced subscription consumption. These token ratios cannot represent a provider's subscription quota.
 Top five is by tokens within its own category. Hover, focus/ArrowDown or tap opens a portal; Escape closes it.
 
 ## Parallel speech receipt and response deadlines
