@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { compareVersions, getDownloads } from "../../api/downloads";
+import { compareVersions, getDownloads, nativePlatform, versionFor } from "../../api/downloads";
 import { openSettings } from "../../stores/uiStore";
 import Icon from "../ui/Icon";
 import { useT } from "../../i18n";
 import { useNativeVersion } from "../../lib/nativeVersion";
 
-/** Inside the desktop/Android app: tell the user when a newer app build exists. */
+/** Inside the desktop/Android app: tell the user when a newer build of this app exists (its own platform's: each is
+ * published on its own, so another platform being ahead says nothing about this one). */
 export default function UpdateBanner() {
   const [latest, setLatest] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(() => {
@@ -21,7 +22,13 @@ export default function UpdateBanner() {
 
   useEffect(() => {
     if (!native) return;
-    const check = () => getDownloads().then((r) => r.available && r.version && setLatest(r.version)).catch(() => {});
+    const check = () =>
+      getDownloads()
+        .then((r) => {
+          const v = r.available ? versionFor(r, nativePlatform(), native.arch) : undefined;
+          if (v) setLatest(v);
+        })
+        .catch(() => {});
     check();window.addEventListener("geny:update-source-changed",check);
     const t = setInterval(check, 6 * 3600 * 1000);
     return () => {clearInterval(t);window.removeEventListener("geny:update-source-changed",check);};

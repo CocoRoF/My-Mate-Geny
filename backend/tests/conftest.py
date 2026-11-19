@@ -47,6 +47,47 @@ atexit.register(_clean)
 
 def pytest_unconfigure(config) -> None:  # (a pytest-xdist worker may end without running atexit)
     _clean()
+
+
+# ---- --shard i/n: CI runs the suite in parts side by side (.github/workflows/ci.yml, apps.yml). Whole files go to a
+# part, balanced by how long each took (tests/durations.json; a file not in it counts as a typical one) — every part
+# (and each of its xdist workers) works out the same split from the same files.
+def pytest_addoption(parser) -> None:
+    parser.addoption("--shard", default="", help="i/n (or 'backend i/n'): only the test files of part i of n")
+
+
+def _shards(files: list[str], n: int) -> dict[str, int]:
+    import json
+    from pathlib import Path
+
+    try:
+        known = json.loads((Path(__file__).parent / "durations.json").read_text())
+    except (OSError, ValueError):
+        known = {}
+    typical = sorted(known.values())[len(known) // 2] if known else 1.0
+    load = [0.0] * n
+    out = {}
+    for f in sorted(files, key=lambda f: (-known.get(f, typical), f)):
+        i = min(range(n), key=lambda k: (load[k], k))
+        out[f] = i
+        load[i] += known.get(f, typical)
+    return out
+
+
+def pytest_collection_modifyitems(config, items) -> None:
+    spec = (config.getoption("--shard") or "").split()[-1:]
+    if not spec:
+        return
+    try:
+        i, n = (int(x) for x in spec[0].split("/"))
+        assert 1 <= i <= n
+    except (ValueError, AssertionError):
+        raise pytest.UsageError(f"--shard: i/n, 1 ≤ i ≤ n (not {spec[0]!r})") from None
+    rel = {it: it.nodeid.split("::", 1)[0] for it in items}
+    part = _shards(sorted(set(rel.values())), n)
+    keep = [it for it in items if part[rel[it]] == i - 1]
+    config.hook.pytest_deselected(items=[it for it in items if part[rel[it]] != i - 1])
+    items[:] = keep
 # a fresh database every run: one left by an earlier run points at that run's MATES_ROOT (gone now)
 _default("DB_PATH", lambda: os.path.join(_temp("hrh_test_db_"), "hrh_test_app.db"))
 _default("UPLOADS_ROOT", lambda: _temp("hrh_test_uploads_"))

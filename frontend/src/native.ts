@@ -17,7 +17,7 @@ function toast(text: string) {
   setTimeout(() => el.remove(), 2000);
 }
 
-// Android shell (Capacitor) loads this console remotely; its native bridge is
+// The phone apps (Capacitor: Android, iOS) load this console remotely; their native bridge is
 // injected as window.Capacitor. We talk to native plugins through the
 // low-level bridge calls, so the web bundle needs no Capacitor packages.
 // (The desktop shell injects window.hrhNative itself via its preload.)
@@ -27,8 +27,10 @@ export function installNativeBridge(): void {
   const call = (plugin: string, method: string, options: Record<string, unknown> = {}) =>
     cap.nativePromise(plugin, method, options) as Promise<any>;
 
+  // (iOS has the shell, notifications and the app's state; calls, the APK, Geny Net and the back button are Android's)
+  const os = cap.getPlatform?.() === "ios" ? "ios" : "android";
   const bridge: NonNullable<Window["hrhNative"]> = {
-    platform: "android",
+    platform: os,
     version: "0.0.0",
     notify: (title: string, body: string) => {
       call("LocalNotifications", "schedule", {
@@ -40,7 +42,7 @@ export function installNativeBridge(): void {
     },
   };
   window.hrhNative = bridge;
-  document.documentElement.classList.add("native-android");
+  document.documentElement.classList.add("native-app", `native-${os}`);
 
   // (it may answer after the first render: what shows the version listens — lib/nativeVersion.ts)
   call("App", "getInfo")
@@ -59,7 +61,8 @@ export function installNativeBridge(): void {
   }
 
   // Back: close the top overlay, else the previous screen (lib/nav.ts); at the first screen a second press
-  // within 2 s leaves — to the background, the session stays warm.
+  // within 2 s leaves — to the background, the session stays warm. (Android's button: iOS has none.)
+  if (os !== "android") return;
   let armedAt = 0;
   cap.nativeCallback("App", "addListener", { eventName: "backButton" }, () => {
     if (goBack()) return;

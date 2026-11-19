@@ -230,6 +230,13 @@
       showPair(false);
       status("", "");
     };
+    // (Geny Net — pairing with the desktop app through the phone's own proxy — is the Android app's: elsewhere, sign-in only)
+    var hasNet = !!(win.Capacitor && typeof win.Capacitor.isPluginAvailable === "function" && win.Capacitor.isPluginAvailable("GenyNet"));
+    if (!hasNet) {
+      $("scan").hidden = true;
+      var or = doc.querySelector(".or");
+      if (or) or.hidden = true;
+    }
     $("scan").onclick = function () {
       if (busy) return;
       net.scan().then(function (r) {

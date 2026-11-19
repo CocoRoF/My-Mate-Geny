@@ -155,6 +155,7 @@ if(surface==="console"&&location.protocol==="http:"){
 contextBridge.exposeInMainWorld("hrhNative", {
   setup: {state:()=>ipcRenderer.invoke("setup:state"),seen:()=>ipcRenderer.invoke("setup:seen"),complete:()=>ipcRenderer.invoke("setup:complete")},
   platform: `desktop-${process.platform}`,
+  arch: process.arch,
   version: arg("hrh-version") || "0.0.0",
   // which window this page is in: console | mate-overlay | mate-quick | mate-chat | bar
   surface,
@@ -210,6 +211,7 @@ contextBridge.exposeInMainWorld("hrhNative", {
     source:()=>ipcRenderer.invoke('update:source'),
     setSource:value=>ipcRenderer.invoke('update:setSource',value),
     catalog:refresh=>ipcRenderer.invoke('update:catalog',refresh===true),
+    phoneLink:name=>ipcRenderer.invoke('update:phoneLink',String(name||'')),
     onSourceChanged:cb=>listen('update:sourceChanged',cb),
     getState: () => ipcRenderer.invoke("update:state"),
     check: () => ipcRenderer.invoke("update:check"),

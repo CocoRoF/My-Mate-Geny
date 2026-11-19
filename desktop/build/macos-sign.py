@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Developer ID signing and notarization of the macOS app, so Gatekeeper opens it and it can update itself.
 
+    macos-sign.py all --version 1.1.1 --arch arm64     sign the .app, make the .dmg from it, notarize ONCE (the .dmg: Apple's
+                                                       ticket covers the app inside), staple both, zip the app for the
+                                                       updater — what the release workflow runs
     macos-sign.py app --version 0.4.80 --arch arm64    sign, try it, notarize, staple the .app; zip it for the updater
     macos-sign.py dmg --version 0.4.80 --arch arm64    sign, notarize, staple the .dmg made from it
 
@@ -184,10 +187,10 @@ class Signer:
             raise SystemExit(f"notarization: {status}\n{log.stdout[:20000]}\n{log.stderr}")
 
     @staticmethod
-    def staple(path: Path) -> None:
+    def staple(path: Path, tries: int = TRIES * 2) -> None:
         """Both ask Apple's servers: the ticket can take a moment to be there, and the connection does drop."""
         said = ""
-        for attempt in range(TRIES * 2):
+        for attempt in range(tries):
             if attempt:
                 time.sleep(30)
             for action in ("staple", "validate"):
@@ -240,6 +243,44 @@ def do_app(directory: Path, version: str, arch: str) -> None:
     print(f"APP_SIGNED {zipped} ({zipped.stat().st_size} bytes)", flush=True)
 
 
+def do_all(directory: Path, version: str, arch: str) -> None:
+    """One notarization instead of two (each one uploads ~530 MB and waits on Apple: about 4–6 min on the runners). The
+    app inside a notarized disk image gets its own ticket, so after the image's the app is stapled as well; should Apple
+    not hand that one out, the app is notarized on its own as before."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("macos_dmg", HERE / "macos-dmg.py")
+    dmg_tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dmg_tool)  # type: ignore[union-attr]
+    app = app_path(directory, arch)
+    if not (app / "Contents/Resources/app-update.yml").is_file():
+        raise SystemExit("No app-update.yml in the app: it could not update itself (build/after-pack.js writes it)")
+    precompile(app)
+    with Signer() as signer:
+        signer.sign_app(app)
+        try_it(app)
+        dmg = dmg_tool.build(directory, version, arch)
+        signer.sign(dmg, entitlements=False)
+        signer.notarize(dmg)
+        signer.staple(dmg)
+        try:
+            signer.staple(app, tries=4)
+        except SystemExit as no_ticket:
+            print(f"APP_TICKET_MISSING ({str(no_ticket)[:200]}): notarizing the app on its own", flush=True)
+            with tempfile.TemporaryDirectory(prefix="mac-zip-") as temp:
+                upload = Path(temp) / "notarize.zip"
+                run("ditto", "-c", "-k", "--keepParent", app, upload)
+                signer.notarize(upload)
+            signer.staple(app)
+    run("spctl", "--assess", "--type", "execute", "-vv", app)
+    run("spctl", "--assess", "--type", "open", "--context", "context:primary-signature", "-vv", dmg)
+    zipped = directory / f"my-mate-geny-{version}-macos-{arch}.zip"
+    run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, zipped)
+    # (this architecture's update feed, of the stapled files: apps_publish.py puts it up the moment they are)
+    feed = dmg_tool.write_feed(directory, version, arch)
+    print(f"ALL_SIGNED {zipped.name} {dmg.name} {feed.name}", flush=True)
+
+
 def do_dmg(directory: Path, version: str, arch: str) -> None:
     dmg = directory / f"my-mate-geny-{version}-macos-{arch}.dmg"
     if not dmg.is_file():
@@ -254,11 +295,11 @@ def do_dmg(directory: Path, version: str, arch: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("what", choices=("app", "dmg"))
+    parser.add_argument("what", choices=("all", "app", "dmg"))
     parser.add_argument("--version", required=True)
     parser.add_argument("--arch", required=True, choices=("arm64", "x64"))
     parser.add_argument("--directory", type=Path, default=Path("dist"))
     args = parser.parse_args()
     if sys.platform != "darwin":
         raise SystemExit("Signing requires macOS")
-    (do_app if args.what == "app" else do_dmg)(args.directory.resolve(), args.version, args.arch)
+    {"all": do_all, "app": do_app, "dmg": do_dmg}[args.what](args.directory.resolve(), args.version, args.arch)

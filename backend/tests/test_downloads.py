@@ -123,3 +123,35 @@ def test_update_feed_files_by_name(monkeypatch, tmp_path):
     for bad in ("notes.txt", "../latest.yml", "latest-win.yml", "x/../../etc/passwd", ""):
         with pytest.raises(KeyError):
             svc.update_path(bad)
+
+
+def test_each_platform_has_its_own_version_and_ios_is_testflight(monkeypatch, tmp_path):
+    """Each platform is published the moment it is built: each file says its version; iOS is ios.json (TestFlight)."""
+    import json as _json
+
+    from app.config import settings
+    monkeypatch.setattr(settings, "github_token", "t")
+    monkeypatch.setattr(settings, "apps_repo", "o/r")
+
+    def asset(i, name):
+        return {"id": i, "name": name, "size": 3, "updated_at": "2026-11-19T10:00:00Z", "state": "uploaded"}
+
+    rel = {"tag_name": "apps-latest", "body": "", "assets": [
+        asset(1, "my-mate-geny-1.1.3-windows-x64-setup.exe"),
+        asset(2, "my-mate-geny-1.1.2-macos-arm64.dmg"),
+        asset(3, "my-mate-geny-1.1.3-android.apk"),
+        asset(4, "ios.json"),
+    ]}
+    svc = DownloadService()
+    monkeypatch.setattr(svc, "_get", lambda url: rel)
+    ios = tmp_path / "ios.json"
+    ios.write_text(_json.dumps({"version": "1.1.3", "build": "190", "testflight": "https://testflight.apple.com/join/AbCd1234"}))
+    monkeypatch.setattr(svc, "_cached", lambda a: (ios, a["name"]))
+    out = svc.latest()
+    assert {a["platform"]: a["version"] for a in out["assets"]} == {"windows": "1.1.3", "macos": "1.1.2", "android": "1.1.3"}
+    assert out["version"] == "1.1.3"
+    assert out["ios"]["version"] == "1.1.3" and out["ios"]["testflight"] == "https://testflight.apple.com/join/AbCd1234"
+    # (only Apple's TestFlight links: nothing else goes into a QR code)
+    ios.write_text(_json.dumps({"version": "1.1.4", "testflight": "https://evil.example/x"}))
+    svc._meta = None
+    assert svc.latest(force=True)["ios"]["testflight"] == ""

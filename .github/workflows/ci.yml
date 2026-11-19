@@ -1,4 +1,5 @@
-# Backend tests + web console typecheck/build on every push and PR.
+# Tests and builds on every push to main and every PR — each part only when something it checks changed (the changes
+# job), so a UI change doesn't wait on the backend's tests, nor a backend change on the UI's build.
 name: ci
 
 on:
@@ -8,14 +9,75 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read # (the changes job reads a PR's files)
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  UV_VERSION: '0.13.6'
+
 jobs:
-  backend:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.f.outputs.backend }}
+      avatar: ${{ steps.f.outputs.avatar }}
+      frontend: ${{ steps.f.outputs.frontend }}
+      desktop: ${{ steps.f.outputs.desktop }}
+      mobile: ${{ steps.f.outputs.mobile }}
+      ios: ${{ steps.f.outputs.ios }}
+      compose: ${{ steps.f.outputs.compose }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            ci: &ci
+              - .github/workflows/ci.yml
+            backend:
+              - *ci
+              - backend/**
+            avatar:
+              - *ci
+              - backend/app/avatar/**
+              - backend/tests/test_avatar.py
+              - backend/pyproject.toml
+            frontend:
+              - *ci
+              - frontend/**
+            desktop:
+              - *ci
+              - desktop/**
+            mobile:
+              - *ci
+              - mobile/**
+            ios:
+              - *ci
+              - mobile/ios/**
+              - mobile/package.json
+              - mobile/package-lock.json
+              - mobile/capacitor.config.json
+            compose:
+              - *ci
+              - docker-compose*.yml
+              - deploy/**
+              - Dockerfile*
+              - backend/Dockerfile*
+              - frontend/Dockerfile*
+
+  # In three parts side by side (tests/conftest.py --shard, balanced by tests/durations.json), each on all its cores
+  backend:
+    name: backend (${{ matrix.part }})
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1/3, 2/3, 3/3]
     defaults:
       run:
         working-directory: backend
@@ -24,12 +86,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e '.[dev]'
-      - run: python -m pytest -q -p no:cacheprovider -n auto
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/pyproject.toml
+      - run: uv pip install --system -e '.[dev]'
+      - run: python -m pytest -q -p no:cacheprovider -n auto --shard "${{ matrix.part }}"
 
   # The app's stdio MCP servers on Windows, started as the app starts them (backend/tests/test_stdio_bridges.py): a pipe there
   # is the system's code page, not UTF-8. Stdlib + pytest only, no app import.
   bridges-windows:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -44,6 +113,8 @@ jobs:
 
   # The avatar pipeline runs in a venv of its own (app/avatar/deps.py), so the job above skips it: cut-outs are checked here.
   avatar-processing:
+    needs: changes
+    if: needs.changes.outputs.avatar == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -53,16 +124,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e '.[dev]'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/pyproject.toml
+      - run: uv pip install --system -e '.[dev]'
       - run: |
-          python -m venv /tmp/avatar-venv
-          /tmp/avatar-venv/bin/pip install "numpy<3" scipy "opencv-python-headless<5" pillow imageio-ffmpeg
+          uv venv -q --python "$(command -v python)" /tmp/avatar-venv
+          uv pip install -q --python /tmp/avatar-venv/bin/python "numpy<3" scipy "opencv-python-headless<5" pillow imageio-ffmpeg
           touch /tmp/avatar-venv/ready.json
       - run: python -m pytest -q -p no:cacheprovider tests/test_avatar.py -k "alpha_recovery or end_to_end or steady_edges or what_she_holds or loose_strand or edge_matte"
         env:
           AVATAR_TEST_VENV: /tmp/avatar-venv
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -76,11 +154,85 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npx tsc -p . --noEmit
-      # the mate's reply rendering + speech preprocessing (node's test runner, TS types stripped)
+      # the mate's reply rendering + speech preprocessing (node's test runner, TS types stripped), and every string in
+      # both languages
       - run: npm run test:unit
+      - run: npm run test:i18n
       - run: npm run build
 
+  # The desktop app's own logic (server address, sign-in, updates, the local runtime's manager): node's test runner
+  desktop:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1" # (the tests don't start Electron)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+
+  mobile:
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+
+  # The iOS app compiles (the Swift side: GenyServer.swift with Capacitor), for the simulator, unsigned
+  ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          X="$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -vi beta | sort -V | tail -1)"
+          [ -n "$X" ] && sudo xcode-select -s "$X"
+          xcodebuild -version
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx cap sync ios
+      - uses: actions/cache@v4
+        with:
+          path: mobile/ios/App/.spm
+          key: spm-${{ runner.os }}-${{ hashFiles('mobile/ios/App/CapApp-SPM/Package.swift', 'mobile/package-lock.json') }}
+      - run: |
+          set -o pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -clonedSourcePackagesDirPath ios/App/.spm -derivedDataPath "$RUNNER_TEMP/dd" \
+            build CODE_SIGNING_ALLOWED=NO | tail -25
+
   compose:
+    needs: changes
+    if: needs.changes.outputs.compose == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

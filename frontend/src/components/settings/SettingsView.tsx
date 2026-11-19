@@ -33,7 +33,7 @@ import {
   type AuthStatus,
 } from "../../api/admin";
 import { signOutHere } from "../../lib/authNavigation";
-import { compareVersions, getDownloads, type AppRelease } from "../../api/downloads";
+import { compareVersions, getDownloads, nativePlatform, versionFor, type AppRelease } from "../../api/downloads";
 import { LANGS, useLang, useT, type Lang, type MsgKey, type TFunction, type Vars } from "../../i18n";
 import { relTime } from "../../i18n/format";
 import { chooseLanguage } from "../../i18n/sync";
@@ -194,8 +194,9 @@ function useRelease(): [AppRelease | null, boolean, () => void] {
 
 function AppRow({ label, version, rel, busy, onCheck }: { label: string; version: string; rel: AppRelease | null; busy: boolean; onCheck: () => void }) {
   const t = useT();
-  // (version "" while the app has not said it yet: nothing to compare)
-  const newer = !!version && !!rel?.version && compareVersions(rel.version, version) > 0;
+  // (version "" while the app has not said it yet: nothing to compare; this app's own platform's newest build)
+  const latest = versionFor(rel, nativePlatform(), window.hrhNative?.arch);
+  const newer = !!version && !!latest && compareVersions(latest, version) > 0;
   const open = openDownloads;
   return (
     <div className="space-y-2" data-testid="settings-app-update">
@@ -214,7 +215,7 @@ function AppRow({ label, version, rel, busy, onCheck }: { label: string; version
       >
         <span className="font-mono" data-testid="settings-app-version">{t("settings.appVersion", { version: version || "…" })}</span>
       </Row>
-      {rel && !busy && version && (newer ? <Status tone="warn">{t("settings.appAvailable", { version: rel.version! })}</Status> : rel.version ? <Status tone="ok">{t("settings.appLatest")}</Status> : <Status tone="info">{t("settings.appNoRelease")}</Status>)}
+      {rel && !busy && version && (newer ? <Status tone="warn">{t("settings.appAvailable", { version: latest! })}</Status> : latest ? <Status tone="ok">{t("settings.appLatest")}</Status> : <Status tone="info">{t("settings.appNoRelease")}</Status>)}
     </div>
   );
 }

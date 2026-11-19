@@ -70,6 +70,17 @@ export default {
   noteLinux2: "Debian/Ubuntu: {cmd} — adds it to your app menu.",
   noteAndroid1: "Open the APK on the phone. Android asks to allow installs from your browser/files app once — allow it, then install.",
   noteAndroid2: "Updates: in the app, Download shows the progress and then opens the installer; it installs over the previous version (same signing key), keeping your login.",
+  subIos: "iOS · iPadOS 15+ · via TestFlight",
+  noteIos1: "Install Apple's TestFlight app first, then open the link (or scan the code) — My Mate Geny installs from there.",
+  noteIos2: "Updates: TestFlight offers each new build by itself; your server and login stay.",
+  testflight: "Get it on TestFlight",
+  testflightSub: "build {build} · opens TestFlight",
+  iosNoLink: "The iPhone app is being prepared on TestFlight — check back soon.",
+  scanHintIos: "Scan with your iPhone's camera to open the TestFlight link.",
+  phoneShow: "Get it on my phone",
+  phoneHintLan: "Scan with a phone on the same Wi-Fi as this computer — the app comes straight from here (the link works for 30 minutes).",
+  phoneNoLan: "This computer is not on a network a phone can reach (Wi-Fi or LAN).",
+  phoneFailed: "Couldn't make a link for the phone — try again.",
 
   // ---- download progress card
   readyToInstall: "Downloaded — ready to install",
@@ -84,7 +95,7 @@ export default {
 
   // ---- page
   title: "Get My Mate Geny",
-  intro: "The same console as a native app for desktop and Android — notifications, its own window, your login kept, and on the desktop your mate on top of your screen with a quick-chat shortcut. The apps load this console live, so UI updates reach them instantly; new app builds are published here automatically from every push.",
+  intro: "The same console as a native app for desktop, Android and iPhone — notifications, its own window, your login kept, and on the desktop your mate on top of your screen with a quick-chat shortcut. The apps load this console live, so UI updates reach them instantly; new app builds are published here automatically from every push.",
   iosHint: "iPhone/iPad: open this site in Safari → Share → “Add to Home Screen” for an app-like console.",
   releaseVersion: "Version {version}",
   builtFrom: "built from {commit}",

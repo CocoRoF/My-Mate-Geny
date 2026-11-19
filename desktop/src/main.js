@@ -639,6 +639,8 @@ ipcMain.handle("update:install", (e) => (fromAppPage(e) ? updater.install() : nu
 ipcMain.handle("update:retry", (e) => (fromAppPage(e) ? updater.retry() : null));
 ipcMain.handle("update:source",e=>fromAppPage(e)?updateSource.config():null);
 ipcMain.handle("update:catalog",(e,refresh)=>fromAppPage(e)?updateSource.catalog(refresh===true):null);
+// (the Download page's QR for a phone on the same Wi-Fi: the Android app from this computer, for half an hour)
+ipcMain.handle("update:phoneLink",(e,name)=>fromAppPage(e)?updateSource.phoneLink(String(name||"")):null);
 ipcMain.handle("update:setSource",async(e,value)=>{
   if(!fromAppPage(e))return null;
   if(!updater.reset())throw Error('sourceBusy');

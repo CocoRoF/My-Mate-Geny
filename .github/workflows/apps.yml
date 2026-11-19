@@ -1,11 +1,17 @@
-# Native apps: desktop (Windows / macOS / Linux, Electron) + Android (Capacitor).
-# Server-connected apps load the live console. Local desktop execution bundles
-# the backend and UI, so source changes also rebuild the native packages. The
-# platform-independent UI is built once and shared for one day. Final packages
-# upload straight to a GitHub Release; the Download page serves the rolling
-# `apps-latest` release. Artifacts are named `my-mate-geny-<version>-…` since
-# 0.3 (formerly `hr-harnessor-…`; backend/app/services/downloads.py matches
-# both by suffix, so the swap is seamless).
+# Native apps: desktop (Windows / macOS / Linux, Electron), Android and iOS (Capacitor) — docs/apps.md "Releases".
+#
+# Each platform is built and published on its own (.github/scripts/apps_publish.py): the moment its build is done it goes
+# into this run's release (apps-v<version>) and into the rolling `apps-latest` the Download page and the desktop's own
+# updater read. A slow macOS build never holds the others back, and the Download page shows each platform's own version.
+#
+# A push builds only the platforms something they are made of changed for since their newest published build
+# (.github/scripts/apps_plan.py): the desktop bundles the backend and the UI (local execution), so it follows those; the
+# phone apps load the console live from the user's server, so only mobile/ changes them. By hand (Run workflow): any
+# platforms, on the release channel (main) or the test channel (apps-test-v…: never apps-latest, never the public link).
+#
+# One build per platform at a time (job concurrency): a newer push's waits, and replaces any older one still waiting.
+# The desktop is published only once this commit's tests have passed (the verify jobs run beside the builds).
+# Artifacts are named `my-mate-geny-<version>-…` since 0.3 (formerly `hr-harnessor-…`; the Download page matches both).
 name: apps
 
 on:
@@ -18,107 +24,163 @@ on:
       - "mobile/**"
       - "assets/**"
       - ".github/workflows/apps.yml"
+      - ".github/scripts/apps_*.py"
+      - ".github/scripts/asc.py"
   workflow_dispatch:
+    inputs:
+      platforms:
+        description: "all, changed (as a push), or some of: windows,linux,macos-arm64,macos-x64,android,ios"
+        default: all
+      channel:
+        description: "release = the Download page (main only); test = apps-test-v… releases only"
+        type: choice
+        options: [release, test]
+        default: release
 
 permissions:
   contents: write
-
-concurrency:
-  group: apps
-  cancel-in-progress: true
+  actions: read # (the desktop waits for this run's verify jobs)
 
 env:
-  # The version: <line>.<n>, n one past the highest published release of the line (its first build is <line>.0, so 1.0.0);
-  # the line is the product's version (backend/app/__init__.py, the package.json files: test_version.py keeps them equal).
-  # The run number keeps rising (Android's versionCode). The prepare job works it out once; every other job takes it from there.
+  # The version: <line>.<n>, n one past the highest release of the line (its first build is <line>.0, so 1.0.0); the line
+  # is the product's version (backend/app/__init__.py, the package.json files: test_version.py keeps them equal). The
+  # run number keeps rising (Android's versionCode, iOS's build number). The version job works it out once.
   APP_LINE: '1.1'
+  CHANNEL: ${{ inputs.channel || 'release' }}
   GH_TOKEN: ${{ github.token }}
   LOCAL_PYTHON_VERSION: '3.12.16'
   UV_VERSION: '0.13.6'
 
 jobs:
-  prepare:
+  plan:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      desktop: ${{ steps.plan.outputs.desktop }}
+      android: ${{ steps.plan.outputs.android }}
+      ios: ${{ steps.plan.outputs.ios }}
+      any: ${{ steps.plan.outputs.any }}
     steps:
-      - id: version
-        name: Version
+      - name: Release builds come from main
+        if: env.CHANNEL == 'release' && github.ref != 'refs/heads/main'
         run: |
-          # (a run cancelled before it published leaves only a draft: the next one takes the same number, and that draft over)
-          last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --exclude-drafts --json tagName --jq '.[].tagName' \
-                 | sed -n "s/^apps-v${APP_LINE//./\\.}\.\([0-9][0-9]*\)$/\1/p" | sort -n | tail -1)
-          v="$APP_LINE.$(( ${last:--1} + 1 ))"
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "VERSION=$v" >> "$GITHUB_ENV"
-          echo "Apps $v (run ${{ github.run_number }})"
+          echo "::error::Release builds come from main (this is ${GITHUB_REF#refs/heads/}): run with channel=test"
+          exit 1
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          fetch-depth: 0 # (each platform's last build is compared with this commit)
+          filter: blob:none
+      - id: plan
+        run: python3 .github/scripts/apps_plan.py
+        env:
+          PLATFORMS: ${{ inputs.platforms || 'changed' }}
+
+  version:
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: apps-version-${{ inputs.channel || 'release' }} # (one at a time: two runs never take one number)
+    outputs:
+      version: ${{ steps.begin.outputs.version }}
+      tag: ${{ steps.begin.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # (the notes: what changed since the last release)
+          filter: blob:none
+      - id: begin
+        env:
+          DESKTOP: ${{ needs.plan.outputs.desktop }}
+        run: |
+          platforms=$(jq -r '.[].name' <<< "$DESKTOP")
+          [ '${{ needs.plan.outputs.android }}' = true ] && platforms="$platforms android"
+          [ '${{ needs.plan.outputs.ios }}' = true ] && platforms="$platforms ios"
+          python3 .github/scripts/apps_publish.py begin "$APP_LINE" "$CHANNEL" $platforms
+
+  # The local-execution UI, built once for every desktop platform (from the start: it doesn't wait for the plan)
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - uses: astral-sh/setup-uv@v6
+      - run: npm ci --no-audit --no-fund
+      - run: BUILD_COMMIT=$GITHUB_SHA npx vite build --outDir dist-local --emptyOutDir
+      - uses: actions/upload-artifact@v4
         with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
-          cache-dependency-glob: backend/pyproject.toml
-      - name: Verify backend before publishing packages
-        run: |
-          cd backend
-          uv pip install --system -e '.[dev]'
-          python -m pytest -q -p no:cacheprovider -n auto
-      - name: Verify frontend before publishing packages
-        run: |
-          cd frontend
-          npm ci --no-audit --no-fund
-          npx tsc -b
-          npm run test:unit
-          npm run test:i18n
-          BUILD_COMMIT=$GITHUB_SHA npx vite build --outDir dist-local --emptyOutDir
-      - name: Share the verified local UI with all desktop platforms
-        uses: actions/upload-artifact@v4
-        with:
-          name: local-ui-${{ github.sha }}
+          name: local-ui
           path: frontend/dist-local
           retention-days: 1
           if-no-files-found: error
           overwrite: true
-      - name: Draft release for this build
-        run: |
-          if ! gh release view "apps-v$VERSION" >/dev/null 2>&1; then
-            gh release create "apps-v$VERSION" --draft --title "Apps $VERSION" --notes "Building…" --target "$GITHUB_SHA"
-          else
-            gh release edit "apps-v$VERSION" --target "$GITHUB_SHA" --notes "Building…"  # (a cancelled run's draft: this commit now)
-          fi
 
-  desktop:
-    name: desktop (${{ matrix.name }})
-    needs: prepare
+  # This commit's tests, beside the builds: the desktop (it bundles the backend and the UI) is published only once they
+  # pass. The backend's run in three parts (backend/tests/conftest.py --shard, balanced by tests/durations.json).
+  verify:
+    name: verify (${{ matrix.part }})
+    needs: plan
+    if: needs.plan.outputs.desktop != '[]'
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: linux
-            os: ubuntu-latest
-          - name: windows
-            os: windows-latest
-          - name: macos-arm64
-            os: macos-15
-            arch: arm64
-          - name: macos-x64
-            os: macos-15-intel
-            arch: x64
+        part: [backend 1/3, backend 2/3, backend 3/3, ui]
+    steps:
+      - uses: actions/checkout@v4
+      - if: matrix.part != 'ui'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - if: matrix.part != 'ui'
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/pyproject.toml
+      - if: matrix.part != 'ui'
+        working-directory: backend
+        run: |
+          uv pip install --system -e '.[dev]'
+          python -m pytest -q -p no:cacheprovider -n auto --shard "${{ matrix.part }}"
+      - if: matrix.part == 'ui'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - if: matrix.part == 'ui'
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx tsc -b
+          npm run test:unit
+          npm run test:i18n
+
+  desktop:
+    name: desktop (${{ matrix.name }})
+    needs: [plan, version, ui]
+    if: needs.plan.outputs.desktop != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.desktop) }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    concurrency:
+      group: apps-${{ matrix.name }}-${{ inputs.channel || 'release' }}
     defaults:
       run:
         working-directory: desktop
         shell: bash
     env:
-      VERSION: ${{ needs.prepare.outputs.version }}
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
       CSC_IDENTITY_AUTO_DISCOVERY: "false" # no signing identity: unsigned (+ ad-hoc on macOS)
     steps:
       - uses: actions/checkout@v4
@@ -135,21 +197,35 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: backend/pyproject.toml
-      - name: Restore only the managed Python interpreter and its dependencies
+      # The managed interpreter and its packages, keyed by what they are made of (the dependencies — not the product's
+      # version in the same file): a new release line doesn't install them all again.
+      - id: runtime-key
+        run: echo "key=local-python-v2-${{ runner.os }}-${{ runner.arch }}-$(python build/local-runtime.py --cache-key --python-version "$LOCAL_PYTHON_VERSION")" >> "$GITHUB_OUTPUT"
+      - name: Restore the managed Python interpreter and its dependencies
         id: runtime-cache
         uses: actions/cache/restore@v4
         with:
           path: desktop/.python-build
-          key: local-python-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LOCAL_PYTHON_VERSION }}-${{ hashFiles('backend/pyproject.toml', 'desktop/build/local-runtime.py') }}
-      - name: Download the verified UI (no platform-specific frontend rebuild)
+          key: ${{ steps.runtime-key.outputs.key }}
+      # Electron and electron-builder's own downloads (Electron itself, NSIS, the AppImage tools), by the lock file
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('desktop/package-lock.json') }}
+      - name: The UI (built once for every platform)
         uses: actions/download-artifact@v4
         with:
-          name: local-ui-${{ github.sha }}
+          name: local-ui
           path: frontend/dist-local
       - run: npm ci --no-audit --no-fund
       - name: Bundle the current Python backend with the shared UI
-        run: |
-          BUILD_COMMIT=$GITHUB_SHA python build/local-runtime.py --python-version "$LOCAL_PYTHON_VERSION"
+        run: BUILD_COMMIT=$GITHUB_SHA python build/local-runtime.py --python-version "$LOCAL_PYTHON_VERSION"
       - name: Local runtime smoke test on this OS
         run: node test/local-runtime-smoke.js
       - name: Cache the verified runtime before installer packaging
@@ -157,8 +233,8 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: desktop/.python-build
-          key: ${{ steps.runtime-cache.outputs.cache-primary-key }}
-      - name: Unit tests (server address + sign-in)
+          key: ${{ steps.runtime-key.outputs.key }}
+      - name: Unit tests (server address + sign-in, updates)
         if: matrix.name == 'linux'
         run: npm test
       - name: Build (linux)
@@ -167,8 +243,9 @@ jobs:
       - name: Build (windows)
         if: matrix.name == 'windows'
         run: npx electron-builder --win nsis --x64 --publish never -c.extraMetadata.version=$VERSION
-      # With the Developer ID secrets: signed and notarized (build/macos-sign.py), and it can update itself. Without them
-      # (a fork): ad-hoc signed as before, and the user downloads each new .dmg.
+      # With the Developer ID secrets: signed, notarized once (the .dmg — Apple's ticket covers the app inside; both are
+      # stapled) and it can update itself (build/macos-sign.py all). Without them (a fork): ad-hoc signed, and the user
+      # downloads each new .dmg.
       - name: Build (macos)
         if: startsWith(matrix.name, 'macos-')
         env:
@@ -179,35 +256,41 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           sudo mdutil -a -i off || true
-          signed=()
-          if [ -n "$MAC_CSC_LINK" ]; then signed=(-c.extraMetadata.macSigned=true); fi
-          npx electron-builder --mac dir --${{ matrix.arch }} --publish never -c.extraMetadata.version=$VERSION "${signed[@]}"
-          if [ -n "$MAC_CSC_LINK" ]; then python build/macos-sign.py app --version "$VERSION" --arch "${{ matrix.arch }}"; fi
-          python build/macos-dmg.py --version "$VERSION" --arch "${{ matrix.arch }}"
-          if [ -n "$MAC_CSC_LINK" ]; then python build/macos-sign.py dmg --version "$VERSION" --arch "${{ matrix.arch }}"; fi
+          if [ -n "$MAC_CSC_LINK" ]; then
+            npx electron-builder --mac dir --${{ matrix.arch }} --publish never -c.extraMetadata.version=$VERSION -c.extraMetadata.macSigned=true
+            python build/macos-sign.py all --version "$VERSION" --arch "${{ matrix.arch }}"
+          else
+            npx electron-builder --mac dir --${{ matrix.arch }} --publish never -c.extraMetadata.version=$VERSION
+            python build/macos-dmg.py --version "$VERSION" --arch "${{ matrix.arch }}"
+          fi
       - name: Verify the runtime inside the native app
         run: python test/verify-packed-runtime.py
-      # + the in-app updater's descriptions (electron-updater, generic provider — desktop/src/updater.js): latest.yml
-      # (Windows) and latest-linux.yml; macOS: the zips a signed app updates from, and one latest-mac.yml for both
-      # architectures at publishing.
-      - name: Upload to release
+      # + the in-app updater's feed (electron-updater, generic provider — desktop/src/updater.js): latest.yml (Windows),
+      # latest-linux.yml, latest-mac-<arch>.yml (each Mac architecture its own; the shared latest-mac.yml of apps ≤ 1.1.0
+      # follows once both are up)
+      - name: Publish (once this commit's tests have passed)
+        env:
+          PLATFORM: ${{ matrix.name }}
         run: |
           shopt -s nullglob
           files=(dist/*.exe dist/*.dmg dist/*.zip dist/*.AppImage dist/*.deb dist/latest*.yml)
           ls -la "${files[@]}"
-          for file in "${files[@]}"; do
-            for attempt in 1 2 3 4 5; do
-              gh release upload "apps-v$VERSION" "$file" --clobber && break
-              if [ "$attempt" = 5 ]; then exit 1; fi
-              sleep $((attempt * 3))
-            done
-          done
+          latest=(); [ "$CHANNEL" = release ] && latest=(--latest)
+          python ../.github/scripts/apps_publish.py publish "$PLATFORM" "$VERSION" "$TAG" "${latest[@]}" --wait-verify "${files[@]}"
+          if [[ "$PLATFORM" == macos-* ]] && [ "$CHANNEL" = release ]; then
+            python ../.github/scripts/apps_publish.py mac-legacy "$VERSION"
+          fi
 
   android:
-    needs: prepare
-    env:
-      VERSION: ${{ needs.prepare.outputs.version }}
+    needs: [plan, version]
+    if: needs.plan.outputs.android == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: apps-android-${{ inputs.channel || 'release' }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
     defaults:
       run:
         working-directory: mobile
@@ -223,9 +306,9 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-      # The runner image ships the Android SDK (ANDROID_HOME, licenses
-      # accepted); Gradle fetches the exact platform/build-tools it needs.
-      - run: npm ci
+      # The runner image ships the Android SDK (ANDROID_HOME, licenses accepted); Gradle fetches the exact platform /
+      # build-tools it needs.
+      - run: npm ci --no-audit --no-fund
       - run: npm test
       - run: npx cap sync android
       - name: Release keystore
@@ -236,7 +319,7 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon -PhrhVersionCode=${{ github.run_number }} -PhrhVersionName=$VERSION
+          ./gradlew assembleRelease --no-daemon --build-cache -PhrhVersionCode=${{ github.run_number }} -PhrhVersionName=$VERSION
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/my-mate-geny-$VERSION-android.apk"
         env:
           HRH_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
@@ -247,66 +330,210 @@ jobs:
         run: |
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --print-certs "$RUNNER_TEMP/my-mate-geny-$VERSION-android.apk" | head -3
-      - name: Upload to release
-        run: gh release upload "apps-v$VERSION" "$RUNNER_TEMP/my-mate-geny-$VERSION-android.apk" --clobber
+      - name: Publish
+        run: |
+          latest=(); [ "$CHANNEL" = release ] && latest=(--latest)
+          python3 ../.github/scripts/apps_publish.py publish android "$VERSION" "$TAG" "${latest[@]}" "$RUNNER_TEMP/my-mate-geny-$VERSION-android.apk"
 
-  publish:
-    needs: [prepare, desktop, android]
+  # iOS · iPadOS: signed with the team's Apple Distribution certificate and App Store profile (mobile/tools/appstore.py
+  # secrets) and uploaded to App Store Connect; the testflight job below takes it from there. The IPA itself goes into
+  # this run's release only (what apps_plan.py compares the next push with).
+  ios:
+    needs: [plan, version]
+    if: needs.plan.outputs.ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 45
+    concurrency:
+      group: apps-ios-${{ inputs.channel || 'release' }}
+    outputs:
+      uploaded: ${{ steps.upload.outputs.uploaded }}
+      build: ${{ steps.upload.outputs.build }}
+    defaults:
+      run:
+        working-directory: mobile
     env:
-      VERSION: ${{ needs.prepare.outputs.version }}
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
+      # (CFBundleVersion: rises with every run, and with a re-run of one)
+      BUILD_NO: ${{ github.run_number }}.${{ github.run_attempt }}
+      BUNDLE: me.hrletsgo.harnessor
+      TEAM: ${{ secrets.IOS_TEAM_ID }}
+      PROFILE_UUID: ${{ secrets.IOS_PROFILE_UUID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode (the newest — App Store Connect takes builds from a current SDK only)
+        run: |
+          X="$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -vi beta | sort -V | tail -1)"
+          [ -n "$X" ] && sudo xcode-select -s "$X"
+          xcodebuild -version
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npx cap sync ios
+      - name: Swift packages (Capacitor's), by what they resolve to
+        uses: actions/cache@v4
+        with:
+          path: mobile/ios/App/.spm
+          key: spm-${{ runner.os }}-${{ hashFiles('mobile/ios/App/CapApp-SPM/Package.swift', 'mobile/package-lock.json') }}
+      - name: The app's App Store Connect record
+        id: asc
+        working-directory: .
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          pip install -q cryptography
+          python .github/scripts/asc.py app
+      - name: Signing (keychain + profile)
+        env:
+          P12: ${{ secrets.IOS_DIST_P12 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_PROFILE }}
+        run: |
+          test -n "$TEAM" && test -n "$P12" && test -n "$PROFILE" || { echo "::error::No signing secrets: python3 mobile/tools/appstore.py secrets" >&2; exit 1; }
+          KC="$RUNNER_TEMP/geny.keychain-db"
+          KCPW="$(uuidgen)"
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          printf '%s' "$P12" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          rm -f "$RUNNER_TEMP/dist.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPW" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KC" | tail -1
+          echo "KC=$KC" >> "$GITHUB_ENV"
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$d"
+            printf '%s' "$PROFILE" | base64 --decode > "$d/$PROFILE_UUID.mobileprovision"
+          done
+          # the app target only (Swift packages take no profile): manual signing with the team's App Store profile
+          python3 ../.github/scripts/ios_signing.py ios/App/App.xcodeproj/project.pbxproj "$TEAM" "$PROFILE_UUID"
+      - name: Archive (signed)
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -clonedSourcePackagesDirPath ios/App/.spm -derivedDataPath "$RUNNER_TEMP/dd" \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" archive \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KC" \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NO" | tail -30
+      - name: Export the IPA
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/export.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key><dict><key>$BUNDLE</key><string>$PROFILE_UUID</string></dict>
+            <key>uploadSymbols</key><false/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" -exportPath "$RUNNER_TEMP/out" \
+            -exportOptionsPlist "$RUNNER_TEMP/export.plist" | tail -15
+          IPA=$(find "$RUNNER_TEMP/out" -maxdepth 1 -name "*.ipa" | head -1)
+          test -n "$IPA"
+          mv "$IPA" "$RUNNER_TEMP/my-mate-geny-$VERSION-ios.ipa"
+          unzip -p "$RUNNER_TEMP/my-mate-geny-$VERSION-ios.ipa" "Payload/*.app/Info.plist" > "$RUNNER_TEMP/info.plist"
+          plutil -p "$RUNNER_TEMP/info.plist" | grep -E 'CFBundle(ShortVersionString|Version|Identifier)"'
+          ls -la "$RUNNER_TEMP/my-mate-geny-$VERSION-ios.ipa"
+      - name: Upload to App Store Connect (TestFlight)
+        id: upload
+        if: steps.asc.outputs.app != ''
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s\n' "$ASC_KEY_P8" > "$HOME/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8"
+          rc=0
+          xcrun altool --upload-app --type ios --file "$RUNNER_TEMP/my-mate-geny-$VERSION-ios.ipa" \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal > "$RUNNER_TEMP/upload.log" 2>&1 || rc=$?
+          rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8"
+          tail -25 "$RUNNER_TEMP/upload.log"
+          # (altool can answer 0 on a failure: its last words count too)
+          [ "$rc" -eq 0 ] && grep -qiE "UPLOAD SUCCEEDED|No errors uploading" "$RUNNER_TEMP/upload.log"
+          echo "uploaded=true" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD_NO" >> "$GITHUB_OUTPUT"
+      - name: Publish the IPA (into this run's release only — phones get the app through TestFlight)
+        run: python ../.github/scripts/apps_publish.py publish ios "$VERSION" "$TAG" "$RUNNER_TEMP/my-mate-geny-$VERSION-ios.ipa"
+      - name: Clean up the keychain
+        if: always()
+        run: security delete-keychain "$KC" 2>/dev/null || true
+
+  # After the upload, on a Linux runner: Apple processes the build, it goes to the public link's group and to beta review,
+  # and once a build of the group has passed, ios.json on apps-latest names it and the link — the Download page's iOS
+  # card and its QR code. (The test channel: processed and in the team's own group only.)
+  testflight:
+    needs: [version, ios]
+    if: needs.ios.outputs.uploaded == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 110
+    concurrency:
+      group: apps-testflight-${{ inputs.channel || 'release' }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - name: Publish
+          sparse-checkout: .github/scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -q cryptography
+      - id: tf
         run: |
-          set -euo pipefail
-          retry() { local attempt; for attempt in 1 2 3 4 5; do "$@" && return 0; sleep $((attempt * 3)); done; return 1; }
-          retry gh release download "apps-v$VERSION" -D out --clobber
-          # Publish one feed with BOTH architectures, instead of matrix jobs
-          # overwriting latest-mac.yml with their own single-architecture feed.
-          python desktop/build/macos-dmg.py --version "$VERSION" --write-feed out
-          retry gh release upload "apps-v$VERSION" out/latest-mac.yml --clobber
-          ls -la out
-          prev=$(git tag --list 'apps-v*' --sort=-v:refname | head -1)
-          {
-            echo "<!-- hrh-meta $(jq -nc --arg v "$VERSION" --arg c "$GITHUB_SHA" --arg m "$(git log -1 --format=%s)" --arg d "$(date -u +%FT%TZ)" '{version:$v,commit:$c,commit_message:$m,built_at:$d}') -->"
-            echo "Built from $(git rev-parse --short HEAD): $(git log -1 --format=%s)"
-            echo
-            if [ -n "$prev" ]; then
-              echo "Changes since $prev:"
-              git log --no-merges --format='- %s (%h)' "$prev"..HEAD | head -40
-            fi
-          } > notes.md
-          retry gh release edit "apps-v$VERSION" --draft=false --notes-file notes.md
+          gh release view "$TAG" --json body --jq .body | sed -e 's/<!--.*-->//' > "$RUNNER_TEMP/notes.txt"
+          public=(); [ "$CHANNEL" = release ] && public=(--public --wait-review 45 --out "$RUNNER_TEMP/ios.json")
+          python .github/scripts/asc.py testflight --version "$VERSION" --build "${{ needs.ios.outputs.build }}" --notes "$RUNNER_TEMP/notes.txt" "${public[@]}"
+      - if: steps.tf.outputs.ios_json != ''
+        run: python .github/scripts/apps_publish.py publish ios "${{ steps.tf.outputs.ios_version }}" - --latest "${{ steps.tf.outputs.ios_json }}"
 
-          # The rolling release the Download page reads, updated in place so
-          # downloads never disappear mid-swap.
-          if gh release view apps-latest >/dev/null 2>&1; then
-            git tag -f apps-latest "$GITHUB_SHA" && git push -f origin apps-latest
-            for file in out/*; do retry gh release upload apps-latest "$file" --clobber; done
-            keep=$(cd out && ls)
-            for a in $(gh release view apps-latest --json assets --jq '.assets[].name'); do
-              echo "$keep" | grep -qx "$a" || gh release delete-asset apps-latest "$a" --yes
-            done
-            gh release edit apps-latest --title "Apps $VERSION (latest)" --notes-file notes.md
-          else
-            gh release create apps-latest out/* --title "Apps $VERSION (latest)" --notes-file notes.md --target "$GITHUB_SHA"
-          fi
-
-          # Keep the 5 newest versioned releases. By here everything is published: tidying up can't fail the run
-          # (a tag that is already gone answers HTTP 422, and that used to mark a good release as failed).
-          for t in $(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep '^apps-v' | sort -V -r | tail -n +6); do
-            gh release delete "$t" --yes --cleanup-tag || echo "::warning::could not tidy up $t"
-          done
-
-  cleanup:
-    needs: [prepare, desktop, android, publish]
-    if: failure() || cancelled()
-    env:
-      VERSION: ${{ needs.prepare.outputs.version }}
+  finalize:
+    needs: [plan, version, desktop, android, ios]
+    if: always() && needs.version.result == 'success'
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
     steps:
-      - name: Preserve unfinished artifacts for retry
-        run: echo "Build or publishing failed. Keep apps-v$VERSION as-is for recovery; never delete completed uploads."
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      - name: An empty draft goes; old releases are pruned (each platform's newest stays)
+        run: python3 .github/scripts/apps_publish.py finalize "$TAG" "$CHANNEL"
+      # (no iOS build this run: one that has passed beta review since still reaches the Download page)
+      - uses: actions/setup-python@v5
+        if: needs.plan.outputs.ios != 'true' && env.CHANNEL == 'release'
+        with:
+          python-version: '3.12'
+      - name: The public TestFlight link's newest build
+        id: link
+        if: needs.plan.outputs.ios != 'true' && env.CHANNEL == 'release'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          pip install -q cryptography
+          python .github/scripts/asc.py link --out "$RUNNER_TEMP/ios.json"
+      - if: steps.link.outputs.ios_json != ''
+        run: python3 .github/scripts/apps_publish.py publish ios "${{ steps.link.outputs.ios_version }}" - --latest "${{ steps.link.outputs.ios_json }}"

@@ -71,8 +71,10 @@ computer's existing GitHub CLI sign-in or a user-supplied read token. Changing r
 OS encryption protects saved tokens; if unavailable, tokens stay in memory only and the UI explains that lifetime.
 Tokens are never returned to renderers or sent to Geny servers, and are stripped before signed-storage redirects.
 
-The source reads `apps-latest`, pins its published version to the immutable `apps-vX.Y.Z` release, and falls back
-to the repository's latest release when the rolling tag is absent. This prevents mixed feeds/installers during publishing. A compatible source publishes
+The source reads `apps-latest` — each platform's newest build, each put there the moment it was built, its installers
+before its feed (docs/apps.md "Releases"; a release whose hrh-meta names a version is still pinned to `apps-vX.Y.Z`, as
+up to 1.1.0) — and falls back to the repository's latest release when the rolling tag is absent. A Mac is served its
+own architecture's feed (`latest-mac-<arch>.yml`) as `latest-mac.yml`. A compatible source publishes
 `latest.yml` / `latest-linux.yml` and installers with the existing platform suffixes. A random capability on a random
 IPv4 loopback port exposes only release assets to the desktop updater, never arbitrary URLs or filesystem paths.
 Source edits are blocked while checking/downloading/ready-to-install; all windows subscribe to native source changes.
@@ -123,8 +125,11 @@ updater; the image gets the same after it is made. build/macos-dmg.py stages it 
 shortcut and uses hdiutil create directly (read-only ULFO/LZFSE), then verifies
 the resulting image. It does not use Finder customization or the old attach /
 detach retry path. The runtime inside the actual .app is still smoke-tested.
-Publishing generates one latest-mac.yml with hashes and sizes for both CPU
-architectures, the zips first: a signed app updates itself from them. A build without the
+The release workflow runs `macos-sign.py all`: the app signed, the image made from it,
+one notarization (the image's — Apple's ticket covers the app inside) and both stapled; if
+Apple has no ticket for the app it is notarized on its own. Each architecture then has its
+own feed, latest-mac-<arch>.yml, the zip first: a signed app updates itself from it
+(apps up to 1.1.0 read one latest-mac.yml for both — docs/apps.md). A build without the
 certificate stays on the manual DMG update.
 
 The change removes redundant work; actual cold/warm macOS timing must be
