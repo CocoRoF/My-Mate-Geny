@@ -134,26 +134,39 @@ export const ReplyBlock = memo(
     a.compact === b.compact && a.bare === b.bare && a.block.md === b.block.md && a.block.kind === b.block.kind && a.block.type === b.block.type && a.block.open === b.block.open,
 );
 
-/** a reply's text as blocks */
+/** a reply's text as blocks; `trailing` (its time — components/chat/MessageTime.tsx) beside the last bubble, at its
+ * foot as in a messenger (under it when that one takes the whole width: code, a table) */
 export default function MateReply({
   text,
   streaming = false,
   compact = false,
   bare = false,
   keyPrefix = "",
+  trailing,
 }: {
   text: string;
   streaming?: boolean;
   compact?: boolean;
   bare?: boolean;
   keyPrefix?: string;
+  trailing?: ReactNode;
 }) {
   const blocks = useMemo(() => segmentReply(text, { streaming }), [text, streaming]);
+  const last = blocks[blocks.length - 1];
+  const besides = !!trailing && !!last && last.kind !== "rule" && last.type !== "code" && last.type !== "table";
   return (
     <>
-      {blocks.map((b) => (
-        <ReplyBlock key={keyPrefix + b.key} block={b} compact={compact} bare={bare} />
-      ))}
+      {blocks.map((b) =>
+        besides && b === last ? (
+          <div key={keyPrefix + b.key} className="flex w-full min-w-0 items-end gap-1" data-testid="mate-bubble-row">
+            <ReplyBlock block={b} compact={compact} bare={bare} />
+            {trailing}
+          </div>
+        ) : (
+          <ReplyBlock key={keyPrefix + b.key} block={b} compact={compact} bare={bare} />
+        ),
+      )}
+      {!!trailing && !besides && <div className="px-1">{trailing}</div>}
     </>
   );
 }

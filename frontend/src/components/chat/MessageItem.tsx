@@ -10,6 +10,7 @@ import DeleteMessageButton from "./DeleteMessageButton";
 import { useChatStore } from "../../stores/chatStore";
 import { tr } from "../../i18n";
 import { noticeText } from "../../lib/notices";
+import { MessageTime } from "./MessageTime";
 
 // Memoized: a turn re-renders only when it changes (copy-on-write in the store)
 // — prepending older turns or streaming into the last one leaves the rest alone.
@@ -60,6 +61,7 @@ export default memo(function MessageItem({ turn }: { turn: Turn }) {
         <div className="flex items-center gap-0.5">
           <DeleteMessageButton messageId={turn.messageId} text={turn.text} attachments={atts} meta={turn.meta} store={useChatStore} />
           <RewindButton messageId={turn.messageId} text={turn.text} meta={turn.meta} />
+          <MessageTime at={turn.at} className="ml-0.5" />
         </div>
       </div>
     );

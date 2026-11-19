@@ -15,6 +15,7 @@ import Icon from "../ui/Icon";
 import BirthdayPicker from "../ui/BirthdayPicker";
 import IconCropDialog from "../ui/IconCropDialog";
 import UserIcon from "../ui/UserIcon";
+import { setUserTimezone } from "../../lib/userTimezone";
 
 function useSetting(key: "user_name" | "timezone" | "user_birthday") {
   const [saved, setSaved] = useState<string | null>(null);
@@ -35,6 +36,7 @@ function useSetting(key: "user_name" | "timezone" | "user_birthday") {
       setSaved(s[key] ?? "");
       setDraft(s[key] ?? "");
       setState("saved");
+      if (key === "timezone") setUserTimezone(s.timezone ?? ""); // (the times shown in conversations follow)
       if (key === "user_name") {
         void useMateStore.getState().load(); // (each mate's prefs carry it)
         window.dispatchEvent(new Event(AUTH_CHANGED_EVENT)); // (Local execution: the sidebar shows it as the account)
