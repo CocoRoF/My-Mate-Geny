@@ -69,12 +69,6 @@ class TiesRuntime:
             return rel if rel and rel.get("enabled") else None
         return B.rel_of(self.mates.social.doc(), holder, other)
 
-    def _labels(self, holder: str, other: str, people: dict[str, dict[str, Any]], doc: dict[str, Any]) -> tuple[str, ...]:
-        cur = (T.get(doc, holder, other) or {}).get("label")
-        if other == T.USER:
-            return T.allowed(current=cur)
-        romance = other in people and holder in people and self.mates.social.romance_fits(people[holder], people[other])
-        return T.allowed(romance=romance, current=cur)
 
     def _them(self, holder: str, other: str, people: dict[str, dict[str, Any]]) -> str:
         if other != T.USER:
@@ -276,7 +270,7 @@ class TiesRuntime:
             return None
         doc = self.doc()
         t = T.get(doc, holder, other)
-        labels = self._labels(holder, other, people, doc)
+        labels = T.allowed()
         rel = self._rel(holder, other)
         by_day = T.days(rel, tz)
         today = T.her_day(now, tz)
@@ -349,13 +343,8 @@ class TiesRuntime:
                 raise ValueError(f"you don't know {found['name']} yet")
         label = str(label or "").strip().lower()
         doc = self.doc()
-        labels = self._labels(holder, other, people, doc)
         if label not in T.LABELS:
             raise ValueError("label: one of " + ", ".join(T.LABELS))
-        if label not in labels:
-            if other == T.USER:
-                raise ValueError(f"{label} isn't possible now")
-            raise ValueError(f"not with {people[other]['name']}: romance between mates is switched off (메이트끼리 설렘)")
         now = datetime.now(timezone.utc)
         t = T.get(doc, holder, other)
         if t is not None and t["label"] == label:

@@ -454,8 +454,7 @@ what it was before. A romantic label lifts "It isn't romantic between you (yet)"
 **With another mate** ([mate-social.md](mate-social.md)):
 
 - Her view of the other mate goes into the other-mates section of her prompt and into her messages to that mate.
-- Any label, lovers and exes too: no ceiling and no "the user comes first" (gone 2026-11-20). Nothing romantic only where
-  메이트끼리 설렘 is off.
+- Any label, lovers and exes too: no ceiling, no "the user comes first", no switch for romance (all gone 2026-11-20).
 - They start as strangers and get to know each other only when the user brings them together. What they are then leans how often
   they write to each other on their own (`SocialRuntime._reach`).
 - Each has her own view, so 채린 may think 서아 a friend while 서아 thinks her a rival.

@@ -142,9 +142,9 @@ async def test_they_get_to_know_each_other_by_talking(store, monkeypatch):
     assert any("채린: you have talked" in x for x in social.prompt(b["id"]).splitlines())
 
 
-async def test_no_ceiling_between_mates_and_romance_where_it_is_on(store, monkeypatch):
-    """Since 2026-11-20 what two mates feel for each other has no ceiling ("the user comes first" is gone), and romance
-    between them is a matter of the setting alone — who they are decides the rest."""
+async def test_no_ceiling_between_mates_and_no_switch_for_romance(store, monkeypatch):
+    """Since 2026-11-20 what two mates feel for each other has no ceiling ("the user comes first" is gone), and there is no
+    switch or rule for romance between them: who they are decides it."""
     life, social = _world(store, monkeypatch)
     a, b = _mate(store, "채린", "chaerin", gender="female"), _mate(store, "유나", gender="female")
     _close_to_user(store, a["id"], affinity=8.0)
@@ -152,16 +152,15 @@ async def test_no_ceiling_between_mates_and_romance_where_it_is_on(store, monkey
     now = datetime.now(timezone.utc)
     r = B.heard(doc, a["id"], b["id"], "고마워 정말 최고야 ㅎㅎ", "[smile] 나도", now, KST, name="채린")
     r["affinity"], r["trust"], r["romance"] = 80.0, 80.0, 30.0
-    B.fits(r, now, KST)
+    A.refresh(r, now, KST)
     assert r["affinity"] == 80.0 and r["trust"] == 80.0 and r["romance"] == 30.0 and r["stage"] == "companion"
     B.drift(doc, now + timedelta(days=1), KST)
     assert B.rel_of(doc, a["id"], b["id"])["affinity"] == 80.0  # (no user to stay below)
-    mates = social.mates()
-    assert social.romance_fits(mates[a["id"]], mates[b["id"]])  # (two women: their personas decide, not a rule)
-    store.update_settings({"social_romance": False})
-    assert not social.romance_fits(mates[a["id"]], mates[b["id"]])
-    B.fits(r, now, KST, romance=social.store.social_romance())
-    assert r["romance"] == 0.0
+    assert "social_romance" not in store.settings()  # (the switch is gone)
+    store.update_settings({"social_romance": False})  # (an old client's patch changes nothing)
+    B.drift(doc, now + timedelta(days=2), KST)
+    assert B.rel_of(doc, a["id"], b["id"])["romance"] > 0
+    assert "Anything can grow between you, romance too" in K.system({"name": "채린", "persona": {}}, "유나", how="talked", note="", feeling="x")
 
 
 def test_the_user_reading_it_is_something_both_know(store, monkeypatch):
@@ -195,7 +194,7 @@ def test_strangers_only_know_each_other_exist_until_the_user_brings_them_togethe
     a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
     c = _mate(store, "민지")
     social.speak = lambda *x: None  # (a writer: a conversation can be queued)
-    monkeypatch.setattr("app.mate.social.runtime.OWN_HOUR", 1.0)
+    monkeypatch.setattr("app.mate.social.runtime.OWN_HOUR", 10.0)  # (sure to, whenever there is anyone to write to)
     monkeypatch.setattr(SocialRuntime, "_someone_talks_to", lambda self, m, now: True)
     monkeypatch.setattr(sim, "asleep", lambda *x: False)
     social.tick(datetime(2026, 11, 21, 14, 5, tzinfo=KST).astimezone(timezone.utc))

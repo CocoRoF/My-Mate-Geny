@@ -23,7 +23,5 @@ const social: Messages<"social"> = {
   settingsTitle: "메이트끼리",
   settingsOn: "메이트끼리 알고 지내기",
   settingsOnHelp: "처음엔 서로 존재만 알아요. 내가 다른 메이트 얘기를 해 주거나 말을 걸어 보라고 하면 알게 되고, 그 뒤로는 가까울수록 자주 서로 알아서 메시지를 주고받아요. 둘이 나눈 대화는 관계 탭에서 읽을 수 있고, 읽으면 메이트도 알아요.",
-  settingsRomance: "메이트끼리 설렘",
-  settingsRomanceHelp: "메이트끼리도 사람처럼 설렘이 생기고 연인이 될 수도 있어요. 끄면 우정까지만이에요.",
 };
 export default social;

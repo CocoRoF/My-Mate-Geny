@@ -21,6 +21,4 @@ export default {
   settingsTitle: "Mates together",
   settingsOn: "Mates get to know each other",
   settingsOnHelp: "They start as strangers: all they know of each other is that they exist. They get to know each other when you tell one about another or ask one to message another; after that they write to each other on their own now and then, the more often the closer they are. You can read their conversations in 관계, and they will know you did.",
-  settingsRomance: "Romance between mates",
-  settingsRomanceHelp: "Romance can grow between your mates as it would between people, lovers too. Off: friendship at most.",
 };

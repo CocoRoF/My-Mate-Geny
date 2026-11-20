@@ -108,7 +108,7 @@ function EventRow({ e, mate }: { e: SocialEvent; mate: Mate }) {
   );
 }
 
-function OtherMate({ o, mate, v }: { o: SocialMate; mate: Mate; v: MateSocial }) {
+function OtherMate({ o, mate }: { o: SocialMate; mate: Mate }) {
   const t = useT();
   const locale = useLang();
   const other = useMateStore((s) => s.mates.find((m) => m.id === o.id));
@@ -119,7 +119,7 @@ function OtherMate({ o, mate, v }: { o: SocialMate; mate: Mate; v: MateSocial })
         { id: "affinity", label: t(BOND_LABEL.affinity), v: f.affinity, color: STAGE_COLOR[f.stage] },
         { id: "trust", label: t(BOND_LABEL.trust), v: f.trust },
         { id: "respect", label: t(BOND_LABEL.respect), v: f.respect },
-        ...(v.romance && o.romance_fits ? [{ id: "romance", label: t(BOND_LABEL.romance), v: f.romance }] : []),
+        { id: "romance", label: t(BOND_LABEL.romance), v: f.romance },
       ]
     : [];
   return (
@@ -227,7 +227,7 @@ export default function OtherMates({ mate }: { mate: Mate }) {
       ) : (
         <ul className="space-y-2.5">
           {v.mates.map((o) => (
-            <OtherMate key={o.id} o={o} mate={mate} v={v} />
+            <OtherMate key={o.id} o={o} mate={mate} />
           ))}
         </ul>
       )}

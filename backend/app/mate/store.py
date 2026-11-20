@@ -1985,16 +1985,10 @@ class MateStore:
         (app/mate/social; on unless switched off)."""
         return (self._setting("social_on") or "1") != "0"
 
-    def social_romance(self) -> bool:
-        """…and romance between them as it grows, lovers too (who they are decides it; nothing sexual). On unless switched off:
-        off, friendship at most."""
-        return (self._setting("social_romance") or "1") != "0"
-
     def settings(self) -> dict[str, Any]:
         out: dict[str, Any] = {k: self._setting(k) for k in SETTING_URLS}
         out["web_search"] = self.web_search()
         out["social_on"] = self.social_on()
-        out["social_romance"] = self.social_romance()
         out["timezone"] = self._setting("timezone")
         out["user_name"] = self.user_name()
         out["user_birthday"] = self.user_birthday()
@@ -2041,7 +2035,7 @@ class MateStore:
         if tzname is not None and tzname != self._setting("timezone"):
             self._put_setting("timezone", tzname)
             changed.add("timezone")
-        for k, now_on in (("web_search", self.web_search), ("social_on", self.social_on), ("social_romance", self.social_romance)):
+        for k, now_on in (("web_search", self.web_search), ("social_on", self.social_on)):
             if isinstance(patch.get(k), bool) and patch[k] != now_on():
                 self._put_setting(k, "1" if patch[k] else "0")
                 changed.add(k)

@@ -769,8 +769,6 @@ export interface VoiceSettings {
   web_search?: boolean;
   /** 메이트끼리 어울리기: the user's mates know each other, make plans and go out together (app/mate/social) */
   social_on?: boolean;
-  /** …and between a man and a woman among them, now and then a spark */
-  social_romance?: boolean;
 }
 
 export interface UserLocation {
@@ -798,7 +796,6 @@ export type VoiceSettingsPatch = Partial<{
   http_tts_url: string;
   web_search: boolean;
   social_on: boolean;
-  social_romance: boolean;
 }>;
 
 export interface VoiceOption {
@@ -1009,8 +1006,6 @@ export interface SocialMate {
   /** what the two of them are, in her view, and in theirs (api/ties.ts) */
   tie?: Tie | null;
   tie_back?: Tie | null;
-  /** romance could come into it (sparks are on, a man and a woman) */
-  romance_fits: boolean;
   threads: SocialThreadInfo[];
   plans: SocialPlan[];
   events: SocialEvent[];
@@ -1018,7 +1013,6 @@ export interface SocialMate {
 
 export interface MateSocial {
   enabled: boolean;
-  romance: boolean;
   mates: SocialMate[];
 }
 

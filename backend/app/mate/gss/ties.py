@@ -21,7 +21,7 @@ told to her as what the two of them are, and it shapes how she treats them on to
     She keeps the label or changes it, in her own words. On a night she keeps it, the doubts she has stay with her
     (``thought``), and what she has already weighed counts for less afterwards.
 - With another mate it is the same: anything, lovers too, as far as it grows between them (since 2026-11-20 no ceiling and no
-  "the user comes first"). Nothing romantic only where 메이트끼리 설렘 is off. They start as strangers: they get to know each other
+  "the user comes first", no switch for romance). They start as strangers: they get to know each other
   when the user brings them together (social/runtime.py).
 
 Pure functions over one JSON document (``new``); no I/O.
@@ -41,7 +41,7 @@ VERSION = 1
 USER = "user"  # (the other side of a tie with the user; another mate's is her id)
 LABELS = ("stranger", "indifferent", "acquaintance", "friend", "close_friend", "crush", "flirting", "lovers", "ex",
           "estranged", "rivals", "love_hate", "loathing")
-#: what needs romance between them: none of it where romance is off (between mates: 메이트끼리 설렘)
+#: the romantic ones (the UI colours them)
 ROMANTIC = ("crush", "flirting", "lovers", "ex")
 #: (Korean, English) — what each is called, in the UI and when she is told it
 NAMES = {
@@ -195,13 +195,9 @@ def ensure(doc: dict[str, Any], holder: str, other: str, at: datetime) -> dict[s
     return row[other]
 
 
-def allowed(*, romance: bool = True, current: str | None = None) -> tuple[str, ...]:
-    """What she can see them as: anything — nothing romantic only where romance is off (between mates, 메이트끼리 설렘).
-    Where she is now always."""
-    out = [label for label in LABELS if romance or label not in ROMANTIC]
-    if current in LABELS and current not in out:
-        out.append(current)
-    return tuple(out)
+def allowed() -> tuple[str, ...]:
+    """What she can see them as: anything, with the user or with another mate."""
+    return LABELS
 
 
 def set_label(t: dict[str, Any], label: str, why: str, at: datetime, by: str) -> bool:

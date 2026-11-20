@@ -6,7 +6,7 @@
 - After that it is theirs: now and then she messages, on her own, one she has talked with or the user introduced to her, the
   more often the closer they are (``_own``). Each message is hers, from her own engine (``speak``: social/talk.py); a few
   messages, and either ends it. What the other says moves how she feels about them — the same engine as with the user
-  (social/bonds.py), with no ceiling: they can become anything to each other, lovers too where romance is on (ties).
+  (social/bonds.py), with no ceiling and no switch: they can become anything to each other, lovers too (ties).
 - Their conversations are theirs: the user can read them in the ♥ status window's 관계 tab, and when they do, both of them know
   the user read what they wrote to each other.
 - Once they are friends they now and then go out together (social/outings.py, each in her own day: ``sim.meet``).
@@ -110,10 +110,6 @@ class SocialRuntime:
                             "proactive": bool((prefs.get("proactive") or {}).get("enabled"))}
         return out
 
-    def romance_fits(self, a: dict[str, Any], b: dict[str, Any]) -> bool:
-        """Romance between two mates where it is on (메이트 공통 설정 → 메이트끼리 설렘): who they are decides the rest."""
-        return self.store.social_romance()
-
     def _event(self, doc: dict[str, Any], what: str, who: list[str], now: datetime, **extra: Any) -> dict[str, Any]:
         e = {"id": new_id("se_"), "type": what, "at": A._iso(now), "who": list(who), "told": {}, "ready": True, **extra}
         doc["events"] = [*doc["events"], e][-B.EVENTS_MAX:]
@@ -136,7 +132,7 @@ class SocialRuntime:
         local = now.astimezone(tz)
         if doc["checked"].get("drift") != local.strftime("%Y-%m-%d"):
             doc["checked"]["drift"] = local.strftime("%Y-%m-%d")
-            B.drift(doc, now, tz, romance=self.store.social_romance())
+            B.drift(doc, now, tz)
         self._own(doc, mates, now, tz)
         self._plan(doc, mates, now, tz, changed)
         self._run(doc, mates, now, tz, changed, final)
@@ -263,16 +259,14 @@ class SocialRuntime:
             else:
                 if t["messages"]:  # (what the other said moves how she feels about them, her answer with it)
                     last = t["messages"][-1]
-                    B.heard(doc, speaker, listener, last["text"], text, now, tz, name=mates[speaker]["name"],
-                            romance=self.romance_fits(mates[speaker], mates[listener]))
+                    B.heard(doc, speaker, listener, last["text"], text, now, tz, name=mates[speaker]["name"])
                 if text:
                     t["messages"].append({"by": speaker, "text": text, "at": A._iso(now)})
                     for m in t["who"]:
                         B.know(doc, m, next(x for x in t["who"] if x != m), "talked", now)
                 if ended or len(t["messages"]) >= K.MAX_MESSAGES:
                     if text and not ended:  # (the last word stays with the other one, unanswered)
-                        B.heard(doc, listener, speaker, text, "", now, tz, name=mates[listener]["name"],
-                                romance=self.romance_fits(mates[listener], mates[speaker]))
+                        B.heard(doc, listener, speaker, text, "", now, tz, name=mates[listener]["name"])
                     t["status"] = "done"
             t["at_end"] = A._iso(now) if t["status"] != "on" else None
             self._save(doc)
@@ -304,8 +298,7 @@ class SocialRuntime:
         lang = K.LANG_NAMES.get(mates[me]["language"], "Korean")
         tie = self._tie_words(me, other)
         system = K.system(mate, mates[other]["name"], how=k["how"], note=k.get("note") or "",
-                          feeling=B.words(B.rel_of(doc, me, other)) + (f"; {tie}" if tie else ""),
-                          romance=self.romance_fits(mates[me], mates[other])).replace("{language}", lang)
+                          feeling=B.words(B.rel_of(doc, me, other)) + (f"; {tie}" if tie else "")).replace("{language}", lang)
         now = datetime.now(timezone.utc)
         day = ""
         try:
@@ -579,7 +572,7 @@ class SocialRuntime:
         hurt = rng.choice((a, b))
         for me, other in ((a, b), (b, a)):
             delta = O.EFFECTS[what] * (1.0 if what != "awkward" or me == hurt else 0.5) * rng.uniform(0.8, 1.2)
-            B.moved(doc, me, other, delta, f"outing_{what}", now, tz, romance=self.store.social_romance())
+            B.moved(doc, me, other, delta, f"outing_{what}", now, tz)
         words = O.compose(rng, kind, what, mates[a], mates[b])
         e = self._event(doc, "outing", [a, b], A._t(plan["at"]) or now, kind=kind["id"], names=dict(kind["names"]), until=plan["until"],
                         mood=what, moved_in=bool(plan.get("moved_in")), **words)
@@ -668,7 +661,7 @@ class SocialRuntime:
             tie = self._tie_words(mate_id, o)
             if tie:
                 line += f"; {tie}"
-            if r is not None and self.romance_fits(me, mates[o]) and float(r.get("romance") or 0) >= 25:
+            if r is not None and float(r.get("romance") or 0) >= 25:
                 line += " (there is something romantic in it for you, quietly)"
             known.append(line)
         return ("## Other mates\nThe user also talks with other mates like you, in the same app: each of them a person with a life and "
@@ -829,13 +822,12 @@ class SocialRuntime:
     def view(self, mate_id: str) -> dict[str, Any]:
         """Her side of it, for the ♥ status window's 관계 tab: the other mates she knows (of), how she feels about each (the same
         numbers as their own relationship), their conversations (to open), plans and what they did together."""
-        on, romance = self.store.social_on(), self.store.social_romance()
-        if not on:
-            return {"enabled": False, "romance": romance, "mates": []}
+        if not self.store.social_on():
+            return {"enabled": False, "mates": []}
         now = datetime.now(timezone.utc)
         doc, mates = self.doc(now), self.mates()
         if mate_id not in mates:
-            return {"enabled": True, "romance": romance, "mates": []}
+            return {"enabled": True, "mates": []}
         others = []
         ids = {o for o in (doc["known"].get(mate_id) or {})} | {o for t in doc["threads"] if mate_id in t["who"] for o in t["who"]}
         for o in sorted(ids - {mate_id}, key=lambda o: mates.get(o, {}).get("name") or ""):
@@ -852,13 +844,13 @@ class SocialRuntime:
             others.append({"id": o, "name": mates[o]["name"], "icon": mates[o]["icon"], "how": k.get("how") or "talked",
                            "since": k.get("since"), "note": k.get("note") or "", "feels": B.summary(r), "feels_back": B.summary(back),
                            "tie": self._tie_view(mate_id, o), "tie_back": self._tie_view(o, mate_id),
-                           "romance_fits": self.romance_fits(mates[mate_id], mates[o]), "threads": threads[:20],
+                           "threads": threads[:20],
                            "plans": [{"id": p["id"], "kind": p["kind"], "names": dict(O.kinds().get(p["kind"], {}).get("names") or {}),
                                       "at": p["at"], "until": p["until"], "status": p["status"]}
                                      for p in sorted(doc["plans"], key=lambda p: p["at"]) if set(p["who"]) == {mate_id, o}],
                            "events": [self._event_view(e, mate_id) for e in reversed(doc["events"])
                                       if set(e["who"]) == {mate_id, o} and e.get("ready") and e["type"] in ("outing", "called_off")][:5]})
-        return {"enabled": True, "romance": romance, "mates": others}
+        return {"enabled": True, "mates": others}
 
     @staticmethod
     def _event_view(e: dict[str, Any], me: str) -> dict[str, Any]:

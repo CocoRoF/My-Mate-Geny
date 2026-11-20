@@ -1354,10 +1354,10 @@ and her journal. All of it is in [docs/mate-life.md](mate-life.md). API: `GET /a
 
 The user's mates start as strangers; each knows the user talks with other mates too, knows of one the user tells her about
 (`introduce_friend`), and gets to know her by messaging (`talk_to_mate`: when the user asks, or on her own when she may reach out).
-How she feels about another mate is a relationship like the one with the user, never warmer. Their conversations are in the ♥ status
+How she feels about another mate is a relationship like the one with the user, with no ceiling and no switch: lovers too. Their conversations are in the ♥ status
 window's 관계 tab; reading one, both of them know. Friends go out together. All of it: [docs/mate-social.md](mate-social.md);
-`GET /api/mates/{id}/social`, `GET`/`POST …/social/threads/{tid}[/seen]`, Shared mate settings → 메이트끼리 (`social_on`,
-`social_romance` in `PUT /api/mates/settings`).
+`GET /api/mates/{id}/social`, `GET`/`POST …/social/threads/{tid}[/seen]`, Shared mate settings → 메이트끼리 (`social_on` in
+`PUT /api/mates/settings`).
 
 Little games from the stage's 놀이 menu or by asking her — 끝말잇기, 스무고개, 초성 퀴즈, 가위바위보: [docs/mate-games.md](mate-games.md);
 `GET`/`POST /api/mates/{id}/game` (`{action: start | throw | give_up | close}`), her tool `play_game`.

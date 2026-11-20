@@ -92,16 +92,16 @@ function WebSearch() {
   );
 }
 
-/** 메이트끼리: the user's mates know each other, make plans and go out together (app/mate/social); and, between a man and a
- * woman among them, now and then a spark. */
+/** 메이트끼리: the user's mates know each other, make plans and go out together (app/mate/social) — and become whatever they
+ * become to each other, with no switch for it. */
 function MatesTogether() {
   const t = useT();
-  const [on, setOn] = useState<{ social: boolean; romance: boolean } | null>(null);
+  const [on, setOn] = useState<{ social: boolean } | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
     let alive = true;
     getVoiceSettings().then(
-      (s) => alive && s.social_on !== undefined && setOn({ social: s.social_on, romance: s.social_romance ?? true }),
+      (s) => alive && s.social_on !== undefined && setOn({ social: s.social_on }),
       () => {},
     );
     return () => {
@@ -109,13 +109,13 @@ function MatesTogether() {
     };
   }, []);
   if (on === null) return null; // (an older server: nothing to switch)
-  const set = async (patch: { social_on?: boolean; social_romance?: boolean }) => {
+  const set = async (patch: { social_on?: boolean }) => {
     setErr("");
     const before = on;
-    setOn({ social: patch.social_on ?? on.social, romance: patch.social_romance ?? on.romance });
+    setOn({ social: patch.social_on ?? on.social });
     try {
       const s = await putVoiceSettings(patch);
-      setOn({ social: s.social_on ?? true, romance: s.social_romance ?? true });
+      setOn({ social: s.social_on ?? true });
     } catch (e) {
       setOn(before);
       setErr((e as Error).message);
@@ -127,12 +127,6 @@ function MatesTogether() {
         <Toggle on={on.social} onChange={(x) => void set({ social_on: x })} label={t("social.settingsOn")} testId="mate-social-on" />
         <HelpTip>{t("social.settingsOnHelp")}</HelpTip>
       </div>
-      {on.social && (
-        <div className="flex items-center gap-1">
-          <Toggle on={on.romance} onChange={(x) => void set({ social_romance: x })} label={t("social.settingsRomance")} testId="mate-social-romance" />
-          <HelpTip>{t("social.settingsRomanceHelp")}</HelpTip>
-        </div>
-      )}
       <ErrorLine text={err} />
     </Section>
   );

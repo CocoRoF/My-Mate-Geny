@@ -18,9 +18,9 @@ know.
 - **She knows what she knows.** That the user talks with other mates; what the user told her about one; what they said to each
   other; what they did together (and of that, her own part only). Nothing of what another mate says to the user.
 - **No numbers in her mouth.** She is told words; the user sees the bars.
-- **No ceiling, no rule of who may love whom.** Until 2026-11-20 she was never fonder of another mate than of the user, romance
-  was only between a man and a woman, and it never went past 썸. All of that is gone. Romance is off only where 메이트끼리 설렘
-  is off (`bonds.fits`); it moves the way romance with the user does (only on trust and closeness), and nothing sexual.
+- **No ceiling, no rule of who may love whom, no switch.** Until 2026-11-20 she was never fonder of another mate than of the
+  user, romance was only between a man and a woman, it never went past 썸, and 메이트끼리 설렘 could switch it off. All of that is
+  gone: romance moves the way romance with the user does (only on trust and closeness), and nothing sexual.
 
 ## Knowing each other
 
@@ -41,12 +41,12 @@ when the built-in mates were set up to know each other — starts over: everyone
 engine as with the user — affinity −100 – 100 with its stages (서먹함 … 동반자), trust, respect, romance. What the other says to her
 moves it as the user's messages move hers (`bonds.heard` → `credit_turn`: warmth, laughing together, rudeness, worse); days without
 talking cool it (never into ill feeling) and ill feeling mends slowly (`drift`, once a day); an outing moves it a little (`moved`).
-Nothing keeps it below what she feels for the user; where romance is off (메이트끼리 설렘) it stays at nothing (`fits`).
+Nothing keeps it below what she feels for the user, and nothing switches romance off.
 
 ## What they are to each other
 
 Beside how she feels about another mate, she has her own view of what the two of them are: any of the labels, 연인 and 헤어진
-사이 included (the romantic ones only where 메이트끼리 설렘 is on). It holds once she has it. She thinks it over at night when something passed between them that day and it is due,
+사이 included. It holds once she has it. She thinks it over at night when something passed between them that day and it is due,
 or says so at the moment (`what_we_are` with the other's name). See [geny-state-system.md](geny-state-system.md) §12. Her view
 goes into what she is told of the other (the other-mates section, her messages to her), and the 관계 tab shows what each of the
 two thinks.
@@ -92,10 +92,9 @@ Asleep she misses it; with the user in person it waits, then is called off. Docs
 ## What the user sees
 
 The ♥ status window → **관계**: under the user's own relationship and promises, **다른 메이트**: each mate she knows (of), how (내가
-알려 줌, 서로 대화함, what the user said), how she feels about them (affinity with its stage, trust, respect, romance where it is on), what each of them thinks the two of
+알려 줌, 서로 대화함, what the user said), how she feels about them (affinity with its stage, trust, respect, romance), what each of them thinks the two of
 them are,
-their plans and outings, and their conversations to open. 메이트 공통 설정 → **메이트끼리**: 메이트끼리 알고 지내기 (on/off) and
-메이트끼리 설렘.
+their plans and outings, and their conversations to open. 메이트 공통 설정 → **메이트끼리**: 메이트끼리 알고 지내기 (on/off), the only switch.
 
 ## Files
 
