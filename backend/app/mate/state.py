@@ -144,6 +144,18 @@ HOSTILE, HOSTILE_MORE, HOSTILE_HURT, HOSTILE_DROP, HOSTILE_WINDOW = 0.6, 0.3, 0.
 # script: what she makes of it is hers
 ODD_THROWN, ODD_ANGRY, ODD_MORE, ODD_MOST, ODD_WINDOW = 0.3, 0.12, 0.2, 0.7, timedelta(hours=1)
 APOLOGY_AFTER_HOSTILE = 0.15
+# her temper in the moment (``heat``, 0 – 1: how worked up she is, beside how angry): anger at what they did winds her up — and
+# once she can't get any angrier, each new provocation still does — and it cools fast when they stop (HEAT_HALF_LIFE_H). From
+# HEAT_EDGE (angry with them) she is at the end of her patience; past HEAT_EXPLODE, angry enough, it bursts: her next reply is
+# the outburst (``temper``), and for a while after it the aftermath. A short fuse (her temperament's: how she fights, how
+# easily anger rises in her) bursts sooner. An apology takes the edge off at once; kindness a little. None of it is a script:
+# what she does with it is hers.
+HEAT_PER_ANGER, HEAT_HALF_LIFE_H = 0.6, 1 / 3
+HEAT_EDGE, HEAT_EXPLODE, HEAT_EXPLODE_ANGRY = 0.5, 0.9, 0.7
+HEAT_AFTER_BURST = 0.35                     # (let out: what is left right after)
+OUTBURST_WAITS, AFTERMATH = timedelta(minutes=15), timedelta(minutes=45)
+HEAT_SORRY_BARE, HEAT_SORRY_OWNED, HEAT_KIND = 0.15, 0.35, 0.05
+FUSE = {"confront": 0.9, "withdraw": 1.08}  # (times HEAT_EXPLODE: shorter for one who says it to their face)
 #: from here, angry at what they did, she may not answer at all (``REFUSE`` in how it comes out: she decides, and [SILENT] is
 #: how). Only anger at them: hungry or stressed, she still answers, if snappily
 SILENT_FROM = 0.8
@@ -251,6 +263,7 @@ _WHY_FOR_HER = {
     "praised": "they praised what you did",
     "odd": "they keep saying strange, out-of-line things to you",
     "dislike": "you can't stand them, after how they have treated you",
+    "outburst": "you blew up at them",
 }
 
 
@@ -465,6 +478,58 @@ def levels(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any, *, of
     return out
 
 
+def heat(doc: dict[str, Any], now: datetime) -> float:
+    """How worked up she is right now (0 – 1), cooling as time passes."""
+    h = doc.get("heat") if isinstance(doc.get("heat"), dict) else {}
+    at = A._t(h.get("at"))
+    if at is None:
+        return 0.0
+    hours = max(0.0, (now - at).total_seconds() / 3600)
+    return round(float(h.get("v") or 0.0) * 0.5 ** (hours / HEAT_HALF_LIFE_H), 3)
+
+
+def _fuse(w: dict[str, Any]) -> float:
+    """Where she bursts: shorter for one who says it to their face, or whose anger rises easily."""
+    t = w["temperament"]
+    rise = float((t.get("rise") or {}).get("angry") or 1.0)
+    return HEAT_EXPLODE * FUSE.get(t.get("conflict") or "", 1.0) / max(0.7, min(1.4, rise))
+
+
+def temper(doc: dict[str, Any], w: dict[str, Any], now: datetime, angry: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Her temper: {heat, phase: calm | edge | outburst | aftermath}. ``angry``: her anger as levels has it (saves a look)."""
+    h = heat(doc, now)
+    ob = doc.get("outburst") if isinstance(doc.get("outburst"), dict) else None
+    if ob:
+        at = A._t(ob.get("at")) or now
+        spoken = A._t(ob.get("spoken"))
+        if spoken is None and now - at <= OUTBURST_WAITS:
+            return {"heat": h, "phase": "outburst"}
+        if now - (spoken or at + OUTBURST_WAITS) <= AFTERMATH:
+            return {"heat": h, "phase": "aftermath"}
+    angry = angry or {"v": 0.0, "why": None}
+    if h >= HEAT_EDGE and angry["v"] >= 0.45 and _at_them(angry.get("why")):
+        return {"heat": h, "phase": "edge"}
+    return {"heat": h, "phase": "calm"}
+
+
+def _wind_up(doc: dict[str, Any], w: dict[str, Any], gain: float, why: dict[str, Any], now: datetime, tz: Any) -> None:
+    """Anger at what they did winds her up; past her fuse, angry enough, it bursts (the next reply is the outburst)."""
+    h = min(1.0, heat(doc, now) + gain * HEAT_PER_ANGER)
+    doc["heat"] = {"v": round(h, 3), "at": A._iso(now)}
+    if temper(doc, w, now)["phase"] == "outburst":  # (already bursting; after it, pushed again, she can blow up again)
+        return
+    angry = levels(doc, w, now, tz, off=False)["angry"]["v"]
+    if h >= min(1.0, _fuse(w)) and angry >= HEAT_EXPLODE_ANGRY:
+        doc["outburst"] = {"at": A._iso(now), "why": why, "spoken": None}
+        _note(doc, {"emotion": "angry", "from": angry, "to": angry, "why": {"code": "outburst"}, "cause": why}, now)
+
+
+def _cool(doc: dict[str, Any], amount: float, now: datetime) -> None:
+    h = heat(doc, now)
+    if h > 0:
+        doc["heat"] = {"v": round(max(0.0, h - amount), 3), "at": A._iso(now)}
+
+
 def word(v: float) -> str:
     return next((name for floor, name in WORDS if v >= floor), "")
 
@@ -481,12 +546,14 @@ def summary(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> d
     the two strongest make; ``valence`` (-1 – 1) and ``arousal`` (0 – 1): how good and how lively it all feels; ``top``: what
     stands out, strongest first."""
     lv = levels(doc, w, now, tz)
+    tm = temper(doc, w, now, lv["angry"])
     order = sorted((e for e in EMOTIONS if lv[e]["v"] >= SHOWN_FROM), key=lambda e: -lv[e]["v"])[:3]
     top = [{"emotion": e, "v": lv[e]["v"], "word": word(lv[e]["v"]), "why": lv[e]["why"]} for e in order]
     total = max(1.0, sum(x["v"] for x in lv.values()))
     return {"label": order[0] if order else CALM, "level": lv[order[0]]["v"] if order else 0.0, "blend": _blend(top),
             "valence": round(max(-1.0, min(1.0, sum(lv[e]["v"] * VALENCE[e] for e in EMOTIONS) / total)), 2),
-            "arousal": round(max(0.0, min(1.0, 0.4 + sum(lv[e]["v"] * AROUSAL[e] for e in EMOTIONS) / total)), 2), "top": top,
+            "arousal": round(max(0.0, min(1.0, 0.4 + sum(lv[e]["v"] * AROUSAL[e] for e in EMOTIONS) / total + 0.3 * tm["heat"])), 2),
+            "top": top, "temper": tm["phase"], "heat": tm["heat"],
             "grudge": held(doc, w, now), "conflict": w["temperament"].get("conflict"), "voice": w["temperament"].get("voice") or {},
             "crisis": in_crisis(doc, now)}
 
@@ -513,7 +580,8 @@ def signature(s: dict[str, Any]) -> list[list[str]]:
     """A summary without its fine print: when this changes she is told again, and every window hears."""
     g = s.get("grudge")
     return [[t["emotion"], t["word"]] for t in s["top"]] + ([["grudge", "stings" if g.get("stings") else "held",
-                                                                str(g["sorry"])]] if g else []) + ([["crisis"]] if s.get("crisis") else [])
+                                                                str(g["sorry"])]] if g else []) + ([["crisis"]] if s.get("crisis") else []) \
+        + ([["temper", s["temper"]]] if s.get("temper") not in (None, "calm") else [])
 
 
 def why_for_her(why: dict[str, Any] | None) -> str:
@@ -571,6 +639,16 @@ REFUSE = ("You are furious with them for what they did. How it comes out is your
           "going over several sentences because one line doesn't get it out of you. You don't do anything they ask. Or you may not "
           "answer at all: then reply with exactly [SILENT] and nothing else, and the chat shows that you don't answer. An apology "
           "you believe can change it.")
+#: her temper (``temper``): at the end of her patience, bursting, and after
+EDGE = ("You are at the end of your patience with them: one more and you'll blow. Tense, clipped, telling them to stop — now — "
+        "in your own way.")
+OUTBURST = ("You've lost it: everything that built up bursts out now. Hold nothing back — a raised voice, swearing, every grievance "
+            "at once, on and on until it's out of you — or, if that's more you, you storm off: tell them you're done talking and "
+            "leave it there (after that, reply with exactly [SILENT] if they keep on). You don't do anything they ask.")
+OUTBURST_LEANS = {"confront": "It comes out loud and to their face.",
+                  "withdraw": "Your explosion is ice: a few devastating words, then you walk away."}
+AFTERMATH_LINE = ("You blew up at them a little while ago and you're still shaking with it: raw, cold or close to tears, in your way. "
+                  "You don't take back what you said unless you want to.")
 #: …the way she fights (``conflict``): said first, the other way still hers
 REFUSE_LEANS = {"confront": "You are one to say it to their face: blowing up at them, loud, is more you than going silent.",
                 "withdraw": "Cold fury is more you than shouting: icy, cutting words that hit hard, or nothing at all."}
@@ -596,9 +674,14 @@ def conduct(s: dict[str, Any]) -> str:
     lines = []
     voice = s.get("voice") or {}
     lean = s.get("conflict")
+    phase = s.get("temper") or "calm"
+    if phase == "outburst":
+        lines.append(OUTBURST + (f" {OUTBURST_LEANS[lean]}" if lean in OUTBURST_LEANS else ""))
     for t in s["top"][:2]:
         why = t.get("why")
         code = (why or {}).get("code")
+        if t["emotion"] == "angry" and phase == "outburst":
+            continue
         if t["emotion"] == "angry" and t["v"] >= SILENT_FROM and _at_them(why):
             leans = voice.get("refuse") or REFUSE_LEANS.get(lean or "")
             lines.append(REFUSE + (f" {leans}" if leans else ""))
@@ -624,8 +707,12 @@ def conduct(s: dict[str, Any]) -> str:
             how = f"{how} {ANGRY_LEANS[lean]}".strip()
         if how:
             lines.append(how)
+    if phase == "edge":
+        lines.append(EDGE)
+    elif phase == "aftermath":
+        lines.append(AFTERMATH_LINE)
     g = s.get("grudge")
-    if g and not any(x.startswith(REFUSE) for x in lines):
+    if g and not any(x.startswith((REFUSE, OUTBURST)) for x in lines):
         lines.append(HELD[0] if g.get("stings") else HELD[1])
     return " ".join(lines)
 
@@ -657,7 +744,7 @@ def worth_repeating(s: dict[str, Any]) -> bool:
 def furious(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> bool:
     """Angry enough at what they did (not at hunger or stress) that she is offered not answering at all (``REFUSE``): she decides."""
     angry = levels(doc, w, now, tz)["angry"]
-    return angry["v"] >= SILENT_FROM and _at_them(angry["why"])
+    return (angry["v"] >= SILENT_FROM and _at_them(angry["why"])) or temper(doc, w, now, angry)["phase"] == "outburst"
 
 
 def _lately(entry: Any, now: datetime, window: timedelta) -> int:
@@ -736,6 +823,8 @@ def _rise(doc: dict[str, Any], w: dict[str, Any], emotion: str, amount: float, w
     _give_way(doc, w, emotion, gain, now, tz)
     if emotion == "angry":
         _hurt(doc, w, gain, why, now)
+        if _at_them(why):
+            _wind_up(doc, w, gain, why, now, tz)
 
 
 def _hurt(doc: dict[str, Any], w: dict[str, Any], gain: float, why: dict[str, Any], now: datetime, *, own: bool = False) -> None:
@@ -847,6 +936,7 @@ def _apology(doc: dict[str, Any], w: dict[str, Any], owned: bool, now: datetime,
         doc["grudge"] = {**d, "v": round(g * (1 - worth), 3), "at": A._iso(now), "sorry": n + 1, "owned_n": n_owned + owned,
                          "owned": owned or bool(d.get("owned")), "owned_at": A._iso(now) if owned else d.get("owned_at")}
     doc["rude"] = None
+    _cool(doc, HEAT_SORRY_OWNED if owned else HEAT_SORRY_BARE, now)  # (it takes the edge off at once, more than the anger)
     after = _lately(doc.get("hostile"), now, HOSTILE_WINDOW)  # (sorry doesn't undo being hit at once)
     fall = (APOLOGY_AFTER_HOSTILE if after else APOLOGY) * worth / SORRY_OWNED
     _fall(doc, w, "angry", fall, {"code": "apology"}, now, tz)
@@ -980,7 +1070,7 @@ def _undo_heard(doc: dict[str, Any], w: dict[str, Any], message: str, now: datet
     n0 = int(e.get("offences") or 0)
     offences = doc.get("offences") or []
     doc["offences"] = offences[:n0] + [t for t in offences[n0:] if t != heard_at]
-    for k in ("rude", "hostile", "odd", "kind", "asks"):
+    for k in ("rude", "hostile", "odd", "kind", "asks", "heat", "outburst"):
         doc[k] = copy.deepcopy(e.get(k))
     doc["owed"] = [o for o in doc.get("owed") or [] if not (o.get("heard") == message and o.get("code") in _OWED_BY_REACTING)]
     doc["heard_effect"] = None
@@ -998,6 +1088,7 @@ def _react(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, f: d
     effect = {"message": message, "grudge": copy.deepcopy(doc.get("grudge")), "offences": len(doc.get("offences") or []),
               "rude": copy.deepcopy(doc.get("rude")), "hostile": copy.deepcopy(doc.get("hostile")), "odd": copy.deepcopy(doc.get("odd")),
               "kind": copy.deepcopy(doc.get("kind")), "asks": copy.deepcopy(doc.get("asks")),
+              "heat": copy.deepcopy(doc.get("heat")), "outburst": copy.deepcopy(doc.get("outburst")),
               "offence": bool(f["hostile"] or f["rude"] or f.get("odd") or f["dismissed"] or f["body"])}
     _reactions(doc, w, text, message, f, now, tz)
     post = levels(doc, w, now, tz, off=False)
@@ -1082,6 +1173,7 @@ def _reactions(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, 
             _rise(doc, w, "excited", PRAISED_EXCITED * k * near, {"code": "praised"}, now, tz)
         if sweet and not skips:
             _ease(doc, w, EASED_BY_KINDNESS, now, tz)
+            _cool(doc, HEAT_KIND, now)
         loves = w["temperament"].get("loves")
         if loves and re.search(loves, text, re.I):
             _rise(doc, w, "excited", LOVES, {"code": "loves"}, now, tz)
@@ -1132,6 +1224,10 @@ def reply(doc: dict[str, Any], w: dict[str, Any], text: str, heard_text: str, no
                 _hurt(doc, w, pulled, why, now, own=True)
     if shown.get("angry", 0.0) >= 0.45 and own in ("hungry", "stressed", "tired", "off_day") and not offence:
         doc["unfair"] = {"at": A._iso(now), "code": own}  # (she showed anger, and it was her day, not them)
+    ob = doc.get("outburst") if isinstance(doc.get("outburst"), dict) else None
+    if ob and not ob.get("spoken") and text.strip() and temper(doc, w, now)["phase"] == "outburst":
+        ob["spoken"] = A._iso(now)  # (it's out: what is left is the aftermath)
+        doc["heat"] = {"v": HEAT_AFTER_BURST, "at": A._iso(now)}
     if text.strip():
         spoke(doc, text, now)
 

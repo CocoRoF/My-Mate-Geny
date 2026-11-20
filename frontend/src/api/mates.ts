@@ -332,6 +332,10 @@ export interface MateState {
   arousal: number;
   /** what stands out, strongest first */
   top: StateFeeling[];
+  /** her temper (app/mate/state.py ``temper``): at the end of her patience, bursting, or after it; absent from older servers */
+  temper?: "calm" | "edge" | "outburst" | "aftermath";
+  /** 0 – 1: how worked up she is right now */
+  heat?: number;
 }
 export interface StateLogEntry {
   at: string;

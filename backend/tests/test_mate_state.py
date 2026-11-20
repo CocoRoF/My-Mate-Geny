@@ -61,8 +61,9 @@ def test_keeping_up_the_insults_makes_her_angrier_each_time():
         seen.append(_lv(doc, w)["angry"])
     assert seen == pytest.approx([S.RUDE, S.RUDE * 2 + S.RUDE_MORE, 1.0])  # (0.42, 0.94: it lands as it would on anyone)
     assert S.levels(doc, w, NOON, TZ)["angry"]["why"]["code"] == "rude"
-    # (furious with them: blowing up at them or not answering at all, hers to decide; short of that, angry out loud or cold)
-    assert S.conduct(S.summary(doc, w, NOON, TZ)).startswith(S.REFUSE)
+    # (kept up three times in a row she blows up: everything that built up comes out — test_mate_real_person.py; short of that,
+    # furious: blowing up at them or not answering at all, hers to decide)
+    assert S.conduct(S.summary(doc, w, NOON, TZ)).startswith(S.OUTBURST)
     assert "blow up at them" in S.REFUSE and "swear" in S.REFUSE and "reply with exactly [SILENT]" in S.REFUSE
     hot = {**S.new(), "feelings": {"angry": {"v": 0.75, "at": S.A._iso(NOON), "why": {"code": "rude"}}}}
     said = S.conduct(S.summary(hot, w, NOON, TZ))

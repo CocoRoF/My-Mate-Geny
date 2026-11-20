@@ -225,7 +225,7 @@ def test_delivery_follows_how_she_feels_and_how_strongly():
     # (steerable engines: a few words, by strength; angry at what they did is cold, angry at her day only grumpy)
     assert voice.delivery(_felt("angry", 0.3), "openai", "gpt-4o-mini-tts") == {"how": "a little curt and cool"}
     assert voice.delivery(_felt("angry", 0.5), "openai", "gpt-4o-mini-tts") == {"how": "curt and cold"}
-    assert "anger held" in voice.delivery(_felt("angry", 0.85), "openai", "gpt-4o-mini-tts")["how"]
+    assert "anger in every word" in voice.delivery(_felt("angry", 0.85), "openai", "gpt-4o-mini-tts")["how"]
     assert voice.delivery(_felt("angry", 0.5, "hungry"), "openai", "gpt-4o-mini-tts") == {"how": "grumpy and short"}
     assert voice.delivery(_felt("angry", 0.5, "off_day"), "google") == {"how": "grumpy and short"}
     assert voice.delivery(_felt("sad", 0.5, "sad"), "openai", "gpt-4o-mini-tts") == {"how": "soft and slow, subdued"}

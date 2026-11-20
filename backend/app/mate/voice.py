@@ -270,7 +270,7 @@ _OMNI_EMOTION = {"joy": "joy", "smile": "joy", "laugh": "joy", "greet": "joy", "
 #: how the strongest feeling comes out in her voice, by how strong it is ((from, how), …): the words a steerable engine is told.
 #: Angry at something they did is curt and cold; angry at her day (hungry, stressed, her off day), grumpy
 VOICE_HOW = {
-    "angry": ((0.7, "curt, cold and clipped, the anger held just under it"), (0.45, "curt and cold"),
+    "angry": ((0.7, "sharp and cold, anger in every word"), (0.45, "curt and cold"),
               (S.SHOWN_FROM, "a little curt and cool")),
     "cranky": ((0.45, "grumpy and short"), (S.SHOWN_FROM, "a little grumpy")),
     "sad": ((0.7, "soft, low and slow, heavy, close to tears"), (0.45, "soft and slow, subdued"),
@@ -283,6 +283,9 @@ VOICE_HOW = {
             (S.SHOWN_FROM, "a touch hesitant")),
     "sleepy": ((0.7, "very drowsy, slow and soft, half asleep"), (0.45, "drowsy and a bit slow"), (S.SHOWN_FROM, "a little drowsy")),
 }
+#: her temper (state.temper): bursting, at the end of her patience — over how angry she is
+TEMPER_HOW = {"outburst": "furious and loud: voice raised, sharp and fast, words tumbling out",
+              "edge": "tense and clipped, barely holding it in"}
 #: ElevenLabs (models with continuous settings): the livelier she is the less stable and the more styled her own settings, the
 #: calmer (sleepy, low) the steadier — by at most this much, times how strongly she feels it, in steps of DELTA_STEP
 ELEVEN_STABILITY, ELEVEN_STYLE, DELTA_STEP = 0.2, 0.25, 0.05
@@ -319,6 +322,8 @@ def delivery(state: dict[str, Any] | None, engine: str, model: str = "") -> dict
         out = {"stability": _step(-ELEVEN_STABILITY * lively * strength), "style": _step(ELEVEN_STYLE * max(0.0, lively) * strength)}
         return {k: x for k, x in out.items() if x}
     if (engine == "openai" and model.startswith("gpt-4o")) or engine == "google":
+        if emotion == "angry" and state.get("temper") in TEMPER_HOW:
+            return {"how": TEMPER_HOW[state["temper"]]}
         if emotion == "angry" and not S._at_them(top.get("why")):
             emotion = "cranky"
         how = next((text for floor, text in VOICE_HOW[emotion] if v >= floor), "")

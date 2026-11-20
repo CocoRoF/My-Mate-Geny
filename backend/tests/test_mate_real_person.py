@@ -60,7 +60,7 @@ def test_something_out_of_line_throws_her_first_and_makes_her_angry_if_it_goes_o
 
 def test_furious_she_may_blow_up_and_keep_going_or_not_answer_and_she_owes_no_yes():
     w, doc = S.who(), S.new()
-    for i in range(3):
+    for i in range(2):  # (furious; a third would make her blow up: test_kept_provoking…)
         S.hear(doc, w, "닥쳐, 쓸모없어", f"m{i}", NOON, TZ)
     how = S.conduct(S.summary(doc, w, NOON, TZ))
     assert how.startswith(S.REFUSE)
@@ -162,3 +162,69 @@ def test_a_swear_word_is_read_by_what_it_does_not_by_the_word():
         assert not A.rude_to_her(text, "채린"), text
     for text in ("시발 너 진짜 뭐냐", "닥쳐 시발", "병신아", "꺼져", "채린 씨발 짜증나게 하네"):
         assert A.rude_to_her(text, "채린"), text
+
+
+def _provoke(doc, w, n, start=NOON, every=timedelta(minutes=2), intensity=0.8):
+    out = []
+    for i in range(n):
+        t = start + every * i
+        S.hear(doc, w, "닥쳐 병신아", f"p{start.isoformat()}{i}", t, TZ, _reading(["insult"], intensity))
+        out.append(S.summary(doc, w, t, TZ))
+    return out
+
+
+def test_kept_provoking_she_winds_up_to_the_end_of_her_patience_and_then_blows_up():
+    w, doc = S.who(closeness=0.6), S.new()
+    seen = _provoke(doc, w, 3)
+    assert [s["temper"] for s in seen] == ["calm", "edge", "outburst"]
+    assert seen[0]["heat"] < seen[1]["heat"] < seen[2]["heat"]
+    assert S.EDGE in S.conduct(seen[1]) and "one more and you'll blow" in S.EDGE
+    how = S.conduct(seen[2])
+    assert how.startswith(S.OUTBURST) and S.REFUSE not in how and "Hold nothing back" in how
+    assert S.furious(doc, w, NOON + timedelta(minutes=4), TZ)
+    assert any((e.get("why") or {}).get("code") == "outburst" for e in doc["log"])
+    assert ["temper", "outburst"] in S.signature(seen[2])  # (she is told it, and every window hears)
+
+
+def test_once_it_is_out_the_aftermath_and_she_cools_and_pushed_again_she_can_blow_again():
+    w, doc = S.who(closeness=0.6), S.new()
+    _provoke(doc, w, 3)
+    t = NOON + timedelta(minutes=5)
+    S.reply(doc, w, "[angry:1.0] 야 너 진짜 적당히 해. 내가 몇 번을 참았는데", "닥쳐 병신아", t, TZ)
+    after = S.summary(doc, w, t, TZ)
+    assert after["temper"] == "aftermath" and after["heat"] <= S.HEAT_AFTER_BURST + 0.01
+    assert S.AFTERMATH_LINE in S.conduct(after)
+    assert S.summary(doc, w, t + timedelta(hours=2), TZ)["temper"] == "calm"  # (it passes)
+    again = _provoke(doc, w, 3, start=t + timedelta(minutes=5))
+    assert again[-1]["temper"] == "outburst"  # (pushed again, she blows up again)
+
+
+def test_how_short_her_fuse_is_is_her_own_and_an_apology_takes_the_edge_off():
+    loud, quiet = S.who(closeness=0.6, builtin="seoa"), S.who(closeness=0.6, builtin="chaerin")
+    assert S._fuse(loud) < S._fuse(quiet)
+    w, doc = S.who(closeness=0.6), S.new()
+    _provoke(doc, w, 2)
+    assert S.summary(doc, w, NOON + timedelta(minutes=2), TZ)["temper"] == "edge"
+    S.hear(doc, w, "미안해, 내가 진짜 말이 심했어. 다시는 안 그럴게", "sorry", NOON + timedelta(minutes=3), TZ,
+           {**_reading(["apology"], 0.8), "owns": True, "aimed": True})
+    assert S.heat(doc, NOON + timedelta(minutes=3)) < S.HEAT_EDGE
+    S.hear(doc, w, "닥쳐", "again", NOON + timedelta(minutes=4), TZ, _reading(["insult"], 0.8))
+    assert S.summary(doc, w, NOON + timedelta(minutes=4), TZ)["temper"] != "outburst"  # (it took the edge off)
+
+
+def test_what_she_took_as_play_winds_her_up_no_more():
+    w, doc = S.who(closeness=0.6), S.new()
+    _provoke(doc, w, 1)
+    S.hear(doc, w, "멍청아 ㅋㅋ", "tease", NOON + timedelta(minutes=1), TZ, _reading(["insult"], 0.8))
+    h = S.heat(doc, NOON + timedelta(minutes=1))
+    S.reply(doc, w, "[laugh] 뭐래 ㅋㅋ", "멍청아 ㅋㅋ", NOON + timedelta(minutes=1), TZ)  # (she took it as play: undone)
+    assert S.heat(doc, NOON + timedelta(minutes=1)) < h
+
+
+def test_her_voice_carries_her_temper():
+    from app.mate import voice as V
+
+    w, doc = S.who(closeness=0.6), S.new()
+    seen = _provoke(doc, w, 3)
+    assert V.delivery(seen[2], "openai", "gpt-4o-mini-tts")["how"].startswith("furious and loud")
+    assert "barely holding it in" in V.delivery(seen[1], "google")["how"]

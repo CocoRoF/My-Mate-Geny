@@ -97,6 +97,24 @@ from her own face and tools, and from her body and day.
 | What she has on | An outfit's `feel` keeps that emotion climbing while she wears it (her crop top: shy). |
 | Her off day | Irritable and drowsy for two days, for no reason she could name, never at them. The first comes within 5 days of meeting, then every 21–28 days. |
 
+### Her temper: winding up, bursting, after
+
+Beside how angry she is, how worked up she is right now (`heat`, 0–1; `state.temper`). Anger at what they did winds her up by
+0.6 of what it adds — and once she can't get any angrier, each new provocation still does — and it cools fast when they stop
+(half-life 20 minutes). It is what turns "angry" into an explosion when they keep at it:
+
+| Phase | When | How it comes out (`CONDUCT`) |
+|---|---|---|
+| `edge` | heat 0.5+, angry with them 0.45+ | at the end of her patience: tense, clipped, telling them to stop — one more and she'll blow (`EDGE`) |
+| `outburst` | heat past her fuse (0.9; × 0.9 for one who says it to their face, × 1.08 for one who goes cold; shorter the more easily anger rises in her), anger 0.7+ | everything that built up bursts out in her next reply: a raised voice, swearing, every grievance at once, on and on — or she storms off, done talking (`OUTBURST`, with her way of fighting); it replaces the furious line |
+| `aftermath` | once she has let it out (her reply; or 15 minutes on), for 45 minutes | still shaking with it — raw, cold or close to tears; she takes nothing back unless she wants to (`AFTERMATH_LINE`); heat drops to 0.35, and pushed again she can blow up again |
+
+Kept up, three harsh insults in a row: angry, then furious at the edge, then the outburst. An apology takes the edge off at once
+(0.35 owning it, 0.15 a bare one), kindness a little (0.05); what she took as play (a calm reply) winds her up no more. The phase
+is in her summary (`temper`, `heat`; it raises her `arousal`), in what she is told, on the ♥ status window (폭발 직전 / 폭발! /
+폭발 뒤), in her voice (`voice.TEMPER_HOW`: furious and loud; tense and clipped), and her outburst is in her state's log
+(`outburst`). Room to react, never a script: how it comes out is hers.
+
 ## 2. What stays with her
 
 A quick "미안" must not fix what they did. Anger they caused leaves a **grudge** (`grudge`, `_hurt`):
