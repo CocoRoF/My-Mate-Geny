@@ -3,15 +3,16 @@
 
     ci_gate.py ci                     ci.yml's changes job: each job's go (GITHUB_OUTPUT <job>=true|false), from what
                                       changed (FILTERS, dorny/paths-filter's outputs as JSON) and —
-                                        the Windows and macOS jobs: only on a pull request with their label (ci:windows,
-                                        ci:ios), never on a push; Linux runners for the rest;
+                                        a pull request: the Windows and macOS jobs only with their label (ci:windows,
+                                        ci:ios); Linux runners for the rest;
                                         a push to main that merged a pull request: not the jobs that pull request already
                                         passed on the very same tree (its commit status "ci: tested tree", by `mark`)
     ci_gate.py mark                   ci.yml's tested job, on a pull request: the tree it tested (the merge GitHub made)
                                       and the jobs that passed on it (NEEDS: toJSON(needs)), as that commit status on
                                       the pull request's head — nothing when one failed
-    ci_gate.py heavy <label>          a suite on Windows / macOS runners (voice-local, windows-update): run=true by hand
-                                      or on a push to its own branch; on a pull request only with <label>
+    ci_gate.py heavy <label> <path>…  a suite on Windows / macOS runners (voice-local, windows-update): run=true by hand
+                                      or on a push to its own branch; on a pull request only with <label>; nightly only
+                                      when something under <path>… changed since this workflow last ran on main
 
 A label added after the run (or a re-run) counts: the labels are read when the job runs, not from the event.
 """
@@ -105,8 +106,8 @@ def cmd_ci() -> None:
             go[job], why = False, "nothing it checks changed"
         elif job in done:
             go[job], why = False, f"passed on this very tree in {by}"
-        elif label and (name != "pull_request" or label not in have):
-            go[job], why = False, f"Windows / macOS: only on a pull request with the label {label}"
+        elif name == "pull_request" and label and label not in have:
+            go[job], why = False, f"not on a pull request without the label {label} (it runs on the push to main)"
         else:
             go[job], why = True, "changed" + (f"; {by}" if by else "")
         rows.append(f"| {job} | {'yes' if go[job] else '—'} | {why} |")
@@ -132,13 +133,27 @@ def cmd_mark() -> None:
     print(f"marked {head[:7]}: {desc}")
 
 
-def cmd_heavy(label: str) -> None:
+def cmd_heavy(label: str, paths: list[str]) -> None:
     name = os.environ["GITHUB_EVENT_NAME"]
     if name == "pull_request":
         run = label in labels()
         why = f"the label {label}" if run else f"a pull request without the label {label}"
-    else:
+    elif name != "schedule":
         run, why = True, name
+    else:
+        wf = os.environ["GITHUB_WORKFLOW_REF"].split("@")[0].rsplit("/", 1)[-1]
+        runs = api(f"repos/{repo()}/actions/workflows/{wf}/runs?branch=main&status=completed&per_page=30")["workflow_runs"]
+        last = next((r for r in runs if r["conclusion"] in ("success", "failure")), None)
+        if not last:
+            run, why = True, "no earlier run on main"
+        else:
+            diff = subprocess.run(["git", "diff", "--name-only", last["head_sha"], "HEAD", "--", *paths],
+                                  text=True, capture_output=True)
+            files = diff.stdout.split()
+            run = diff.returncode != 0 or bool(files)
+            why = (f"{len(files)} file(s) changed since {last['head_sha'][:7]}: {', '.join(files[:3])}" if files else
+                   f"{last['head_sha'][:7]} is not in this history" if diff.returncode else
+                   f"nothing changed since {last['head_sha'][:7]}")
     output(run=str(run).lower())
     summary(f"{'Runs' if run else 'Skipped'}: {why}")
 
@@ -149,7 +164,7 @@ if __name__ == "__main__":
         cmd_ci()
     elif cmd == "mark":
         cmd_mark()
-    elif cmd == "heavy" and len(rest) == 1:
-        cmd_heavy(rest[0])
+    elif cmd == "heavy" and len(rest) >= 2:
+        cmd_heavy(rest[0], rest[1:])
     else:
         raise SystemExit(__doc__)
