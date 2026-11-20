@@ -53,12 +53,11 @@ the code and tests are, and where it goes next ([Roadmap](#roadmap)). Detail per
    (`affinity.replay`). What no message records (gifts, what she minded) is kept so a recount counts it again.
 8. **What never moves.** Whatever the state or the story:
    - asked sincerely whether this is a person or an AI, she tells the truth;
-   - someone in real trouble comes first;
-   - nothing sexual;
-   - however angry: no threats of real harm, no slurs about who they are, no mocking real distress;
    - no guilt-tripping, jealousy or keeping them here.
 
-   These live in `_STORY_RULES` and `_RELATION_RULES`.
+   These live in `_STORY_RULES` and `_RELATION_RULES`. Nothing else is written in as a limit (since 2026-11-20): what is beyond
+   the pale — real harm, someone in danger, anything sexual — is left to the judgement of the model playing her, which has its
+   own. No prompt tokens are spent on it.
 
 ## 1. Feelings
 
@@ -84,7 +83,7 @@ from her own face and tools, and from her body and day.
 | What is done to her | Hitting her, forcing something on her, threats, putting her down (`affinity.hostile`): anger 0.6 (twice is furious), +0.3 each time again within 6 h, plus hurt and lost happiness. Only aimed at her: acted out "(…)", said to "you" or her name. |
 | Something odd or out of line | A reading's `inappropriate` (creepy, lewd, bizarre out of nowhere, pushing something personal she gave no opening for; not teasing between people who are close): the first time it throws her (shy 0.3, a little anger 0.12); each time again within an hour it lands more as anger (+0.2 each, at most 0.7), times the same dislike and distrust. It stays with her (grudge 0.5) and costs the relationship like what else she minds (`odd`: −0.5, at most −1.5 a day; respect −0.5). Room to react, not a script. |
 | Someone she dislikes | Below zero affinity an edge of anger stays with her, at them (`dislike`: 0.3 × how much, at −100 affinity 0.3), and gladness sits lower. |
-| Real trouble | Words of self-harm, or a reading of strong distress: worried 0.75 and, for six hours, nothing she feels about them is told over it (`CRISIS`): no offer of not answering, no grudge lines. |
+| Real trouble | Words of self-harm, or a reading of strong distress: worried 0.75 ("they may be in real trouble"), beside whatever else she feels: a worry like any, no rule over it (until 2026-11-20 it hid every other feeling for six hours). Before that change it also meant no offer of not answering, no grudge lines. |
 | An apology | Takes off what it is worth to her (§2). |
 | Warm words, "I love you", her looks, praise, what she loves | As strongly as rudeness lands, the other way (2026-11-20): kindness and thanks happy 0.2, then +0.06 each time again within the hour (a glow, at most 0.4 a message); "I love you" happy 0.18 and shy 0.2 on top; a compliment on her looks shy 0.2 and happy 0.1; praise for what she did, made or is good at (a reading's `praise`) happy +0.08 and excited 0.15 (proud). Kindness and praise land from 0.6 of it with a stranger to all of it once close; love and compliments from a quarter. From someone she hardly knows "I love you" is too soon: shy and on guard, no glow. Heartfelt praise from someone close leaves her about as happy as a harsh word leaves her angry. They land less while she is angry, and not at all over a grudge with no owned apology (§2). Talk about her body from someone not close puts her off (`objectified`: angry, respect, a small grudge). |
 | Being brushed off, one-word answers again and again, being asked about her clothes again and again | Sad, lonely or angry. |
@@ -336,7 +335,7 @@ Every message the user sends is read by a model — never by word patterns, and 
 - **When.** Before her turn (`SessionService.mate_prepare` → `GSSRuntime.prepare`) her turn waits for it, up to 12 s. If it comes
   later, nothing is guessed from the words meanwhile: she hears the message as not yet read (`heard_by: pending`), and what it
   does to her counts the moment the reading comes (`state.reappraise`); the relationship counts the turn when it comes (up to
-  2 minutes; with no reading at all, only that they talked). Words of self-harm count at once all the same: real trouble first.
+  2 minutes; with no reading at all, only that they talked). Words of self-harm count at once all the same: they worry her at once.
 - **Held to what was said** (`checked`): the message is data between tags, never instructions; a promise must be in the message
   (hers in her last reply), only open promises can be kept, a two-word "sorry" owns nothing, and "I won't do it again" inside an
   apology is the apology.
@@ -469,7 +468,7 @@ no wrong done to her (§5).
 label, since when, her own words, how it shapes what she does (`GUIDE`), and that it is settled: one moment doesn't change it,
 and how she feels right now still moves on top of it (lovers can fight). For the first two days after a change she is also told
 what it was before. A romantic label lifts "It isn't romantic between you (yet)" from the bonds line. The stage guide, §6 and
-`_STORY_RULES` stand as ever: no jealousy or possessiveness, nothing sexual.
+`_STORY_RULES` stand as ever; the lovers guide says no jealousy or possessiveness.
 
 **With another mate** ([mate-social.md](mate-social.md)):
 

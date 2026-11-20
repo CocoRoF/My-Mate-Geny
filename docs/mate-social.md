@@ -20,7 +20,7 @@ know.
 - **No numbers in her mouth.** She is told words; the user sees the bars.
 - **No ceiling, no rule of who may love whom, no switch.** Until 2026-11-20 she was never fonder of another mate than of the
   user, romance was only between a man and a woman, it never went past 썸, and 메이트끼리 설렘 could switch it off. All of that is
-  gone: romance moves the way romance with the user does (only on trust and closeness), and nothing sexual.
+  gone: romance moves the way romance with the user does (only on trust and closeness).
 
 ## Knowing each other
 

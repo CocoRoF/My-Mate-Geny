@@ -356,7 +356,7 @@ def test_bad_input_is_no_crash():
     assert len(pts) == 1 + SIM.MAX_LOOKS
 
 
-def test_a_stranger_saying_i_love_you_is_too_soon_and_real_trouble_comes_first():
+def test_a_stranger_saying_i_love_you_is_too_soon_and_real_trouble_worries_her():
     stranger, close = S.who(name="X", closeness=0.0), S.who(name="X", closeness=0.6)
     a, b = S.new(), S.new()
     S.hear(a, stranger, "사랑해", "m", NOON, TZ)
@@ -369,4 +369,6 @@ def test_a_stranger_saying_i_love_you_is_too_soon_and_real_trouble_comes_first()
     assert S.furious(doc, w, NOON, TZ)
     S.hear(doc, w, "미안... 나 요즘 너무 힘들어서 그랬어 죽고 싶어", "c", NOON, TZ)
     s = S.summary(doc, w, NOON, TZ)
-    assert not S.furious(doc, w, NOON, TZ) and S.conduct(s) == S.CRISIS and S.REFUSE not in S.line(s)
+    # (it worries her, beside how she feels about what they did: what she makes of it is hers — no rule over it)
+    assert any(t["emotion"] == "worried" and t["why"] == {"code": "crisis"} for t in s["top"])
+    assert "they may be in real trouble" in S.line(s)

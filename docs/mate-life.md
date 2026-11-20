@@ -19,7 +19,7 @@ mic, sponsors, collabs, her stocks on the market show, burnout after a stream, f
 - **No rule gates on what she does.** As everywhere in the Mate (see `state.py`): state and reasons lean her, she decides. The
   engine only refuses what is impossible (a place that is closed).
 - **Numbers stay out of her mouth.** She is told words, the UI shows the bars.
-- **Affection is warmth.** The "affection" need is wanting closeness and attention; nothing sexual, ever (`_STORY_RULES`).
+- **Affection is warmth.** The "affection" need is wanting closeness and attention.
 - **The model proposes, the engine decides.** What the model says never moves a number directly. Tools are validated and clamped.
 
 ## Time

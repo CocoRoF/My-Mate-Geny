@@ -603,13 +603,13 @@ def test_the_rules_leave_it_to_her():
     # (what she does for them is hers too, work included: angry with them she may refuse, or want an apology first)
     assert "Nobody is owed a yes" in feelings and "Work still gets done" not in feelings and "work to pass on to a chat" in feelings
     assert "an apology, say" in feelings and "to keep them here isn't" in feelings
-    assert "tell them off" in feelings and "truly struggling or unsafe, that comes first" in feelings
+    assert "tell them off" in feelings and "truly struggling" not in feelings  # (what is beyond the pale: the model's own judgement)
     assert "still gets handed off" not in text and "is yours to decide, as everything they ask of you is" in text
     assert "How it comes out now" in feelings and "[angry:0.8]" in feelings
     assert "you decide" in clothes and "on a whim" in clothes and "Never say you changed unless" in clothes
     assert "glad to, you say yes and change" in clothes and "rather not, you don't" in clothes
     assert "even if your character would be shy" not in clothes
-    assert "nothing sexual" in clothes
+    assert "nothing sexual" not in clothes
     assert "- feel:" in text and "- change_outfit:" in text
     assert "Your clothes" not in base_prompt("Haru", {}, {"self_outfit": "off"})
 

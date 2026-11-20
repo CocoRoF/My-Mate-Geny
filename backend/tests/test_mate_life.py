@@ -263,7 +263,7 @@ def test_the_prompt_has_the_rules_only_with_a_day():
     persona = {"description": "x"}
     assert "## Your day" in base_prompt("A", persona, {}, life="- rest: resting")
     assert "## Your day" not in base_prompt("A", persona, {})
-    assert "never sexual" in base_prompt("A", persona, {}, life="- rest: resting")
+    assert "wanting to be close" in base_prompt("A", persona, {}, life="- rest: resting")
     assert "- rest: resting" in base_prompt("A", persona, {}, life="- rest: resting")
     assert "do_activity" in base_prompt("A", persona, {}, life="- rest: resting")
     assert prompt_key("A", persona, 0, {}, life="- rest: resting") != prompt_key("A", persona, 0, {})

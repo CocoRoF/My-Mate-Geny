@@ -89,14 +89,16 @@ def test_her_prompt_gives_her_room_to_react_like_a_person():
     feel = text.split("## How you feel")[1]
     assert "not someone performing for them" in feel and "swearing" in feel and "come back at them again" in feel
     assert "[SILENT]" in feel and "isn't owed what they ask" in feel and "being angry with them is no reason to give in" in feel
-    assert "never threaten real harm" in feel and "slurs" in feel and "truly struggling or unsafe, that comes first" in feel
+    # (no limits written in: what is beyond the pale is the model's own judgement, and no tokens go on it)
+    assert "real harm" not in feel and "slurs" not in feel and "truly struggling" not in feel
     assert "your speech level stays" not in feel  # (losing her temper can break it now)
     talk = text.split("## How you talk")[1]
     assert "존댓말 slipping into 반말" in talk and "rougher, louder and longer" in talk and "worked up" in talk
     assert "insult them cruelly" not in text and "polite but cool" not in text
     assert "curse at them" in _STAGE_GUIDES["hostile"] and "push back" in _STAGE_GUIDES["dislike"]
-    # (where the story stops is where it was)
-    assert "Nothing sexual" in text and "sincerely want to know whether they are talking with a person or an AI" in text
+    # (where the story stops: only the sincere question whether they are talking with a person or an AI)
+    assert "Nothing sexual" not in text and "real help" not in text
+    assert "sincerely want to know whether they are talking with a person or an AI" in text
     call = call_prompt("채린", {"language": "ko"}, {}, [], relation=True, stage="dislike")
     assert "not someone performing for them" in call and "swear" in call and "go on at them as long as it takes" in call
 

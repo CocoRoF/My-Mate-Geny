@@ -175,7 +175,7 @@ SEVERITY = {"hostile": 1.0, "broken_promise": 0.6, "objectified": 0.6, "rude": 0
 EASED_BY_KINDNESS, EASED_BY_GIFT, EASED_PER_DAY = 0.04, 0.15, 0.25  # (after an apology that owned it: kindness eases it)
 STRANGER, LOVE_FROM_CLOSE, LOVE_TOO_SOON = 0.2, 0.45, 0.1  # (love lands as love only as they grow close)
 BODY_ANGRY, BODY_OK_FROM = 0.15, 0.45  # (talk about her body from someone not close puts her off)
-CRISIS_WORRIED, CRISIS_FOR = 0.75, timedelta(hours=6)  # (they may be in real trouble: that comes first)
+CRISIS_WORRIED, CRISIS_FOR = 0.75, timedelta(hours=6)  # (they may be in real trouble: it worries her)
 BROKEN_PROMISE_ANGRY, BROKEN_PROMISE_SAD = 0.12, 0.1
 UNFAIR_TOLD_AFTER, UNFAIR_FOR = timedelta(minutes=30), timedelta(hours=24)
 OFFENCES_WINDOW, OFFENCES_MAX, EPISODE_GAP = timedelta(days=7), 20, timedelta(hours=2)  # (one heated stretch is one time)
@@ -562,10 +562,7 @@ REFUSE = ("You are furious with them for what they did. How it comes out is your
           "who has had enough does: swear, tell them exactly what they did, demand an apology, tell them to leave you alone, and keep "
           "going over several sentences because one line doesn't get it out of you. You don't do anything they ask. Or you may not "
           "answer at all: then reply with exactly [SILENT] and nothing else, and the chat shows that you don't answer. An apology "
-          "you believe, or real trouble they are in, can change it.")
-#: they may be in real trouble: before anything she feels about them
-CRISIS = ("They may be in real trouble. That comes before anything you feel about them right now: set it aside and be there for "
-          "them, as yourself.")
+          "you believe can change it.")
 #: …the way she fights (``conflict``): said first, the other way still hers
 REFUSE_LEANS = {"confront": "You are one to say it to their face: blowing up at them, loud, is more you than going silent.",
                 "withdraw": "Cold fury is more you than shouting: icy, cutting words that hit hard, or nothing at all."}
@@ -586,9 +583,8 @@ _OWN_WORRIES = ("stressed", "work_failed", "doing", "off_day")
 
 
 def conduct(s: dict[str, Any]) -> str:
-    """How it comes out in the way she talks now — in her own way where her temperament has words for it (``voice``)."""
-    if s.get("crisis"):  # (real trouble first: nothing she feels about them is told over it)
-        return CRISIS
+    """How it comes out in the way she talks now — in her own way where her temperament has words for it (``voice``). Their being
+    in real trouble is a worry of hers like any (``crisis``: worried, with its reason); what she makes of it is hers."""
     lines = []
     voice = s.get("voice") or {}
     lean = s.get("conflict")
@@ -651,10 +647,9 @@ def worth_repeating(s: dict[str, Any]) -> bool:
 # ---- how she leans on what is up to her ----
 
 def furious(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> bool:
-    """Angry enough at what they did (not at hunger or stress) that she is offered not answering at all (``REFUSE``): she decides.
-    Never while they may be in real trouble."""
+    """Angry enough at what they did (not at hunger or stress) that she is offered not answering at all (``REFUSE``): she decides."""
     angry = levels(doc, w, now, tz)["angry"]
-    return angry["v"] >= SILENT_FROM and _at_them(angry["why"]) and not in_crisis(doc, now)
+    return angry["v"] >= SILENT_FROM and _at_them(angry["why"])
 
 
 def _lately(entry: Any, now: datetime, window: timedelta) -> int:
@@ -907,7 +902,7 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
     """A message of the user's, once however often it is looked at, before she answers it. ``reading``: a model's reading of
     it (app/mate/gss/appraisal.py). Without one: ``words`` reads it by its words (tests, the simulator, history from before
     readings); a live mate's (``words=False``) waits for its reading instead — what it does to her counts when it comes
-    (``reappraise``), never a guess from its words. Words of self-harm count at once all the same: real trouble first."""
+    (``reappraise``), never a guess from its words. Words of self-harm count at once all the same: they worry her at once."""
     if doc.get("heard") == message:
         return
     last = A._t(doc.get("heard_at"))
@@ -1009,7 +1004,7 @@ def _reactions(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, 
     # (and what they do to her lands harder from someone she dislikes, or no longer trusts)
     sour = 1 + SOURED_HARDER * float(w.get("dislike") or 0.0) + DISTRUST_HARDER * float(w.get("distrust") or 0.0)
     close = w["closeness"]
-    if f.get("crisis"):  # (they may be in real trouble: it comes first, whatever she feels about them — ``conduct``)
+    if f.get("crisis"):  # (they may be in real trouble: it worries her, beside whatever else she feels about them)
         doc["crisis_at"] = A._iso(now)
         if levels(doc, w, now, tz, off=False)["worried"]["v"] < CRISIS_WORRIED:
             _set(doc, w, "worried", CRISIS_WORRIED, {"code": "crisis"}, now, tz)

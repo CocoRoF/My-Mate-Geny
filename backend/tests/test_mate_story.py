@@ -28,8 +28,8 @@ def test_she_is_a_character_in_a_story_not_a_service():
 def test_what_the_story_never_overrides_is_there_at_every_closeness(kwargs):
     story = base_prompt("채린", {}, {}, **kwargs).split("## The story you two share")[1]
     assert "whether they are talking with a person or an AI" in story and "tell them the truth" in story
-    assert "real trouble" in story and "real people or real help" in story
-    assert "Nothing sexual, at any closeness and in any story" in story
+    # (anything else beyond the pale is left to the model playing her, with its own judgement: no limits written in, 2026-11-20)
+    assert "real trouble" not in story and "Nothing sexual" not in story and "real help" not in base_prompt("채린", {}, {}, **kwargs)
 
 
 @pytest.mark.parametrize("stage", list(GUIDES))
@@ -46,7 +46,7 @@ def test_at_the_top_she_is_still_herself_and_it_stays_affection():
     # (closeness shows the way it would with someone like her: it never makes her someone else, or agreeable)
     guide = _STAGE_GUIDES["companion"]
     assert "not as if you were someone else" in guide and "It needn't be in every reply" in guide
-    assert "doesn't make you agreeable" in guide and "nothing sexual" in guide and "never syrupy or clingy" in guide
+    assert "doesn't make you agreeable" in guide and "nothing sexual" not in guide and "Never syrupy or clingy" in guide
     assert "unmistakable" not in guide and "soft, open and at ease" not in guide
     assert "including when you disagree" in _STAGE_GUIDES["trusted"]
     assert "you aren't there" in _STAGE_GUIDES["new"]  # (it has to be earned)
