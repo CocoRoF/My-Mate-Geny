@@ -171,7 +171,8 @@ async def test_what_she_kept_before_is_put_in_order_once_and_again_when_asked(db
         calls.append(payload)
         if "nodes" in payload:
             ids = {n["name"]: n["id"] for n in payload["nodes"]}
-            return {"merge": [{"into": ids["DJMAX"], "from": [ids["디맥"]]}], "drop": [ids["걔"]], "self": [ids["채린"]]}
+            assert "걔" not in ids  # (a pronoun: dropped before it looks — Organizer.tidy)
+            return {"merge": [{"into": ids["DJMAX"], "from": [ids["디맥"]]}], "self": [ids["채린"]]}
         ents = {e["name"]: e["id"] for e in payload["entities"]}
         fixed = {x["id"] for x in payload["memories"] if x.get("fixed_text")}
         assert mine["id"] in fixed and raw[0]["id"] not in fixed
@@ -249,3 +250,68 @@ def test_the_notebook_hears_what_each_memory_is_about_and_can_ask_for_order(clie
     assert client.get(f"/api/mates/{mid}/knowledge/status").json()["organize"]["state"] == "never"
     assert client.post(f"/api/mates/{mid}/knowledge/organize").json()["state"] == "asked"
     assert client.get(f"/api/mates/{mid}/knowledge/status").json()["organize"]["state"] == "asked"
+
+
+async def test_a_day_or_their_tie_is_no_thing_a_wrong_id_files_nothing_and_her_diary_is_theirs(db):
+    """v2 (what v1 left on 2026-11-20): "11월 20일" and "서먹한 사이" were nodes, a memory about 지수 형 went under the
+    node whose id the model slipped in, one of her diary's moments was under nothing."""
+    store, mates, mid, sid = setup(db)
+    named(store, mid)
+    g = store.graph
+    a = mates._svc._add_message(sid, "user", "어제 지수 형이랑 디맥 3판 했어")
+    jisu = g.upsert(mid, name="지수 형", kind="person")
+    day = g.upsert(mid, name="11월 20일", kind="event")
+    tie = g.upsert(mid, name="서먹한 사이", kind="concept")
+    second_us = g.upsert(mid, name="우리 사이", kind="topic")
+    m = store.add_memory(mid, "어제 지수 형이랑 디맥 3판 했어", kind="fact", source="mate")
+    store.knowledge.attach(mid, m["id"], "msg:" + a, "어제 지수 형이랑 디맥 3판 했어")
+    diary = store.add_memory(mid, "[우리 사이] 11월 20일, 우리는 서먹한 사이가 되었다.", kind="fact", importance=4, source="gss")
+    kept = store.add_memory(mid, "하렴은 Path of Exile을 자주 한다", kind="fact", source="mate")
+    poe = g.upsert(mid, name="Path of Exile", kind="game")
+    db.execute("UPDATE mate_memories SET entity_id=? WHERE id=?", (poe["id"], kept["id"]))
+    org = Organizer(Consolidator(mates))
+
+    async def model(mate, system, payload):
+        if "nodes" in payload:
+            assert {"11월 20일", "서먹한 사이"} & {n["name"] for n in payload["nodes"]} == set()  # (gone before it looks)
+            return {}
+        ents = {e["name"]: e["id"] for e in payload["entities"]}
+        us = next(e["id"] for e in payload["entities"] if e["kind"] == "us")
+        return {"memories": [
+            # (the id of the two of them, the name of 지수 형: the name decides)
+            {"id": m["id"], "action": "keep", "entity": {"id": us, "name": "지수 형", "kind": "person"}, "kind": "fact",
+             "attribute": "함께 한 게임", "text": "하렴은 2026-11-19에 지수 형과 DJMAX를 3판 했다."},
+            {"id": diary["id"], "action": "keep"},  # (nothing given for her diary: theirs all the same)
+            {"id": kept["id"], "action": "keep", "kind": "fact"},  # (nothing given: where it was)
+        ]}
+
+    out = await org.run(store.get(mid), call=model)
+    assert g.find(mid, "11월 20일") is None and g.node(mid, day["id"]) is None
+    us = g.special(mid, "us", "우리 사이")
+    for n in (tie, second_us):  # (a merged node reads as the one it went into)
+        assert g.node(mid, n["id"])["id"] == us["id"]
+    by = {x["id"]: x for x in store.memories(mid)}
+    assert by[m["id"]]["entity"]["id"] == jisu["id"]
+    assert by[diary["id"]]["entity"]["id"] == us["id"] and by[diary["id"]]["text"].startswith("[우리 사이]")
+    assert by[kept["id"]]["entity"]["id"] == poe["id"]
+    assert out["dropped_nodes"] >= 1 and out["merged_nodes"] >= 2
+    # and from now on: a day is never linked, "… 사이" is the two of them
+    assert g.link_entities(mid, "mem:x", [{"name": "11월 21일", "kind": "event"}, {"name": "사귀는 사이", "kind": "concept"}],
+                           user_name="하렴", self_name="한채린") == [us["id"]]
+    w = Consolidator(mates)
+    assert w.entity(mid, {"name": "오늘", "kind": "event"})["kind"] == "user"
+    assert w.entity(mid, {"id": jisu["id"], "name": "Path of Exile", "kind": "game"})["id"] == poe["id"]
+    assert w.entity(mid, {"id": jisu["id"], "name": "지수형"})["id"] == jisu["id"]  # (the same name, spaced otherwise)
+
+
+async def test_a_moment_between_them_is_filed_under_the_two_of_them_when_it_is_written(db):
+    from datetime import UTC, datetime
+    store, mates, mid, sid = setup(db)
+    named(store, mid)
+    mates.gss._remember(store.get(mid), "hurt", {"kind": "insult", "quote": "바보야"}, datetime.now(UTC))
+    [m] = [x for x in store.memories(mid) if x["source"] == "gss"] or [None]
+    if m is None:
+        pytest.skip("this moment writes no memory")
+    assert m["entity"]["kind"] == "us"
+    assert any(r["node_id"] == m["entity"]["id"] for r in db.query("SELECT node_id FROM mem_mentions WHERE ref=?",
+                                                                   ("mem:" + m["id"],)))
