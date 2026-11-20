@@ -1986,7 +1986,8 @@ class MateStore:
         return (self._setting("social_on") or "1") != "0"
 
     def social_romance(self) -> bool:
-        """…and between a man and a woman among them, now and then a spark (설렘, 썸: innocent, never further). On unless switched off."""
+        """…and romance between them as it grows, lovers too (who they are decides it; nothing sexual). On unless switched off:
+        off, friendship at most."""
         return (self._setting("social_romance") or "1") != "0"
 
     def settings(self) -> dict[str, Any]:

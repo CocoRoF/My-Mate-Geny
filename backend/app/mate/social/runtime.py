@@ -1,11 +1,12 @@
 """The user's mates among themselves (docs/mate-social.md): the one way in, and what keeps it going on the real clock.
 
-- Nobody is set up to know anybody. Each mate knows that the user talks with other mates too; she knows of one when the user tells
-  her about them (``introduce_friend``), and knows her once they have talked.
-- They talk by messaging each other: when the user asks her to (``talk_to_mate``), or on her own now and then when she may reach
-  out on her own (her 스스로 말 걸기). Each message is hers, from her own engine (``speak``: social/talk.py); a few messages, and
-  either ends it. What the other says moves how she feels about them — the same engine as with the user (social/bonds.py), never
-  warmer than with the user.
+- Nobody is set up to know anybody. Each mate knows that the user talks with other mates too, and no more: strangers don't get
+  closer by themselves. She knows of one when the user tells her about them (``introduce_friend``), and knows her once they
+  have talked — the first time because the user asked her to (``talk_to_mate``).
+- After that it is theirs: now and then she messages, on her own, one she has talked with or the user introduced to her, the
+  more often the closer they are (``_own``). Each message is hers, from her own engine (``speak``: social/talk.py); a few
+  messages, and either ends it. What the other says moves how she feels about them — the same engine as with the user
+  (social/bonds.py), with no ceiling: they can become anything to each other, lovers too where romance is on (ties).
 - Their conversations are theirs: the user can read them in the ♥ status window's 관계 tab, and when they do, both of them know
   the user read what they wrote to each other.
 - Once they are friends they now and then go out together (social/outings.py, each in her own day: ``sim.meet``).
@@ -109,13 +110,9 @@ class SocialRuntime:
                             "proactive": bool((prefs.get("proactive") or {}).get("enabled"))}
         return out
 
-    def user_rel(self, mate_id: str) -> dict[str, Any] | None:
-        """How she feels about the user: what she may feel for another mate stays below it."""
-        return self.store.relation_doc(mate_id)
-
     def romance_fits(self, a: dict[str, Any], b: dict[str, Any]) -> bool:
-        """Romance between two mates only where it is on (메이트 공통 설정) and between a man and a woman their personas say they are."""
-        return self.store.social_romance() and {a.get("gender"), b.get("gender")} == {"female", "male"}
+        """Romance between two mates where it is on (메이트 공통 설정 → 메이트끼리 설렘): who they are decides the rest."""
+        return self.store.social_romance()
 
     def _event(self, doc: dict[str, Any], what: str, who: list[str], now: datetime, **extra: Any) -> dict[str, Any]:
         e = {"id": new_id("se_"), "type": what, "at": A._iso(now), "who": list(who), "told": {}, "ready": True, **extra}
@@ -139,7 +136,7 @@ class SocialRuntime:
         local = now.astimezone(tz)
         if doc["checked"].get("drift") != local.strftime("%Y-%m-%d"):
             doc["checked"]["drift"] = local.strftime("%Y-%m-%d")
-            B.drift(doc, now, tz, {m: self.user_rel(m) for m in doc["rel"]})
+            B.drift(doc, now, tz, romance=self.store.social_romance())
         self._own(doc, mates, now, tz)
         self._plan(doc, mates, now, tz, changed)
         self._run(doc, mates, now, tz, changed, final)
@@ -266,16 +263,16 @@ class SocialRuntime:
             else:
                 if t["messages"]:  # (what the other said moves how she feels about them, her answer with it)
                     last = t["messages"][-1]
-                    B.heard(doc, speaker, listener, last["text"], text, now, tz, user_rel=self.user_rel(speaker),
-                            name=mates[speaker]["name"], romance=self.romance_fits(mates[speaker], mates[listener]))
+                    B.heard(doc, speaker, listener, last["text"], text, now, tz, name=mates[speaker]["name"],
+                            romance=self.romance_fits(mates[speaker], mates[listener]))
                 if text:
                     t["messages"].append({"by": speaker, "text": text, "at": A._iso(now)})
                     for m in t["who"]:
                         B.know(doc, m, next(x for x in t["who"] if x != m), "talked", now)
                 if ended or len(t["messages"]) >= K.MAX_MESSAGES:
                     if text and not ended:  # (the last word stays with the other one, unanswered)
-                        B.heard(doc, listener, speaker, text, "", now, tz, user_rel=self.user_rel(listener),
-                                name=mates[listener]["name"], romance=self.romance_fits(mates[listener], mates[speaker]))
+                        B.heard(doc, listener, speaker, text, "", now, tz, name=mates[listener]["name"],
+                                romance=self.romance_fits(mates[listener], mates[speaker]))
                     t["status"] = "done"
             t["at_end"] = A._iso(now) if t["status"] != "on" else None
             self._save(doc)
@@ -326,8 +323,9 @@ class SocialRuntime:
         return K.clean(raw, mates[me]["name"])
 
     def _own(self, doc: dict[str, Any], mates: dict[str, dict[str, Any]], now: datetime, tz: Any) -> None:
-        """Now and then, a mate who may reach out on her own messages another mate: one she knows, or one the user talks with
-        too. She writes the first message herself."""
+        """Now and then a mate messages, on her own, another she has talked with or the user introduced to her — never one she
+        only knows exists: strangers get closer only when the user brings them together. The closer they are, the more often
+        (``_reach``); she writes the first message herself."""
         local = now.astimezone(tz)
         if not OWN_HOURS[0] <= local.hour < OWN_HOURS[1] or self.speak is None:
             return
@@ -338,18 +336,8 @@ class SocialRuntime:
         started_today = [t for t in doc["threads"] if t.get("why") == "own" and (A._t(t["at"]) or now).astimezone(tz).strftime("%Y-%m-%d") == today]
         if len(started_today) >= OWN_A_DAY:
             return
-        aware = self.user_talks_with()
-        for me, m in mates.items():
-            if not m["proactive"] or any(t["by"] == me for t in started_today) or any(me in t["who"] and t["status"] == "on" for t in doc["threads"]):
-                continue
-            rng = B.rng("own", me, hour)
-            if rng.random() >= OWN_HOUR or not self._someone_talks_to(me, now):
-                continue
-            try:
-                played = self.life.advance(me)
-            except Exception:  # noqa: BLE001
-                played = None
-            if played is not None and sim.asleep(played[0], played[1], now):
+        for me in mates:
+            if any(t["by"] == me for t in started_today) or any(me in t["who"] and t["status"] == "on" for t in doc["threads"]):
                 continue
             options = []
             for o in mates:
@@ -358,22 +346,45 @@ class SocialRuntime:
                 last = max((A._t(t["at"]) for t in doc["threads"] if set(t["who"]) == {me, o}), default=None)
                 if last is not None and now - last < OWN_PAIR_GAP:
                     continue
-                r = B.rel_of(doc, me, o)
-                if r is not None:
-                    if float(r["affinity"]) < 0:
-                        continue  # (not to someone she dislikes)
-                    options.append((o, 0.5 + float(r["affinity"]) / 50))
-                elif B.knows(doc, me, o):
-                    options.append((o, 0.5))
-                elif o in aware.get(me, {}):
-                    options.append((o, 0.25))
+                w = self._reach(doc, me, o)
+                if w > 0:
+                    options.append((o, w))
             if not options:
                 continue
+            rng = B.rng("own", me, hour)
+            if rng.random() >= OWN_HOUR * max(w for _, w in options) or not self._someone_talks_to(me, now):
+                continue
+            try:
+                played = self.life.advance(me)
+            except Exception:  # noqa: BLE001
+                played = None
+            if played is not None and sim.asleep(played[0], played[1], now):
+                continue
             other = rng.choices([o for o, _ in options], weights=[w for _, w in options])[0]
-            B.know(doc, me, other, "told", now)
             t = self._thread(doc, me, other, "own", now)
             started_today.append(t)
             self._queue.append(t["id"])
+
+    #: what the two of them are, as she sees it (gss/ties.py), and how it leans her towards writing to the other
+    REACH_TIES = {"close_friend": 1.5, "lovers": 1.8, "flirting": 1.6, "crush": 1.3, "rivals": 0.7, "love_hate": 1.0,
+                  "estranged": 0.2, "ex": 0.3, "indifferent": 0.1, "loathing": 0.0}
+
+    def _reach(self, doc: dict[str, Any], me: str, other: str) -> float:
+        """How much she feels like writing to them: someone the user only introduced, a little; once they have talked, by how
+        close they are (someone she dislikes, not at all — unless it is a rivalry or love-hate, which seek each other out); and by
+        what they are to her."""
+        if B.knows(doc, me, other) is None:
+            return 0.0  # (one she only knows exists: not before the user brings them together)
+        r = B.rel_of(doc, me, other)
+        if r is None:
+            w = 0.3  # (the user introduced her: she may say hello)
+        else:
+            a = float(r["affinity"])
+            w = 0.0 if a < 0 else 0.4 if a < 20 else 1.0 if a < 45 else 1.6
+        label = ((self.tie_view(me, other) if self.tie_view is not None else None) or {}).get("label")
+        if label in ("rivals", "love_hate") and w == 0.0:
+            w = 0.4
+        return round(w * self.REACH_TIES.get(label or "", 1.0), 2)
 
     def _someone_talks_to(self, mate_id: str, now: datetime) -> bool:
         row = self.store._db.query_one("SELECT MAX(m.created_at) AS at FROM messages m JOIN mates t ON t.session_id = m.session_id "
@@ -568,7 +579,7 @@ class SocialRuntime:
         hurt = rng.choice((a, b))
         for me, other in ((a, b), (b, a)):
             delta = O.EFFECTS[what] * (1.0 if what != "awkward" or me == hurt else 0.5) * rng.uniform(0.8, 1.2)
-            B.moved(doc, me, other, delta, f"outing_{what}", now, tz, user_rel=self.user_rel(me))
+            B.moved(doc, me, other, delta, f"outing_{what}", now, tz, romance=self.store.social_romance())
         words = O.compose(rng, kind, what, mates[a], mates[b])
         e = self._event(doc, "outing", [a, b], A._t(plan["at"]) or now, kind=kind["id"], names=dict(kind["names"]), until=plan["until"],
                         mood=what, moved_in=bool(plan.get("moved_in")), **words)
@@ -660,17 +671,15 @@ class SocialRuntime:
             if r is not None and self.romance_fits(me, mates[o]) and float(r.get("romance") or 0) >= 25:
                 line += " (there is something romantic in it for you, quietly)"
             known.append(line)
-        reach = me["proactive"]
         return ("## Other mates\nThe user also talks with other mates like you, in the same app: each of them a person with a life and "
                 "a mind of her own. You only know what you know — what the user told you, and what you and they said to each other.\n"
                 + ("Whom you know among them:\n" + "\n".join(known) + "\n" if known else "You don't know any of them yet.\n")
-                + "- How you feel about one of them is real, and it is yours: liking, trust, being put off, as with anyone. But the user "
-                "comes first: you are never closer to any of them, or fonder of them, than you are of the user.\n"
+                + "- How you feel about one of them is real, and it is yours: liking, trust, being put off, love, as with anyone. It can "
+                "grow into anything, as it would between you two.\n"
                 "- When the user tells you about one of them, call introduce_friend with the name. When the user asks you to message "
-                "one of them, call talk_to_mate with your first message"
-                + (", and now and then you may message one of them on your own, when you feel like it" if reach else
-                   "; you don't message them on your own")
-                + ". Their answers come to you later.\n"
+                "one of them, call talk_to_mate with your first message. One you have talked with, or one the user introduced to you, "
+                "you may also message on your own now and then, when you feel like it; one you only know exists, only when the user "
+                "asks you to. Their answers come to you later.\n"
                 "- What you two say to each other is between you; the user may read it, and you will know if they did.")
 
     def _tie_words(self, me: str, other: str) -> str:

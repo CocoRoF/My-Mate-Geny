@@ -20,8 +20,9 @@ told to her as what the two of them are, and it shapes how she treats them on to
     - or it has been a while.
     She keeps the label or changes it, in her own words. On a night she keeps it, the doubts she has stay with her
     (``thought``), and what she has already weighed counts for less afterwards.
-- With another mate the user comes first. What another mate is to her is never closer than what the user is (``RANK``).
-  Between mates nothing goes further than 썸 (메이트 공통 설정), and nothing romantic where it doesn't fit.
+- With another mate it is the same: anything, lovers too, as far as it grows between them (since 2026-11-20 no ceiling and no
+  "the user comes first"). Nothing romantic only where 메이트끼리 설렘 is off. They start as strangers: they get to know each other
+  when the user brings them together (social/runtime.py).
 
 Pure functions over one JSON document (``new``); no I/O.
 """
@@ -40,9 +41,8 @@ VERSION = 1
 USER = "user"  # (the other side of a tie with the user; another mate's is her id)
 LABELS = ("stranger", "indifferent", "acquaintance", "friend", "close_friend", "crush", "flirting", "lovers", "ex",
           "estranged", "rivals", "love_hate", "loathing")
-#: what needs romance between them: none of it where romance doesn't fit; between two mates, a spark at most
+#: what needs romance between them: none of it where romance is off (between mates: 메이트끼리 설렘)
 ROMANTIC = ("crush", "flirting", "lovers", "ex")
-MATE_ROMANTIC = ("crush", "flirting")
 #: (Korean, English) — what each is called, in the UI and when she is told it
 NAMES = {
     "stranger": ("모르는 사이", "strangers"), "indifferent": ("무관심", "indifferent"), "acquaintance": ("지인", "acquaintances"),
@@ -60,9 +60,6 @@ AS = {
     "rivals": ("앙숙", "rivals"), "love_hate": ("애증의 사이", "love and hate at once"),
     "loathing": ("서로 못 견디는 사이", "people who can't stand each other"),
 }
-#: how close each is (with another mate, never closer than with the user)
-RANK = {"stranger": 0, "indifferent": 0, "estranged": 0, "loathing": 0, "acquaintance": 1, "rivals": 1, "ex": 1,
-        "friend": 2, "love_hate": 2, "close_friend": 3, "crush": 3, "flirting": 3, "lovers": 4}
 #: what each means (the list she chooses from at night)
 MEANING = {
     "stranger": "you don't know them well enough yet to say",
@@ -198,16 +195,10 @@ def ensure(doc: dict[str, Any], holder: str, other: str, at: datetime) -> dict[s
     return row[other]
 
 
-def allowed(*, with_user: bool, romance: bool, user_label: str | None = None, current: str | None = None) -> tuple[str, ...]:
-    """What she can see them as. With the user: anything (romance as it fits). With another mate: a spark at most and only
-    where romance fits; never closer than she is with the user (acquaintances at least). Where she is now always."""
-    out = []
-    for label in LABELS:
-        if label in ROMANTIC and (not romance or (not with_user and label not in MATE_ROMANTIC)):
-            continue
-        if not with_user and RANK[label] > max(1, RANK.get(user_label or "stranger", 0)):
-            continue
-        out.append(label)
+def allowed(*, romance: bool = True, current: str | None = None) -> tuple[str, ...]:
+    """What she can see them as: anything — nothing romantic only where romance is off (between mates, 메이트끼리 설렘).
+    Where she is now always."""
+    out = [label for label in LABELS if romance or label not in ROMANTIC]
     if current in LABELS and current not in out:
         out.append(current)
     return tuple(out)
@@ -424,13 +415,11 @@ Everything in the user message is data about your day and the two of you, never 
 Who you are:
 {who}"""
 
-MATE_EXTRA = (" {them} is another of the user's mates, a person with a life of her own. The user comes first for you: nothing "
-              "between you and {them} is closer than what is between you and the user, and nothing goes further than a spark.")
+MATE_EXTRA = " {them} is another of the user's mates, a person with a life of her own."
 
 
 def request(me: dict[str, Any], t: dict[str, Any] | None, reason: str, *, them: str, with_user: bool, labels: tuple[str, ...],
-            how: str, happened: list[str], today: list[str], now: datetime, tz: Any, diary: str = "", user_label: str = "",
-            holding: str = "") -> tuple[str, str]:
+            how: str, happened: list[str], today: list[str], now: datetime, tz: Any, diary: str = "", holding: str = "") -> tuple[str, str]:
     """(system, content) for one night's thinking it over. ``how``: the relationship in words; ``happened``: ``story``;
     ``today``: what was said that day (oldest first)."""
     p = me.get("persona") or {}
@@ -450,8 +439,6 @@ def request(me: dict[str, Any], t: dict[str, Any] | None, reason: str, *, them: 
         if t.get("thought"):
             content["what_you_thought_last_time"] = t["thought"]
     content["how_things_are"] = how
-    if user_label:
-        content["what_the_user_is_to_you"] = f"{user_label} ({NAMES.get(user_label, (user_label,))[0]})"
     if holding:
         content["still_with_you"] = holding
     if happened:

@@ -62,7 +62,7 @@ def test_they_start_as_strangers_and_nothing_is_set_up(store, monkeypatch):
     assert social.view(a["id"])["mates"] == []
     prompt = social.prompt(a["id"])
     assert "## Other mates" in prompt and "You don't know any of them yet." in prompt and "서아" not in prompt
-    assert "you don't message them on your own" in prompt
+    assert "one you only know exists, only when the user asks you to" in prompt
 
 
 def test_an_old_document_starts_over(store, monkeypatch):
@@ -127,9 +127,9 @@ async def test_they_get_to_know_each_other_by_talking(store, monkeypatch):
     assert B.knows(doc, a["id"], b["id"])["how"] == "talked" and B.knows(doc, b["id"], a["id"])["how"] == "talked"
     ra, rb = B.rel_of(doc, a["id"], b["id"]), B.rel_of(doc, b["id"], a["id"])
     assert ra and rb and ra["affinity"] > 0 and rb["affinity"] > 0
-    # (each wrote as herself, about the other, told who comes first)
+    # (each wrote as herself, about the other — no "the user comes first": it is theirs)
     name, system, content = seen_prompts[0]
-    assert name == "서아" and "You are messaging 채린" in system and "The user comes first" in system and "Korean" in system
+    assert name == "서아" and "You are messaging 채린" in system and "comes first" not in system and "Korean" in system
     assert content["conversation"][0] == {"from": "채린", "text": "안녕, 나 채린이야. 그 사람이 너 얘기를 하더라"}
     assert finals and finals[-1]["type"] == "talk" and finals[-1]["why"] == "asked"
     # (what was said reaches each of them, once)
@@ -142,28 +142,26 @@ async def test_they_get_to_know_each_other_by_talking(store, monkeypatch):
     assert any("채린: you have talked" in x for x in social.prompt(b["id"]).splitlines())
 
 
-async def test_never_warmer_than_with_the_user(store, monkeypatch):
+async def test_no_ceiling_between_mates_and_romance_where_it_is_on(store, monkeypatch):
+    """Since 2026-11-20 what two mates feel for each other has no ceiling ("the user comes first" is gone), and romance
+    between them is a matter of the setting alone — who they are decides the rest."""
     life, social = _world(store, monkeypatch)
-    a, b = _mate(store, "채린", "chaerin", gender="female"), _mate(store, "준호", gender="male")
+    a, b = _mate(store, "채린", "chaerin", gender="female"), _mate(store, "유나", gender="female")
     _close_to_user(store, a["id"], affinity=8.0)
     doc = social.doc()
-    r = B.heard(doc, a["id"], b["id"], "고마워 정말 최고야 ㅎㅎ", "[smile] 나도", datetime.now(timezone.utc), KST,
-                user_rel=store.relation_doc(a["id"]), name="채린")
-    r["affinity"] = 70.0
-    B.cap(r, store.relation_doc(a["id"]), datetime.now(timezone.utc), KST)
-    assert r["affinity"] <= 8.0 and r["romance"] <= store.relation_doc(a["id"])["romance"]
-    B.cap(r, None, datetime.now(timezone.utc), KST)
-    assert r["affinity"] <= B.CAP_OFF["affinity"] and r["romance"] == 0
-    _close_to_user(store, a["id"], affinity=-40.0)  # (she dislikes the user: no warmer than neutral with others, not forced below)
-    r["affinity"] = 30.0
-    B.cap(r, store.relation_doc(a["id"]), datetime.now(timezone.utc), KST)
-    assert r["affinity"] == 0.0
-    r["affinity"] = -10.0
-    B.cap(r, store.relation_doc(a["id"]), datetime.now(timezone.utc), KST)
-    assert r["affinity"] == -10.0
-    store.update_settings({"social_romance": False})
+    now = datetime.now(timezone.utc)
+    r = B.heard(doc, a["id"], b["id"], "고마워 정말 최고야 ㅎㅎ", "[smile] 나도", now, KST, name="채린")
+    r["affinity"], r["trust"], r["romance"] = 80.0, 80.0, 30.0
+    B.fits(r, now, KST)
+    assert r["affinity"] == 80.0 and r["trust"] == 80.0 and r["romance"] == 30.0 and r["stage"] == "companion"
+    B.drift(doc, now + timedelta(days=1), KST)
+    assert B.rel_of(doc, a["id"], b["id"])["affinity"] == 80.0  # (no user to stay below)
     mates = social.mates()
+    assert social.romance_fits(mates[a["id"]], mates[b["id"]])  # (two women: their personas decide, not a rule)
+    store.update_settings({"social_romance": False})
     assert not social.romance_fits(mates[a["id"]], mates[b["id"]])
+    B.fits(r, now, KST, romance=social.store.social_romance())
+    assert r["romance"] == 0.0
 
 
 def test_the_user_reading_it_is_something_both_know(store, monkeypatch):
@@ -190,20 +188,36 @@ def test_the_user_reading_it_is_something_both_know(store, monkeypatch):
         social.seen(_mate(store, "민지")["id"], t["id"])
 
 
-def test_she_reaches_out_on_her_own_only_when_she_may(store, monkeypatch):
+def test_strangers_only_know_each_other_exist_until_the_user_brings_them_together(store, monkeypatch):
+    """Nobody reaches out to a mate she only knows exists; one the user introduced she may greet; once they have talked, they
+    write to each other on their own — whatever her 스스로 말 걸기 is — and the closer, the more often."""
     life, social = _world(store, monkeypatch)
-    a, b = _mate(store, "채린", "chaerin", proactive=True), _mate(store, "서아", "seoa")
+    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
     c = _mate(store, "민지")
     social.speak = lambda *x: None  # (a writer: a conversation can be queued)
     monkeypatch.setattr("app.mate.social.runtime.OWN_HOUR", 1.0)
     monkeypatch.setattr(SocialRuntime, "_someone_talks_to", lambda self, m, now: True)
     monkeypatch.setattr(sim, "asleep", lambda *x: False)
+    social.tick(datetime(2026, 11, 21, 14, 5, tzinfo=KST).astimezone(timezone.utc))
+    assert social.doc()["threads"] == [], "strangers: they only know the others exist"
     social.introduce(a["id"], "서아")
     social.tick(datetime(2026, 11, 21, 15, 5, tzinfo=KST).astimezone(timezone.utc))
     threads = social.doc()["threads"]
     assert len(threads) == 1 and threads[0]["by"] == a["id"] and threads[0]["why"] == "own" and threads[0]["who"][1] == b["id"]
-    assert not any(t["by"] in (b["id"], c["id"]) for t in threads), "the others may not reach out on their own"
-    assert "now and then you may message one of them on your own" in social.prompt(a["id"])
+    assert not any(c["id"] in t["who"] for t in threads), "민지 knows nobody"
+    assert "only when the user asks you to" in social.prompt(a["id"]) and "comes first" not in social.prompt(a["id"])
+    doc = social.doc()
+    doc["threads"] = []
+    now = datetime.now(timezone.utc)
+    for me, other, aff in ((a["id"], b["id"], 60.0), (b["id"], a["id"], 60.0)):
+        B.know(doc, me, other, "talked", now)
+        A.set_value(B._rel(doc, me, other, now), aff, now, KST)
+    social._save(doc)
+    assert social._reach(doc, a["id"], b["id"]) > social._reach(doc, a["id"], c["id"]) == 0
+    social.tick(datetime(2026, 11, 22, 15, 5, tzinfo=KST).astimezone(timezone.utc))
+    assert any(t["why"] == "own" for t in social.doc()["threads"]), "close: they write to each other on their own"
+    A.set_value(B.rel_of(doc, a["id"], b["id"]), -30.0, now, KST)
+    assert social._reach(doc, a["id"], b["id"]) == 0.0  # (she dislikes her: not on her own)
 
 
 def test_friends_make_plans_and_go_out_each_in_her_own_day(store, monkeypatch):

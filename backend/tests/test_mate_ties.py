@@ -1,7 +1,7 @@
 """What they are to each other, in her own view (app/mate/gss/ties.py, ties_runtime.py; docs/geny-state-system.md §12): a label
 she holds for the user and for each other mate she knows, hers to decide. Close isn't lovers and hurt isn't hate. Once set it
 holds: one slip doesn't bring it up, what builds up does, decisive things do. She thinks it over at night, in her own engine, or
-says so at the moment (her tool). With another mate the user comes first, and nothing goes further than 썸."""
+says so at the moment (her tool). With another mate it is the same, lovers too: no ceiling; romance only where it is on."""
 
 from __future__ import annotations
 
@@ -131,25 +131,18 @@ def test_her_day_starts_at_four_in_the_morning():
 
 # ---- what she can see them as ----
 
-def test_with_another_mate_the_user_comes_first_and_nothing_goes_further_than_a_spark():
-    user = T.allowed(with_user=True, romance=True)
-    assert set(user) == set(T.LABELS)
-    mate = T.allowed(with_user=False, romance=True, user_label="lovers")
-    assert "lovers" not in mate and "ex" not in mate and {"crush", "flirting", "close_friend"} <= set(mate)
-    plain = T.allowed(with_user=False, romance=False, user_label="lovers")
-    assert not set(plain) & set(T.ROMANTIC)
-    near = T.allowed(with_user=False, romance=True, user_label="acquaintance")
-    assert "friend" not in near and "acquaintance" in near and "rivals" in near  # (never closer than with the user)
-    new = T.allowed(with_user=False, romance=True, user_label=None)
-    assert "acquaintance" in new  # (acquaintances at least)
-    assert "friend" in T.allowed(with_user=False, romance=False, user_label="acquaintance", current="friend")  # (where she is)
+def test_anything_she_can_see_them_as_and_nothing_romantic_only_where_it_is_off():
+    assert set(T.allowed()) == set(T.LABELS)  # (the user, or another mate: lovers too)
+    plain = T.allowed(romance=False)
+    assert not set(plain) & set(T.ROMANTIC) and {"close_friend", "rivals", "love_hate", "loathing"} <= set(plain)
+    assert "lovers" in T.allowed(romance=False, current="lovers")  # (where she is)
 
 
 def test_her_answer_is_read_and_held_to_what_she_can_choose():
-    labels = T.allowed(with_user=True, romance=True)
+    labels = T.allowed()
     got = T.parse('생각해 봤어 {"label": "Best friend", "why": "제일 편한 사람이야.", "thought": ""}', labels)
     assert got == {"label": "close_friend", "why": "제일 편한 사람이야.", "thought": ""}
-    assert T.parse('{"label": "lovers"}', T.allowed(with_user=False, romance=True, user_label="lovers")) is None
+    assert T.parse('{"label": "lovers"}', T.allowed(romance=False)) is None
     assert T.parse("no json", labels) is None and T.parse('{"label": "soulmate"}', labels) is None
 
 
@@ -170,7 +163,7 @@ def test_the_night_request_has_her_view_what_happened_and_today():
     t = _tie("friend", days_ago=10)
     rel = _rel([x for d in range(1, 4) for x in _talk(d, ("rude", -1.5))], [(_ago(2, 17), "trust", "promise_broken", -3.0, 40.0)])
     by_day = T.days(rel, KST)
-    system, content = T.request(me, t, "built_up", them="the user", with_user=True, labels=T.allowed(with_user=True, romance=True),
+    system, content = T.request(me, t, "built_up", them="the user", with_user=True, labels=T.allowed(),
                                 how="familiar; trust steady", happened=T.story(by_day, T.her_day(NOW, KST)),
                                 today=["They: 야", "You: 왜"], now=NOW, tz=KST, diary="오늘은 별로였다.")
     c = json.loads(content)
@@ -318,9 +311,11 @@ def test_with_another_mate_her_view_is_hers_and_goes_into_what_she_is_told_of_he
     B.know(doc, a["id"], b["id"], "talked", datetime.now(timezone.utc))
     B.know(doc, b["id"], a["id"], "talked", datetime.now(timezone.utc))
     mates.social._save(doc)
-    asyncio.run(mates.call_tool(ctx, "what_we_are", {"label": "lovers", "reason": "x"}))  # (with the user)
-    lovers = asyncio.run(mates.call_tool(ctx, "what_we_are", {"label": "lovers", "reason": "x", "with": "서준"}))
-    assert lovers[1] is True and "썸" in lovers[0]
+    lovers = asyncio.run(mates.call_tool(ctx, "what_we_are", {"label": "lovers", "reason": "사귀기로 했어.", "with": "서준"}))
+    assert lovers[1] is False and mates.ties.label(a["id"], b["id"]) == "lovers"  # (no ceiling, nothing past 썸 gone)
+    store.update_settings({"social_romance": False})
+    off = asyncio.run(mates.call_tool(ctx, "what_we_are", {"label": "flirting", "reason": "x", "with": "서준"}))
+    assert off[1] is True and "메이트끼리 설렘" in off[0]
     ok = asyncio.run(mates.call_tool(ctx, "what_we_are", {"label": "rivals", "reason": "만나면 싸워.", "with": "서준"}))
     assert ok[1] is False and mates.ties.label(a["id"], b["id"]) == "rivals"
     assert "what you two are, as you see it: rivals (앙숙)" in mates.social.prompt(a["id"])

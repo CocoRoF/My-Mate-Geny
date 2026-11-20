@@ -4,7 +4,8 @@ Nobody is set up to know anybody. A mate comes to know another when the user tel
 (``talked``); all she knows besides is that the user talks with other mates too. Once they have talked, how she feels about the
 other is a relationship like the one with the user — the same numbers and the same engine (app/mate/affinity.py: affinity
 −100 – 100 with its stages, trust, respect, romance), moved by what the other says to her, cooling when they don't talk, ill
-feeling mending slowly — but never warmer than she is towards the user (``cap``): the user comes first.
+feeling mending slowly. No ceiling: it can grow as far as with the user, or further (since 2026-11-20). Romance only where it is
+on (메이트 공통 설정 → 메이트끼리 설렘: ``fits``).
 
 Pure functions over one JSON document (``new``); no I/O.
 """
@@ -20,8 +21,6 @@ from app.mate import affinity as A
 VERSION = 2  # (1: ties set up in advance, the built-in mates knowing each other — gone: everyone starts as strangers)
 HOWS = ("told", "talked")
 THREADS_MAX, EVENTS_MAX, PLANS_MAX, LOG_KEEP = 60, 120, 20, 60
-#: when the relationship with the user is off: how warm she may be with another mate at most
-CAP_OFF = {"affinity": 20.0, "trust": 50.0, "romance": 0.0}
 
 
 def new(now: datetime) -> dict[str, Any]:
@@ -82,53 +81,39 @@ def _rel(doc: dict[str, Any], me: str, other: str, at: datetime) -> dict[str, An
     return row[other]
 
 
-def ceiling(user_rel: dict[str, Any] | None) -> dict[str, float]:
-    """How warm she may be with another mate: no warmer, no more trusting, no more romantic than with the user — and where she
-    feels badly about the user, no more than neutral (ill feeling towards the user isn't ill feeling towards everyone)."""
-    if not user_rel or not user_rel.get("enabled"):
-        return dict(CAP_OFF)
-    return {"affinity": max(0.0, float(user_rel.get("affinity") or 0.0)), "trust": max(A.BONDS["trust"], float(user_rel.get("trust") or 0.0)),
-            "romance": float(user_rel.get("romance") or 0.0)}
-
-
-def cap(r: dict[str, Any], user_rel: dict[str, Any] | None, at: datetime, tz: Any, *, romance: bool = True) -> None:
-    """Kept below what she feels for the user (and no romance where it doesn't fit)."""
-    top = ceiling(user_rel)
-    for k in ("affinity", "trust", "romance"):
-        if float(r.get(k) or 0.0) > top[k]:
-            r[k] = round(top[k], 2)
+def fits(r: dict[str, Any], at: datetime, tz: Any, *, romance: bool = True) -> None:
+    """No romance where it is off (메이트끼리 설렘); the stage follows."""
     if not romance:
         r["romance"] = 0.0
     A.refresh(r, at, tz)
 
 
-def heard(doc: dict[str, Any], me: str, other: str, said: str, answered: str, at: datetime, tz: Any, *,
-          user_rel: dict[str, Any] | None, name: str = "", romance: bool = True) -> dict[str, Any]:
+def heard(doc: dict[str, Any], me: str, other: str, said: str, answered: str, at: datetime, tz: Any, *, name: str = "",
+          romance: bool = True) -> dict[str, Any]:
     """They said something to her (and this was her answer): it moves how she feels about them, the way the user's messages move
     how she feels about the user."""
     r = _rel(doc, me, other, at)
     A.advance(r, at, tz)
     A.credit_turn(r, at, tz, said, answered, name)
-    cap(r, user_rel, at, tz, romance=romance)
+    fits(r, at, tz, romance=romance)
     r["log"], r["bonds_log"] = r["log"][-LOG_KEEP:], (r.get("bonds_log") or [])[-LOG_KEEP:]
     return r
 
 
-def moved(doc: dict[str, Any], me: str, other: str, delta: float, why: str, at: datetime, tz: Any, *,
-          user_rel: dict[str, Any] | None) -> None:
+def moved(doc: dict[str, Any], me: str, other: str, delta: float, why: str, at: datetime, tz: Any, *, romance: bool = True) -> None:
     """Something they did together (an outing) moves how she feels about them."""
     r = _rel(doc, me, other, at)
     A.advance(r, at, tz)
     A._bump(r, delta, why, at)
-    cap(r, user_rel, at, tz)
+    fits(r, at, tz, romance=romance)
 
 
-def drift(doc: dict[str, Any], now: datetime, tz: Any, user_rels: dict[str, dict[str, Any] | None]) -> None:
-    """Their days go by: quiet days cool it (never into ill feeling), ill feeling mends slowly; and still below the user."""
-    for me, row in doc["rel"].items():
+def drift(doc: dict[str, Any], now: datetime, tz: Any, romance: bool = True) -> None:
+    """Their days go by: quiet days cool it (never into ill feeling), ill feeling mends slowly."""
+    for row in doc["rel"].values():
         for r in row.values():
             A.advance(r, now, tz)
-            cap(r, user_rels.get(me), now, tz)
+            fits(r, now, tz, romance=romance)
 
 
 def forget(doc: dict[str, Any], mate_id: str) -> None:

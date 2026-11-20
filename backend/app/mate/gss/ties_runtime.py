@@ -72,9 +72,9 @@ class TiesRuntime:
     def _labels(self, holder: str, other: str, people: dict[str, dict[str, Any]], doc: dict[str, Any]) -> tuple[str, ...]:
         cur = (T.get(doc, holder, other) or {}).get("label")
         if other == T.USER:
-            return T.allowed(with_user=True, romance=True, current=cur)
+            return T.allowed(current=cur)
         romance = other in people and holder in people and self.mates.social.romance_fits(people[holder], people[other])
-        return T.allowed(with_user=False, romance=romance, user_label=(T.get(doc, holder, T.USER) or {}).get("label"), current=cur)
+        return T.allowed(romance=romance, current=cur)
 
     def _them(self, holder: str, other: str, people: dict[str, dict[str, Any]]) -> str:
         if other != T.USER:
@@ -284,8 +284,7 @@ class TiesRuntime:
         system, content = T.request(
             mate, t, reason, them=self._them(holder, other, people), with_user=other == T.USER, labels=labels,
             how=self._how(holder, other, rel, now, tz), happened=T.story(by_day, today, since), today=self._today(holder, other, day, people),
-            now=now, tz=tz, diary=self._diary(holder, day), holding=self._holding(holder) if other == T.USER else "",
-            user_label="" if other == T.USER else ((T.get(doc, holder, T.USER) or {}).get("label") or "stranger"))
+            now=now, tz=tz, diary=self._diary(holder, day), holding=self._holding(holder) if other == T.USER else "")
         stamp = (t or {}).get("since")
         try:
             raw = await oneshot.ask(self.mates, mate, system, content, ".ties", timeout_s=90)
@@ -356,8 +355,7 @@ class TiesRuntime:
         if label not in labels:
             if other == T.USER:
                 raise ValueError(f"{label} isn't possible now")
-            raise ValueError(f"not with {people[other]['name']}: between you and another mate nothing goes further than 썸, and "
-                             "nothing is closer than what is between you and the user")
+            raise ValueError(f"not with {people[other]['name']}: romance between mates is switched off (메이트끼리 설렘)")
         now = datetime.now(timezone.utc)
         t = T.get(doc, holder, other)
         if t is not None and t["label"] == label:

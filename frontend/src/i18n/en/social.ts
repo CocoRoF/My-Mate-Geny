@@ -20,7 +20,7 @@ export default {
   mood_awkward: "A bit awkward",
   settingsTitle: "Mates together",
   settingsOn: "Mates get to know each other",
-  settingsOnHelp: "They start as strangers. They get to know each other when you tell one about another, and by messaging each other: when you ask, or on their own if 스스로 말 걸기 is on. You can read their conversations in 관계, and they will know you did.",
+  settingsOnHelp: "They start as strangers: all they know of each other is that they exist. They get to know each other when you tell one about another or ask one to message another; after that they write to each other on their own now and then, the more often the closer they are. You can read their conversations in 관계, and they will know you did.",
   settingsRomance: "Romance between mates",
-  settingsRomanceHelp: "Between a man and a woman among your mates, now and then a little romance, never past what they feel for you.",
+  settingsRomanceHelp: "Romance can grow between your mates as it would between people, lovers too. Off: friendship at most.",
 };

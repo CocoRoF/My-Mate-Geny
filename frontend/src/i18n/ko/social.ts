@@ -22,8 +22,8 @@ const social: Messages<"social"> = {
   mood_awkward: "조금 어색했어요",
   settingsTitle: "메이트끼리",
   settingsOn: "메이트끼리 알고 지내기",
-  settingsOnHelp: "처음엔 서로 몰라요. 내가 다른 메이트 얘기를 해 주거나, 서로 메시지를 주고받으며 알게 돼요. 내가 부탁하면 말을 걸고, 스스로 말 걸기가 켜져 있으면 가끔 스스로도 걸어요. 둘이 나눈 대화는 관계 탭에서 읽을 수 있고, 읽으면 메이트도 알아요.",
+  settingsOnHelp: "처음엔 서로 존재만 알아요. 내가 다른 메이트 얘기를 해 주거나 말을 걸어 보라고 하면 알게 되고, 그 뒤로는 가까울수록 자주 서로 알아서 메시지를 주고받아요. 둘이 나눈 대화는 관계 탭에서 읽을 수 있고, 읽으면 메이트도 알아요.",
   settingsRomance: "메이트끼리 설렘",
-  settingsRomanceHelp: "남녀 메이트 사이에 가끔 설렘이 생길 수 있어요. 나에 대한 마음을 넘지는 않아요.",
+  settingsRomanceHelp: "메이트끼리도 사람처럼 설렘이 생기고 연인이 될 수도 있어요. 끄면 우정까지만이에요.",
 };
 export default social;
