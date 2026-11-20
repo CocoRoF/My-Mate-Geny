@@ -245,6 +245,12 @@ Jaccard on tokens:
 - 0.55–0.85: save, and return the similar ones (`similar: [...]` in the API, a hint in the tool
   result).
 
+**Same thing, same item** (since 2026-11-20, docs/mate-memory-graph.md "One record per thing"): a memory from the
+extractor names the thing it is about (`entity_id`) and the item (`predicate`). An active memory with the same thing,
+kind and item — not pinned, not written by the user — is updated instead of a second one being added; the extractor
+itself is shown what she keeps about each thing of the window and answers `update` with merged text. What was kept
+before is put in order once by `app/mate/memory_org.py`.
+
 **Habits** (`app/mate/consolidation.py`, the extractor's `habits`): what the user keeps doing or coming back to — the games,
 sites and apps she keeps seeing on their shared screen, things they regularly do, topics they often talk about ("often plays
 League of Legends", "often talks about work"). The extractor gets each turn that carried their screen marked

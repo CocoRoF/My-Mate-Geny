@@ -521,7 +521,11 @@ def memory_block(memories: list[dict[str, Any]], more: int = 0) -> str:
             "when relevant, and recall finds them.)") if more else ""
     if not memories:
         return f"{head}\n(nothing yet){tail}"
-    return head + "\n" + "\n".join(f"- {M.line(m)}" for m in memories) + tail
+    # (gathered by what they are about: «…» says it — the user first, then the two of you, then everyone and everything else)
+    order = {"user": 0, "us": 1, "self": 2}
+    rows = sorted(memories, key=lambda m: (order.get((m.get("entity") or {}).get("kind") or "", 3 if m.get("entity") else 4),
+                                           (m.get("entity") or {}).get("name") or ""))
+    return head + "\n" + "\n".join(f"- {M.line(m)}" for m in rows) + tail
 
 
 def system_prompt(name: str, persona: dict[str, Any], memories: list[dict[str, Any]],

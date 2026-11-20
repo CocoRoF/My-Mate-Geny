@@ -35,6 +35,7 @@ const ko: Messages<"memgraph"> = {
   userNode: "나",
   kind_user: "나",
   kind_self: "메이트 자신",
+  kind_us: "우리 사이",
   kind_person: "사람",
   kind_place: "장소",
   kind_org: "단체·회사",

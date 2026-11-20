@@ -149,7 +149,9 @@ async def test_seeing_it_again_adds_to_what_she_knows_and_often_seen_she_always_
             return _habit("리그 오브 레전드(롤)를 자주 한다, 요즘은 정글도", (a, "또 롤이네요"), existing=habit["id"])
 
         assert await worker.once(again)
-        offered = {k["id"]: k for k in worker.request(seen[0])["known_memories"]}
+        req = worker.request(seen[0])
+        # (offered with what she keeps about the user — a habit is theirs — or among the recalled ones)
+        offered = {k["id"]: k for k in req["known_memories"]} | {m["id"]: m for e in req["entities"] for m in e["memories"]}
         assert offered[habit["id"]]["habit"] is True  # (offered whatever the words of the batch: so it is confirmed, not copied)
         assert u in seen[0]["batch_ids"]
     habits = [m for m in store.memories(mid) if m["predicate"] == "habit"]

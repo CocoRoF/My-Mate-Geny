@@ -144,9 +144,13 @@ def bootstrap(db) -> None:
             ("predicate", "TEXT"),
             ("valid_from", "TEXT"),
             ("valid_until", "TEXT"),
+            # the one thing it is about (a node of her memory network: the user, her, the two of them, a person, a
+            # game …) — her memories gather by it (docs/mate-memory-graph.md "One record per thing")
+            ("entity_id", "TEXT"),
         ]:
             if name not in cols:
                 db.execute(f"ALTER TABLE mate_memories ADD COLUMN {name} {ddl}")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_mate_memories_entity ON mate_memories(mate_id,entity_id)")
         try:
             db.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(source_id UNINDEXED, terms)"
@@ -787,9 +791,11 @@ class Knowledge:
         *,
         contextual: bool = False,
         observed: bool = False,
+        paraphrase: bool = False,
     ) -> None:
         """``observed``: one sighting of a habit (consolidation ``habit``) — what its words sum up, so the quote need not be
-        them."""
+        them. ``paraphrase``: what the extractor wrote of what they said (a sentence of its own, "하렴은 PoE를 자주 한다"),
+        the quote what it rests on — exact in the original, as ever."""
         source = self.allowed(mate_id, source_id)
         memory = self.db.query_one(
             "SELECT * FROM mate_memories WHERE id=? AND mate_id=?", (memory_id, mate_id)
@@ -798,7 +804,7 @@ class Knowledge:
             raise ValueError("An exact quote from accessible original evidence is required")
         if revision is not None and revision != source["revision"]:
             raise ValueError("Source revision changed")
-        if not observed and M.normalized(memory["text"]) != M.normalized(quote) and not (
+        if not observed and not paraphrase and M.normalized(memory["text"]) != M.normalized(quote) and not (
             contextual and " ".join(quote.split()) in memory["text"]
         ):
             raise ValueError(
@@ -815,7 +821,7 @@ class Knowledge:
                 quote[:2000],
                 start,
                 start + len(quote[:2000]),
-                "observed" if observed else "context" if contextual else "supports",
+                "observed" if observed else "context" if contextual and not paraphrase else "supports",
             ),
         )
 
@@ -824,9 +830,10 @@ class Knowledge:
         source = self.allowed(mate_id, source_id)
         if not source or not quote.strip() or len(quote) > 4000 or quote not in source["content"]:
             raise ValueError("Episode needs an exact quote from an accessible original source")
-        title = str(body.get("title") or "")[:200].strip()
-        if not title or title not in quote:
-            raise ValueError("Episode title must be an exact supported phrase")
+        # (what happened, in a few words — the quote is what it rests on, exact in the original)
+        title = " ".join(str(body.get("title") or "").split())[:120]
+        if not title or not safe_text(title):
+            raise ValueError("Episode needs a title")
         if not isinstance(body.get("entities", []), list):
             raise TypeError("entities must be an array")
         # Extraction cannot invent a date or an alias. Store only strings

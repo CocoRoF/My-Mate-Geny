@@ -708,6 +708,11 @@ export interface Memory {
   core?: boolean;
   /** looks like a rule about how she talks (it belongs in the conversation style); a hint, read-only */
   style_flag?: { reason: "formality" | "address" | "speech"; conflict: boolean; level?: Formality | null } | null;
+  /** the one thing it is about (a node of her memory network: the user, her, the two of them, a person, a game …);
+   *  null: from before memories gathered by what they are about, not put in order yet */
+  entity?: { id: string; name: string; kind: GraphKind } | null;
+  /** which of that thing's items it says (호칭, 직장, 즐기는 게임 …) — "habit": something they keep doing */
+  predicate?: string | null;
 }
 
 export interface MemoryAdded extends Memory {
@@ -1390,7 +1395,9 @@ export interface EvidenceView {
   source_id: string; title: string; session_id: string; revision: number; next_offset: number | null;
   messages: { source_id: string; revision: number; role: string; text: string; observed_at: string; truncated: boolean }[];
 }
-export interface KnowledgeStatus { recent_runs?: {state:string; started_at:string; finished_at:string|null; sources:number; facts:number; episodes:number}[]; unindexed: number; jobs: Record<string, number>; fts: boolean; episodes: number; evidence: number; cost: number }
+/** putting her memory in order (app/mate/memory_org.py): never | asked | running | done (with what changed) | failed */
+export interface OrganizeState { state: "never" | "asked" | "running" | "done" | "failed"; at?: string; merged_nodes?: number; dropped_nodes?: number; filed?: number; rewritten?: number; merged?: number; archived?: number }
+export interface KnowledgeStatus { organize?: OrganizeState; recent_runs?: {state:string; started_at:string; finished_at:string|null; sources:number; facts:number; episodes:number}[]; unindexed: number; jobs: Record<string, number>; fts: boolean; episodes: number; evidence: number; cost: number }
 export interface TaskRecord {
   id: string; title: string; state: string; worker_sid: string; created_at: string; instruction: string;
   verification: string; outcome: string | null;
@@ -1409,6 +1416,8 @@ export const restoreMemoryVersion = (id: string, memory: string, revision: numbe
   apiFetch<Memory>(`/api/mates/${enc(id)}/memories/${enc(memory)}/restore-version`, { method: "POST", ...j({ revision, expected_revision }) });
 export const knowledgeStatus = (id: string) => apiFetch<KnowledgeStatus>(`/api/mates/${enc(id)}/knowledge/status`);
 export const retryMemory = (id: string) => apiFetch<{queued:number}>(`/api/mates/${enc(id)}/knowledge/retry`, {method:"POST"});
+/** her memory put in order at the next quiet moment (things merged, memories filed under what they are about) */
+export const organizeMemory = (id: string) => apiFetch<OrganizeState>(`/api/mates/${enc(id)}/knowledge/organize`, {method:"POST"});
 export const listTaskRecords = (id: string) => apiFetch<TaskRecord[]>(`/api/mates/${enc(id)}/knowledge/tasks`);
 export const processMemorySource = (id: string, source_id: string) =>
   apiFetch(`/api/mates/${enc(id)}/knowledge/process-source`, { method: "POST", ...j({ source_id }) });
@@ -1428,7 +1437,7 @@ export const listMemoryEpisodes = (id: string, before?: string, q?: string) => {
 // ---- her memory network and studies (backend app/mate/graph.py, app/mate/study.py, docs/mate-memory-graph.md) ----
 
 export type Curiosity = "off" | "sometimes" | "often";
-export type GraphKind = "user" | "self" | "person" | "place" | "org" | "work" | "game" | "thing" | "concept" | "topic" | "event";
+export type GraphKind = "user" | "self" | "us" | "person" | "place" | "org" | "work" | "game" | "thing" | "concept" | "topic" | "event";
 export const GRAPH_KINDS: GraphKind[] = ["person", "place", "org", "work", "game", "thing", "concept", "topic", "event"];
 
 export interface GraphNode {

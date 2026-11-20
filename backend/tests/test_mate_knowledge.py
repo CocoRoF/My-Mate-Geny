@@ -220,9 +220,10 @@ async def test_extractor_retry_idempotence_quote_guard_and_self_save(db):
 
     await worker.once(bad)
     assert len(store.memories(mid)) == 1
+    # (an item that doesn't hold up is left out; the batch is done — one bad item no longer fails the rest)
     assert (
         db.query_one("SELECT state FROM memory_jobs WHERE source_id=?", ("msg:" + bid,))["state"]
-        == "pending"
+        == "done"
     )
     store.update(mid, {"prefs": {"memory": {"self_save": False}}})
     cid = mates._svc._add_message(sid, "user", "강아지 이름은 보리야")

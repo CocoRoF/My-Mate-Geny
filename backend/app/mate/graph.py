@@ -37,7 +37,23 @@ from app.mate import memory as M
 from app.mate.knowledge import terms
 from app.services._ids import new_id, now_iso
 
-KINDS = ("user", "self", "person", "place", "org", "work", "game", "thing", "concept", "topic", "event")
+KINDS = ("user", "self", "us", "person", "place", "org", "work", "game", "thing", "concept", "topic", "event")
+# one node each: the user, her, the two of them (what is between them: what they call each other, what they are)
+SPECIAL = ("user", "self", "us")
+# words that are no one in particular — a pronoun, "that person", a feeling, "the game" — never a node of their own
+GENERIC = {
+    "걔", "얘", "쟤", "그", "그녀", "그사람", "그분", "저사람", "이사람", "누구", "누군가", "사람", "다른사람", "다른여자",
+    "다른남자", "남자", "여자", "친구", "애인", "연인", "너", "나", "저", "우리", "자기", "자기야", "질투", "사랑", "감정", "기분",
+    "게임", "대회", "회사", "일", "전화", "통화", "알람", "메시지", "서버", "파일", "그거", "이거", "저거", "뭔가", "무언가",
+    "he", "she", "him", "her", "they", "them", "someone", "somebody", "thatperson", "anotherwoman", "anotherman",
+    "you", "me", "i", "we", "us", "game", "games", "work", "job", "phone", "call", "jealousy", "love", "user", "assistant",
+}
+
+
+def generic(name: str) -> bool:
+    """A name that is no one in particular (GENERIC), or too short to be one."""
+    k = key(name)
+    return not k or k in GENERIC or len(k) < 2 and not k.isdigit()
 ORIGINS = ("chat", "document", "study", "user")
 # stability (days) a new item starts with, by importance 1–5 (5: what she should practically never lose)
 STABILITY0 = {1: 2.0, 2: 5.0, 3: 12.0, 4: 40.0, 5: 180.0}
@@ -174,6 +190,18 @@ def key(text: str) -> str:
     return M.normalized(text)[:120]
 
 
+US_NAME = "우리 사이"
+
+
+def names_of(name: str) -> set[str]:
+    """The keys a person's name is called by: the whole, and a Korean given name ("한채린" → "채린")."""
+    n = _clean_name(name)
+    out = {key(n)}
+    if re.fullmatch(r"[가-힣]{3}", n):
+        out.add(key(n[1:]))
+    return {k for k in out if k}
+
+
 def _clean_name(text: Any) -> str:
     return re.sub(r"\s+", " ", str(text or "")).strip()[:120]
 
@@ -260,7 +288,7 @@ class Graph:
         return self.node(mate_id, r["id"]) if r else None
 
     def special(self, mate_id: str, kind: str, name: str) -> dict[str, Any]:
-        """The user's node / her own (one each)."""
+        """The user's node / her own / the two of them (one each)."""
         r = self.db.query_one("SELECT id FROM mem_nodes WHERE mate_id=? AND kind=? AND status='active' LIMIT 1",
                               (mate_id, kind))
         if r:
@@ -279,11 +307,11 @@ class Graph:
         now = now_iso()
         with self._lock, self.db.transaction():
             found = None
-            if kind not in ("user", "self"):
+            if kind not in SPECIAL:
                 for k in [key(name), *[key(a) for a in al]]:
                     r = self.db.query_one(
                         "SELECT n.id FROM mem_node_keys k JOIN mem_nodes n ON n.id=k.node_id WHERE k.mate_id=? AND "
-                        "k.key=? AND n.status='active' AND n.kind NOT IN ('user','self') ORDER BY n.access_count DESC LIMIT 1",
+                        "k.key=? AND n.status='active' AND n.kind NOT IN ('user','self','us') ORDER BY n.access_count DESC LIMIT 1",
                         (mate_id, k))
                     if r:
                         found = r["id"]
@@ -300,7 +328,7 @@ class Graph:
                 if summary and not node["summary"]:
                     sets.append("summary=?")
                     vals.append(summary.strip()[:MAX_SUMMARY_CHARS])
-                if node["kind"] in ("topic", "concept") and kind not in ("topic", "concept", "user", "self"):
+                if node["kind"] in ("topic", "concept") and kind not in ("topic", "concept", *SPECIAL):
                     sets.append("kind=?")  # (a study's topic turns out to be a game, a person …: the specific kind wins)
                     vals.append(kind)
                 if int(importance) > int(node["importance"]):
@@ -455,10 +483,21 @@ class Graph:
                 if not isinstance(e, dict):
                     continue
                 kind = str(e.get("kind") or "concept")
+                name = str(e.get("name") or "")
+                # (her own name is her; the user's is the user — never a person beside them; a pronoun is no one)
+                if kind not in SPECIAL and name:
+                    if self_name and key(name) in names_of(self_name):
+                        kind = "self"
+                    elif user_name and key(name) in names_of(user_name):
+                        kind = "user"
+                    elif generic(name):
+                        continue
                 if kind == "user":
                     n = self.special(mate_id, "user", user_name or "user")
                 elif kind == "self":
                     n = self.special(mate_id, "self", self_name or "me")
+                elif kind == "us":
+                    n = self.special(mate_id, "us", US_NAME)
                 else:
                     try:
                         n = self.upsert(mate_id, name=str(e.get("name") or ""), kind=kind, aliases=e.get("aliases"),

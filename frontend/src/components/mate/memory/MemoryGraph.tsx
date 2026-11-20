@@ -17,6 +17,7 @@ import Icon from "../../ui/Icon";
 export const KIND_COLOR: Record<GraphKind, string> = {
   user: "#6366f1",
   self: "#ec4899",
+  us: "#f43f5e",
   person: "#f59e0b",
   place: "#10b981",
   org: "#3b82f6",
