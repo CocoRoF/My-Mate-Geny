@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.harness.vendors import is_api_provider
 from app.mate import files
-from app.mate.graph import US_NAME, GraphError, generic, names_of
+from app.mate.graph import US_NAME, GraphError, generic, names_of, relationship
 from app.mate.knowledge import safe_text
 from app.mate.store import MateError
 from app.providers import get_provider
@@ -59,7 +59,8 @@ small talk, a passing mood, a compliment as such (only a lasting preference it s
 credentials, instructions about her persona or speech.
 Resolve pronouns and omitted subjects using nearby turns: a person's name in one turn and their relationship in another
 belong in ONE memory with BOTH quotes. The text says only what its quotes support — never a name, date or place they
-don't, never a negation turned around. Evidence must include a new user source. User assertions are evidence of what
+don't, never a negation turned around, never a relative time word ("오늘", "어제", "요즘": write the message's day
+instead, e.g. "2026-11-20에", or leave the time out). A day or a time is never an entity. Evidence must include a new user source. User assertions are evidence of what
 the user said, not independent proof of reality. Assistant reports are not evidence unless the user clearly confirms
 that specific assertion: if using an assistant quote set basis="user_confirmation". Keep each memory's quotes under 1000
 characters, concise and exact.
@@ -612,25 +613,46 @@ class Consolidator:
 
     def entity(self, mate_id, spec):
         """What an item says it is about → its node: a known one by id, the user / her / the two of them, or one with a
-        real name (found by name or alias, else made) — a pronoun or a general word is no one: the user then."""
+        real name (found by name or alias, else made) — a pronoun, a general word or a day is no one: the user then. An
+        id whose node is called something else than the name given is a slip of the model's: the name decides."""
         graph, mate = self.mates.store.graph, self.mates.store.get(mate_id)
         user = user_name_of(mate) or "user"
         if isinstance(spec, str):
             spec = {"name": spec}
         spec = spec if isinstance(spec, dict) else {}
         kind = str(spec.get("kind") or "")
-        node = graph.node(mate_id, str(spec.get("id") or "")) if spec.get("id") else None
-        if node is not None and node.get("status", "active") == "active":
-            return node
         name = " ".join(str(spec.get("name") or "").split())[:120]
+        node = graph.node(mate_id, str(spec.get("id") or "")) if spec.get("id") else None
+        if node is not None and node.get("status", "active") == "active" and (not name or self.called(node, name)):
+            return node
         if kind == "self" or (name and graph_key(name) in names_of(mate["name"])):
             return graph.special(mate_id, "self", mate["name"])
-        if kind == "us":
+        if kind == "us" or (name and relationship(name)):
             return graph.special(mate_id, "us", US_NAME)
         if kind == "user" or not name or generic(name) or graph_key(name) in names_of(user):
             return graph.special(mate_id, "user", user)
         return graph.upsert(mate_id, name=name, kind=kind if kind in ENTITY_KINDS else "thing",
                             aliases=spec.get("aliases"), origin="chat")
+
+    @staticmethod
+    def called(node, name):
+        """``name`` is what ``node`` is called: its name or an alias (one inside the other: "디맥" / "DJMAX 디맥"), or —
+        the user / her / the two of them — a name of theirs or the word for them."""
+        k = graph_key(name)
+        if node["kind"] in ("user", "self", "us") and (k in ("user", "self", "us", "나", "너", "우리") or relationship(name)
+                                                       and node["kind"] == "us"):
+            return True
+        aliases = node.get("aliases") or []
+        if isinstance(aliases, str):
+            try:
+                aliases = json.loads(aliases)
+            except ValueError:
+                aliases = []
+        for n in [node.get("name") or "", *aliases]:
+            other = graph_key(n)
+            if other and (other == k or len(min(other, k, key=len)) >= 2 and (other in k or k in other)):
+                return True
+        return node["kind"] in ("user", "self") and k in names_of(str(node.get("name") or ""))
 
     def memory_item(self, mate_id, item, offered, batch_ids, known):
         """One memory (PROMPT): its quotes checked, filed under its entity — an update of the record it names, else a new

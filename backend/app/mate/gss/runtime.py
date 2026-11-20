@@ -250,7 +250,10 @@ class GSSRuntime:
         if kind not in ("hurt", "tie"):  # (a hurt is in the journal already; what they are has its own layer, "tie")
             self.journal.record(mate["id"], "episode", kind, data, at)
         try:
-            self.store.add_memory(mate["id"], text, kind="fact", importance=4, source="gss")
+            from app.mate.graph import US_NAME
+            us = self.store.graph.special(mate["id"], "us", US_NAME)  # (theirs: filed under the two of them)
+            mem = self.store.add_memory(mate["id"], text, kind="fact", importance=4, source="gss", entity_id=us["id"])
+            self.store.graph.mention(mate["id"], us["id"], f"mem:{mem['id']}", role="about")
         except Exception:  # noqa: BLE001 - a memory that can't be saved (forgotten before, a duplicate): the journal has it
             pass
 

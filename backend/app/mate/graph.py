@@ -50,10 +50,22 @@ GENERIC = {
 }
 
 
+# a day or a time is when something happened, never a thing of its own ("11월 20일", "2026-11-04", "오늘")
+WHEN = re.compile(r"^((\d{2,4}\s*[-./년]\s*)?\d{1,2}\s*[-./월]\s*\d{1,2}\s*일?|\d{1,2}\s*월|\d{2,4}\s*년|\d{1,2}\s*일|"
+                  r"오늘|어제|그제|내일|모레|요즘|최근|지금|그날|이번\s*주|지난\s*주|다음\s*주|주말|오전|오후|아침|저녁|밤|새벽|"
+                  r"today|yesterday|tomorrow|tonight|recently|weekend)$", re.IGNORECASE)
+
+
 def generic(name: str) -> bool:
-    """A name that is no one in particular (GENERIC), or too short to be one."""
+    """A name that is no one in particular (GENERIC), a day or a time (WHEN), or too short to be one."""
     k = key(name)
-    return not k or k in GENERIC or len(k) < 2 and not k.isdigit()
+    return not k or k in GENERIC or bool(WHEN.match(_clean_name(name))) or len(k) < 2 and not k.isdigit()
+
+
+def relationship(name: str) -> bool:
+    """What the two of them are to each other ("우리 사이", "서먹한 사이", "사귀는 사이"): their node, never a thing."""
+    k = key(name)
+    return bool(k) and (k == key(US_NAME) or k.endswith("사이"))
 ORIGINS = ("chat", "document", "study", "user")
 # stability (days) a new item starts with, by importance 1–5 (5: what she should practically never lose)
 STABILITY0 = {1: 2.0, 2: 5.0, 3: 12.0, 4: 40.0, 5: 180.0}
@@ -490,6 +502,8 @@ class Graph:
                         kind = "self"
                     elif user_name and key(name) in names_of(user_name):
                         kind = "user"
+                    elif relationship(name):
+                        kind = "us"
                     elif generic(name):
                         continue
                 if kind == "user":

@@ -144,8 +144,11 @@ quotes. Three special nodes: the **user**, **her** (`self`) and **the two of the
 other, what they are to each other).
 
 - **What is a thing** (`graph.link_entities`): her own name (and a three-syllable Korean name's given name: 한채린 → 채린)
-  is her node, the user's name is theirs; a pronoun or a general word ("걔", "다른 여자", "게임", "질투", `graph.GENERIC`)
-  is never a node — the memory goes under the user.
+  is her node, the user's name is theirs; what the two of them are to each other ("서먹한 사이", "사귀는 사이":
+  `graph.relationship`) is the two of them; a pronoun, a general word or a day ("걔", "다른 여자", "게임", "질투",
+  "11월 20일", "오늘": `graph.GENERIC`, `graph.WHEN`) is never a node — the memory goes under the user.
+- **An id is checked against its name** (`Consolidator.entity` / `called`): when the model names a known node by id but
+  gives another thing's name, the name decides (one memory about 지수 형 went under "서먹한 사이" that way).
 - **Extraction** (`consolidation.py`, prompt v3): the extractor gets the things the window is about, each with what she
   keeps about it (`entities`, ≤ 16 × 24), and answers `add` or `update` per memory — an item that is already covered is
   updated (merged or corrected text), never written twice. Relations between two things (`relations` → `mem_facts`),
@@ -156,10 +159,14 @@ other, what they are to each other).
   not the user's own words) updates that one instead (a new revision).
 - **Putting in order** (`memory_org.py`): what she kept before this arrived is put in order once per mate (checkpoint
   `memory_org_v1:<mate>`), and again when the user asks (기억 → 지금 정리하기, `POST …/knowledge/organize`). Two sealed
-  calls on her engine, in the worker's quiet moments (at most every 3 minutes, never while she is talking): **things**
+  calls on her engine, in the worker's quiet moments (at most every 3 minutes, never while she is talking), after what
+  needs no model (`Organizer.tidy`: day / general-word nodes dropped, "… 사이" nodes folded into the two of them, her
+  diary of moments — source `gss`, also filed so when written — under the two of them): **things**
   (the same thing under two names merged, a no-one-in-particular node dropped, a node that is her or the user folded
   into theirs) and **memories** (filed, labelled, rewritten as one sentence from its quotes, same item merged, not worth
-  keeping archived). Every change is a revision; what the user wrote themselves and her diary of moments keep their words.
+  keeping archived — never a lasting fact of the user's life; when unsure, kept). A memory given no thing stays where it
+  was. Words are never relative ("오늘" → the day it was said). Every change is a revision; what the user wrote
+  themselves and her diary of moments keep their words. `memory_org_v2` (2026-11-20) looks once more at what v1 did.
 - **The 기억 tab** shows one card per thing (the user, the two of them, her, then the rest by the latest change; "아직
   정리 전" last), each item one line. "늘 기억" marks only what is pinned. In her prompt a memory reads
   `«thing · item» text`, sorted the same way.
