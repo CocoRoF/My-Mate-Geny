@@ -31,13 +31,15 @@ def test_the_server_says_its_builds_version_from_the_app_or_the_deploy_else_the_
     import app as A
 
     build = tmp_path / "build.json"
-    monkeypatch.setattr(A, "_BUILD", build)
     monkeypatch.delenv("GENY_APP_VERSION", raising=False)
+    monkeypatch.setattr(A, "_STARTED", A._read_build(build))
     assert A.build_version() == __version__
     build.write_text(json.dumps({"version": "1.1.12", "commit": "c8b0d23"}))
+    assert A.build_version() == __version__  # (written after it started: the running code isn't that version yet)
+    monkeypatch.setattr(A, "_STARTED", A._read_build(build))  # (the restart that loads it)
     assert A.build_version() == "1.1.12"
     monkeypatch.setenv("GENY_APP_VERSION", "1.1.14")
     assert A.build_version() == "1.1.14"
     monkeypatch.setenv("GENY_APP_VERSION", "dev")
     build.write_text("not json")
-    assert A.build_version() == __version__
+    assert A._read_build(build) == ""
