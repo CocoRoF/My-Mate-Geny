@@ -140,6 +140,11 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
   const save = () => saver.run(() => useMateStore.getState().patch(mate.id, { voice: voiceSettingsDraft(v) }));
   useFollowSaved(voiceSettingsDraft(mate.voice), dirty, () => setV(mate.voice));
   useEffect(() => () => stopPreview(), []);
+  // (opened where nothing loaded them yet — the studio's 목소리 sheet: every engine stayed "checking", no voice list)
+  useEffect(() => {
+    const s = useMateStore.getState();
+    if (!s.providers && !s.providersLoading) void s.loadProviders();
+  }, []);
   const volume = useDevicePreferences().volume;
   useEffect(() => { setPreviewVolume(volume); }, [volume]);
   // the realtime mic's unsaved toggles apply at once to a mic listening in any window (mate/livePreview)

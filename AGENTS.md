@@ -32,7 +32,7 @@ or one that checks code you didn't touch, only costs time.
   - the unit tests that import what changed;
   - `test:i18n` when messages or components changed.
 - **Not locally:**
-  - the whole backend suite. CI runs it on every PR that touches `backend/`, in three parallel parts (about 3 minutes);
+  - the whole backend suite. CI runs it on every PR that touches `backend/`, in three parallel parts;
   - the whole frontend unit suite, unless the selector asks for it;
   - a second run of something that already passed on the same code. A rebase onto main doesn't call for one, unless
     its conflicts touched code.
@@ -42,13 +42,9 @@ or one that checks code you didn't touch, only costs time.
 
 ## CI and releases (docs/apps.md → "CI", "Releases")
 
-- **PRs:**
-  - a PR runs Linux jobs only, and only for the parts it changed;
-  - Windows, iOS and the local-voice suites run on a PR only with the label `ci:windows`, `ci:ios` or `ci:voice`.
-    Add the label only when your change is about that platform.
-- **Merges:** a merge isn't tested twice. The push to main skips what the PR already passed on the same tree.
-- **Apps:** apps are released by hand or nightly. Never dispatch an apps build for each change. Never re-run a heavy
-  workflow "to be sure".
+- **CI runs the full suites.** A PR runs each part whose files it changed. Don't repeat that work locally, and don't
+  re-run a workflow "to be sure".
+- **Apps:** never dispatch an apps build by hand for a change. Pushing to main builds what changed (docs/apps.md).
 - **Failures:** when a CI job fails on something your change doesn't touch (a known flaky test), re-run that one failed
   job (`gh run rerun <id> --failed`), not the whole workflow.
 

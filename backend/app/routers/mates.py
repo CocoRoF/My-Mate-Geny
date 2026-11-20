@@ -144,11 +144,11 @@ async def get_user_icon(name: str) -> FileResponse:
 
 
 @router.get("/providers")
-async def list_providers(request: Request, refresh: bool = False) -> dict:
+async def list_providers(request: Request, refresh: bool = False, wait: bool = False) -> dict:
     """``{tts: [...], stt: [...]}``, each ``{engine, label, configured, ok,
-    error, detail, checked_at, kind}``. Configured providers are verified when
-    their last check is missing or old (``?refresh=1``: all of them now)."""
-    return await _voice(request).providers.status(refresh=refresh)
+    error, detail, checked_at, kind, checking?}`` — at once, as last checked; one whose check is missing or old is
+    checked in the background (``checking``; ``?wait=1``: once those are done; ``?refresh=1``: all of them now)."""
+    return await _voice(request).providers.status(refresh=refresh, wait=wait)
 
 
 @router.post("/providers/{engine}/verify")

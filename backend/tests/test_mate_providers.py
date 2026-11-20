@@ -91,8 +91,12 @@ def test_openai_verified_cached_refreshed_and_dropped_on_change(client, http):
     http.on(lambda m, u: u == "https://api.openai.com/v1/models",
             jresp(200, {"data": [{"id": "gpt-4o-mini-tts"}, {"id": "gpt-4o-mini-transcribe"}, {"id": "tts-1"}]}))
     client.put("/api/mates/settings", json={"openai_key": "sk-good"})
-    doc = client.get("/api/mates/providers").json()
+    # (at once: never checked yet, so it is being checked — never a wait on the slowest provider)
+    first = _by(client.get("/api/mates/providers").json(), "tts", "openai")
+    assert first["configured"] and first["ok"] is None and first["checking"] is True
+    doc = client.get("/api/mates/providers?wait=1").json()
     tts, stt = _by(doc, "tts", "openai"), _by(doc, "stt", "openai")
+    assert "checking" not in tts
     assert tts["configured"] and tts["ok"] is True and tts["error"] is None and tts["checked_at"]
     assert stt["ok"] is True and tts["detail"] == "Key accepted"
     assert http.calls[-1]["method"] == "GET" and http.calls[-1]["headers"]["Authorization"] == "Bearer sk-good"
@@ -288,3 +292,35 @@ def test_config_base_url_hooks(client, http, monkeypatch):
     client.put("/api/mates/settings", json={"openai_key": "sk-x", "elevenlabs_key": "xi-x"})
     client.get("/api/mates/providers?refresh=1")
     assert sorted(http.urls()) == ["http://127.0.0.1:9/eleven/v1/voices", "http://127.0.0.1:9/openai/v1/models"]
+
+
+def test_a_slow_provider_never_holds_up_the_list(client, http, monkeypatch):
+    """The Voice tab opened with an unreachable server set up: the list comes at once with its last result, the check
+    goes on behind it (2026-11-20: every card spun until the slowest check timed out)."""
+    import asyncio
+    import threading
+    import time
+
+    release = threading.Event()
+
+    async def slow(method, url, **kw):
+        http.calls.append({"method": method, "url": url})
+        while not release.is_set():
+            await asyncio.sleep(0.02)
+        return jresp(200, {"voices": [{"voice_id": "a"}, {"voice_id": "b"}]})
+
+    store = app.state.voice_service.providers.store
+    client.put("/api/mates/settings", json={"elevenlabs_key": "xi-1"})
+    store.set_verification("elevenlabs", {"ok": True, "error": None, "detail": "Key accepted · 1 voice in the account",
+                                          "info": {}, "checked_at": "2026-11-19T00:00:00+00:00", "at": 0})
+    monkeypatch.setattr(netio, "request", slow)
+    t = time.monotonic()
+    el = _by(client.get("/api/mates/providers").json(), "tts", "elevenlabs")
+    assert time.monotonic() - t < 2
+    assert el["ok"] is True and el["checking"] is True and el["detail"].endswith("1 voice in the account")  # (as last)
+    again = _by(client.get("/api/mates/providers").json(), "tts", "elevenlabs")
+    assert again["checking"] is True and len(http.calls) == 1  # (the check under way: not started twice)
+    release.set()
+    done = _by(client.get("/api/mates/providers?wait=1").json(), "tts", "elevenlabs")
+    assert done["ok"] is True and "checking" not in done and done["detail"].endswith("2 voices in the account")
+    assert len(http.calls) == 1

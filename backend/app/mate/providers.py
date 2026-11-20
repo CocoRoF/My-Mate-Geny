@@ -169,11 +169,17 @@ class Providers:
         """Check one provider now (concurrent callers share one check)."""
         if provider not in PROVIDERS:
             raise MateError(f"unknown voice provider: {provider}")
+        return await asyncio.shield(self._start(provider))
+
+    def _start(self, provider: str) -> asyncio.Future:
+        """The provider's check under way (started now if none is)."""
         task = self._inflight.get(provider)
         if task is None or task.done():
             task = asyncio.ensure_future(self._verify(provider))
+            # (nobody may wait for it: its outcome is stored, never an unretrieved error)
+            task.add_done_callback(lambda t: t.cancelled() or t.exception())
             self._inflight[provider] = task
-        return await asyncio.shield(task)
+        return task
 
     async def _verify(self, provider: str) -> dict[str, Any]:
         if provider == "local":
@@ -224,14 +230,27 @@ class Providers:
         v = self.store.verification(provider)
         return v is None or time.time() - float(v.get("at") or 0) > TTL
 
-    async def status(self, refresh: bool = False) -> dict[str, list[dict[str, Any]]]:
-        """Every provider's state; configured ones without a fresh check (or
-        all of them with ``refresh``) are verified first, concurrently."""
+    async def status(self, refresh: bool = False, wait: bool = False) -> dict[str, list[dict[str, Any]]]:
+        """Every provider's state, at once: what its last check found. Configured ones without a fresh check are
+        checked again in the background — such an entry says ``checking`` (its last result stands meanwhile) — so
+        the Voice tab never waits on the slowest provider (an unreachable server takes the whole timeout). ``wait``:
+        the answer comes once the checks under way are done (the tab's second call; no check is made twice).
+        ``refresh`` (the user's 다시 확인): every configured one is checked anew, and the answer waits for them."""
         todo = [p for p in PROVIDERS if self.configured(p) and (refresh or self._stale(p))]
-        if todo:
+        if refresh:
             await asyncio.gather(*(self.verify(p) for p in todo))
-        return {"tts": [self.entry(p, "tts") for p in TTS_ORDER],
-                "stt": [self.entry(p, "stt") for p in STT_ORDER]}
+        else:
+            for p in todo:
+                self._start(p)
+            if wait:
+                running = [t for t in self._inflight.values() if not t.done()]
+                await asyncio.gather(*(asyncio.shield(t) for t in running), return_exceptions=True)
+        out = {"tts": [self.entry(p, "tts") for p in TTS_ORDER], "stt": [self.entry(p, "stt") for p in STT_ORDER]}
+        for e in out["tts"] + out["stt"]:
+            task = self._inflight.get(e["engine"])
+            if task is not None and not task.done():
+                e["checking"] = True
+        return out
 
     def info(self, provider: str) -> dict[str, Any]:
         v = self.store.verification(provider) if self.configured(provider) else None
