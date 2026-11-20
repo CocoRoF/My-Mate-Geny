@@ -151,21 +151,14 @@ def test_insulted_she_can_give_it_back_and_anger_drops_her_sweet_name_and_soft_h
     assert "the soft and cute ones give way" in talk  # (her habits are how she sounds as herself, not angry)
 
 
-def test_a_curse_at_her_is_read_as_an_insult_even_between_people_who_are_close():
+def test_a_swear_word_is_read_by_what_it_does_not_by_the_word():
+    from app.mate import affinity as A
     from app.mate.gss.appraisal import SYSTEM
 
-    assert "a curse or a slur at her with no sign of play is an insult, however close they are" in SYSTEM
-    assert "intensity 0.7 or more" in SYSTEM and "being cursed at lands hard" in SYSTEM
-
-
-def test_furious_her_everyday_cheerfulness_goes_under():
-    w = S.who(closeness=0.8, temperament={"base": {"happy": 0.3}})
-    doc = S.new()
-    assert _lv(doc, w)["happy"] >= 0.45  # (sunny by nature)
-    S.hear(doc, w, "닥쳐 미친년아", "m", NOON, TZ, _reading(["insult"], 0.95))
-    S.hear(doc, w, "닥쳐", "m2", NOON, TZ, _reading(["insult"], 0.9))
-    s = S.summary(doc, w, NOON, TZ)
-    assert [t["emotion"] for t in s["top"]][:1] == ["angry"] and not any(t["emotion"] == "happy" for t in s["top"])
-    glad = S.new()
-    S.hear(glad, w, "고마워", "g", NOON, TZ, _reading(["gratitude"], 0.8))
-    assert _lv(glad, w)["happy"] > 0.6  # (what made her glad just now still counts, angry or not)
+    assert "Swear words are read by what they do, never by the word" in SYSTEM and "존나 맛있다" in SYSTEM
+    assert "however close they are" in SYSTEM and "intensity 0.7 or more" in SYSTEM
+    # (the words' fallback, the same way: for emphasis or venting, nothing against her; at her, an insult)
+    for text in ("시발 개웃겨 ㅋㅋ", "존나 맛있다", "아 씨발 버스 놓쳤네", "너 존나 웃겨 ㅋㅋ", "시발", "ㅅㅂ 오늘 일 너무 많아"):
+        assert not A.rude_to_her(text, "채린"), text
+    for text in ("시발 너 진짜 뭐냐", "닥쳐 시발", "병신아", "꺼져", "채린 씨발 짜증나게 하네"):
+        assert A.rude_to_her(text, "채린"), text

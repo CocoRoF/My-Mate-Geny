@@ -116,8 +116,11 @@ ANNIVERSARIES = (7, 30, 100, 365)
 
 _POS = re.compile(r"고마워|고맙|감사|최고|사랑해|귀여|잘했|덕분|좋아요|좋아!|좋다|멋져|ㅋㅋ|ㅎㅎ|\bthanks?\b|thank you|great|awesome|"
                   r"love (it|you|this)|\bnice\b|\bcool\b|perfect|haha|\blol\b|well done|amazing", re.I)
-_RUDE = re.compile(r"닥쳐|꺼져|멍청|병신|시발|씨발|ㅅㅂ|쓸모없|바보 ?같|shut up|stupid|useless|idiot|\bdumb\b|hate you|"
+_RUDE = re.compile(r"닥쳐|꺼져|멍청|병신|쓸모없|바보 ?같|shut up|stupid|useless|idiot|\bdumb\b|hate you|"
                    r"you suck|moron", re.I)
+# swear words that mostly only add weight — "시발 개웃겨", "존나 맛있다", "아 씨발 버스 놓쳤네": emphasis or venting, no insult.
+# Aimed at her they are one ("시발 너 진짜 뭐야"), unless it is all laughs and good words ("너 존나 웃겨 ㅋㅋ")
+_EXPLETIVE = re.compile(r"시발|씨발|ㅅㅂ|ㅆㅂ|존나|졸라|ㅈㄴ|\bfuck(ing)?\b|\bshit\b|\bdamn\b", re.I)
 # what is done to her (hostile): only what is aimed at her counts, acted out ("(한채린을 때린다)", "*grabs her wrist*"), said to
 # "you" or to her by name, so venting about a boss, a friend's story or a monster hit in a game is nothing; and it is only the
 # lexicon's guess: her own reading of it (her reply's expression) has the last word (``calm_reply``)
@@ -176,7 +179,8 @@ _TO_YOU = re.compile(r"닥쳐|꺼져|입 ?닥|\bshut up\b|\bget lost\b|\bscrew y
 
 def rude_to_her(u: str, name: str = "", closeness: float = 0.33) -> bool:
     if not _RUDE.search(u):
-        return False
+        # (only swear words: what they do decides — said at her, an insult; for emphasis or about something else, none)
+        return bool(_EXPLETIVE.search(u)) and aimed(u, name) and not (_LAUGH.search(u) or _POS.search(u))
     light_only = not _RUDE.search(_LIGHT.sub("", u))  # (the only rude words in it are light ones)
     if light_only and _LAUGH.search(u) and closeness >= 0.2:
         return False  # (teasing)

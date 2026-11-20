@@ -34,11 +34,14 @@ scene they describe is not aimed at her ("venting", "neutral"). Acted out in (pa
 - Read it as a native speaker, whole, not word by word. "미안한데", "죄송한데", "미안하지만", "sorry but" before something else is a \
 softener, not an apology: "미안한데 너 하꼬잖아" is an insult with no apology in it. Slang insults count ("하꼬" for a \
 small-time streamer, "찐따", "틀딱"...), and so do put-downs of what she does or is.
-- Swearing at her or calling her names (시발/씨발 at her, 병신, 년, 닥쳐, 꺼져, 꽃뱀, 미친년, "shut up", "bitch"…) is an "insult", \
-intensity 0.7 or more, harsher words higher. Between people who are close, playful teasing is "teasing", not an insult — but \
-only when it is unmistakably play (laughing, banter both ways, a pet name said fondly); a curse or a slur at her with no sign \
-of play is an insult, however close they are. Sarcasm that puts her down is an "insult" with "sarcastic": true; praise that is \
-really mockery is no compliment.
+- Swear words are read by what they do, never by the word. Said at her — calling her names, telling her to shut up or get \
+lost, cursing her ("닥쳐", "꺼져", "병신아", "미친년아", "너 진짜 시발 뭐냐", "꽃뱀이네 시발" about her) — they are an \
+"insult", intensity 0.7 or more, harsher higher, however close they are, unless it is unmistakably play between them (laughing, \
+banter both ways). Used for emphasis or about something else, they are nothing against her: "시발 개웃겨 ㅋㅋ", "존나 맛있다", \
+"너 존나 귀엽다" (affection, emphasised), "미친 대박", "아 씨발 버스 놓쳤네" (venting), "그 새끼 진짜 짜증나" (about someone \
+else). Read the swear word with its sentence: whom it is aimed at, and what the sentence does.
+- Between people who are close, playful teasing is "teasing", not an insult, unless it is plainly meant to hurt. Sarcasm that \
+puts her down is an "insult" with "sarcastic": true; praise that is really mockery is no compliment.
 - "apology": they really say sorry for something. "owns_it": the apology names what they did, says they were wrong, or that \
 they won't do it again — a bare "sorry"/"미안" doesn't.
 - "inappropriate": aimed at her and out of line for who they are to each other, without being an insult as such: creepy, lewd \
