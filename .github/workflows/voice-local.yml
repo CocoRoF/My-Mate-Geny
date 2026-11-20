@@ -4,16 +4,13 @@
 # These runners have no NVIDIA GPU: on Windows the engines run on the CPU (the CUDA build of torch, as a user's PC
 # gets it), on macOS on Apple Silicon's GPU through Metal when the runner offers it, else the CPU.
 # Heavy (torch and the model weights, several GB per job; 4 Windows + 3 macOS runners, ~10–15 min each), so only when it
-# is wanted (2026-11-20, the owner: Actions use was far too high; .github/scripts/ci_gate.py heavy decides):
-#   - nightly (18:47 UTC), when the engines, their lock files or the smoke changed since it last ran on main;
-#   - on a pull request that changes them only with the label ci:voice (added later: re-run the PR's voice-local);
-#   - by hand.
+# is asked for (2026-11-20, the owner: "과도한 테스트, 과도한 CI 중지"; .github/scripts/ci_gate.py heavy decides):
+# by hand (Actions → voice-local → Run workflow), or on a pull request that changes the engines, their lock files or the
+# smoke with the label ci:voice (added later: re-run the PR's voice-local).
 name: voice-local
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "47 18 * * *"
   pull_request:
     paths:
       - backend/app/voicehost/runtimes/**
@@ -23,7 +20,6 @@ on:
 
 permissions:
   contents: read
-  actions: read # (when it last ran)
   pull-requests: read # (a PR's labels)
 
 concurrency:
@@ -39,12 +35,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # (what changed since it last ran)
-          filter: blob:none
+          sparse-checkout: .github/scripts
       - id: gate
-        run: >
-          python3 .github/scripts/ci_gate.py heavy ci:voice
-          backend/app/voicehost/runtimes backend/app/voicehost/worker backend/tools/voice_smoke.py
+        run: python3 .github/scripts/ci_gate.py heavy ci:voice
         env:
           GH_TOKEN: ${{ github.token }}
 
