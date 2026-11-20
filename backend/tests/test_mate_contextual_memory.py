@@ -117,8 +117,8 @@ async def test_optional_ungrounded_entity_label_does_not_drop_valid_personal_fac
 
     await Consolidator(mates).once(extract)
     memory = store.memories(mid)[0]
-    assert memory["kind"] == "preference" and memory["subject"] is None
-    assert memory["subject_type"] == "other"
+    # ("user" is the user: filed under them — not a person named "user")
+    assert memory["kind"] == "preference" and memory["entity"]["kind"] == "user"
     assert store.knowledge.stats(mid)["jobs"] == {"done": 1}
 
 
@@ -190,7 +190,8 @@ async def test_assistant_invention_and_cross_mate_sources_cannot_become_user_fac
 
     await Consolidator(mates).once(bad)
     assert not store.memories(mid)
-    assert store.knowledge.stats(mid)["jobs"] == {"pending": 1}
+    # (left out — never saved; the batch itself is done)
+    assert store.knowledge.stats(mid)["jobs"] == {"done": 1}
 
 
 async def test_self_save_off_mid_batch_cannot_commit_and_retry_respects_forget(db):

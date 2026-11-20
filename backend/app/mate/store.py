@@ -1462,6 +1462,7 @@ class MateStore:
             sql += " AND COALESCE(kind, 'fact') = ?"
             args.append(kind)
         rows = [self._mem(r) for r in self._db.query(sql + " ORDER BY created_at, id", tuple(args))]
+        self._entities(mate_id, rows)
         if q and q.strip():
             nq = M.normalized(q)
             words = {t for t in M.tokens(q) if t.startswith("w:")}
@@ -1477,7 +1478,28 @@ class MateStore:
 
     def memory(self, mate_id: str, mem_id: str) -> dict[str, Any] | None:
         row = self._db.query_one("SELECT * FROM mate_memories WHERE id = ? AND mate_id = ?", (mem_id, mate_id))
-        return self._mem(row) if row is not None else None
+        if row is None:
+            return None
+        mem = self._mem(row)
+        self._entities(mate_id, [mem])
+        return mem
+
+    def _entities(self, mate_id: str, rows: list[dict[str, Any]]) -> None:
+        """Each memory's ``entity``: the node it is about ({id, name, kind}; a merged one → the node it went into), or
+        None (a memory from before memories gathered by what they are about, not sorted yet)."""
+        ids = {m["entity_id"] for m in rows if m.get("entity_id")}
+        nodes: dict[str, dict[str, Any]] = {}
+        if ids:
+            for r in self._db.query(f"SELECT id,name,kind,status,merged_into FROM mem_nodes WHERE mate_id=? AND id IN "
+                                    f"({','.join('?' for _ in ids)})", (mate_id, *ids)):
+                nodes[r["id"]] = dict(r)
+            for nid, n in list(nodes.items()):
+                if n["status"] == "merged" and n.get("merged_into"):
+                    into = self.graph.node(mate_id, n["merged_into"])
+                    nodes[nid] = {"id": into["id"], "name": into["name"], "kind": into["kind"]} if into else n
+        for m in rows:
+            n = nodes.get(m.get("entity_id") or "")
+            m["entity"] = {"id": n["id"], "name": n["name"], "kind": n["kind"]} if n and n.get("status", "active") != "deleted" else None
 
     def memory_counts(self, mate_id: str) -> dict[str, int]:
         out = {s: 0 for s in M.STATUSES}
@@ -1566,9 +1588,12 @@ class MateStore:
         # tier, never a retention deadline; only explicit forgetting deletes.
 
     def add_memory(self, mate_id: str, text: str, *, kind: Any = None, importance: Any = None, pinned: bool = False,
-                   due_at: Any = None, by_user: bool = False, source: str | None = None) -> dict[str, Any]:
-        """Only exact same assertions deduplicate. Similarity suggests review,
-        never that a negation, another date or a shorter correction is equivalent."""
+                   due_at: Any = None, by_user: bool = False, source: str | None = None, entity_id: str | None = None,
+                   attribute: str | None = None) -> dict[str, Any]:
+        """Exact same assertions deduplicate. ``entity_id`` / ``attribute``: what it is about and which of its things
+        it says (docs/mate-memory-graph.md "One record per thing") — a memory of hers about the same thing, the same
+        item of it and the same kind is that record, updated (its old words kept as a version), never a second card.
+        Otherwise similarity only suggests review, never that a negation or another date is equivalent."""
         self.get(mate_id)
         text = self._clean(text)
         if not safe_text(text):
@@ -1585,6 +1610,11 @@ class MateStore:
             close = M.similar(text, kind, rows)
             exact = next((m for m in rows if m["kind"] == kind and M.normalized(m["text"]) == M.normalized(text)
                           and (due is None or due == m.get("due_at"))), None)
+            if exact is None and entity_id and attribute and not by_user:
+                exact = next((m for m in rows if m.get("entity_id") == entity_id and m["kind"] == kind
+                              and M.normalized(m.get("predicate") or "") == M.normalized(attribute)
+                              and not m["pinned"] and m.get("evidence_type") != "asserted"
+                              and (due is None or due == m.get("due_at"))), None)
             if exact:
                 old = exact
                 self.knowledge.snapshot(old, "user" if by_user else "mate", "before_edit")
@@ -1609,7 +1639,8 @@ class MateStore:
                 "expires_at, status, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
                 (mid, mate_id, text, now, kind, imp, 1 if (pinned and by_user) else 0, due, expires,
                  source or ("user" if by_user else "mate"), now))
-            self._db.execute("UPDATE mate_memories SET evidence_type=? WHERE id=?", ("asserted" if by_user else "reported", mid))
+            self._db.execute("UPDATE mate_memories SET evidence_type=?, entity_id=?, predicate=COALESCE(?, predicate) "
+                             "WHERE id=?", ("asserted" if by_user else "reported", entity_id, (attribute or None), mid))
             self.knowledge.snapshot(self.memory(mate_id, mid), "user" if by_user else "mate", "created")
             mem = {**self.memory(mate_id, mid), "merged": False, "similar": [m for _s2, m in close[:3]]}
             if by_user:

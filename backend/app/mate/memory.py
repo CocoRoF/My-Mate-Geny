@@ -175,7 +175,7 @@ def _age_days(iso: str | None, now_utc: datetime) -> float:
 # ---- core ----
 
 def line(m: dict[str, Any]) -> str:
-    """One memory as the prompt shows it: ``[id] (kind, due …) text``."""
+    """One memory as the prompt shows it: ``[id] (kind, due …) «what it is about · which of its things» text``."""
     tag = m.get("kind") or "fact"
     if m.get("kind") == "plan" and m.get("due_at"):
         tag += f", due {m['due_at'].replace('T', ' ')}"
@@ -183,7 +183,10 @@ def line(m: dict[str, Any]) -> str:
         tag += ", habit"
     source = m.get("evidence_type")
     provenance = f" {{source={source}; verify original}}" if source in ("legacy", "reported") else ""
-    return f"[{m['id']}] ({tag}) {m['text']}{provenance}"
+    ent = (m.get("entity") or {}).get("name")
+    item = m.get("predicate") if m.get("predicate") not in (None, "", "habit") else ""
+    about = f"«{ent}{' · ' + item if item else ''}» " if ent else ""
+    return f"[{m['id']}] ({tag}) {about}{m['text']}{provenance}"
 
 
 def core(active: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -1,6 +1,8 @@
 /**
- * Source-backed memories and shared experiences, managed from the header's heart panel. How she keeps and recalls
- * them is in Mate settings → 관계와 기억 (`onSettings`).
+ * Source-backed memories and shared experiences — the 기억 tab of her status window. One card per thing they are about
+ * (the user, the two of them, her, a person, a game …: docs/mate-memory-graph.md "One record per thing"), each item of
+ * it one line — a plain sentence, the words it rests on one click away. How she keeps and recalls them is in Mate
+ * settings → 관계와 기억 (`onSettings`).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -9,6 +11,7 @@ import {
   knowledgeStatus,
   listMemories,
   listMemoryEpisodes,
+  organizeMemory,
   prefsOf,
   previewRecall,
   retryMemory,
@@ -18,13 +21,16 @@ import {
   type Memory,
   type MemoryEpisode,
   type MemoryKind,
+  type GraphKind,
   type RecallPreview,
 } from "../../api/mates";
+import { groupByEntity, type MemoryGroup } from "../../mate/memoryGroups";
 import { useMateStore } from "../../stores/mateStore";
 import { useT, type MsgKey } from "../../i18n";
 import { relTime } from "../../i18n/format";
-import Icon from "../ui/Icon";
+import Icon, { type IconName } from "../ui/Icon";
 import ScrollRow from "../ui/ScrollRow";
+import { kindLabel } from "./memory/NodeDetail";
 import KnowledgePanel, {
   Evidence,
   MemoryHistoryDetails,
@@ -45,6 +51,11 @@ const FILTERS: { id: string; label: MsgKey }[] = [
   { id: "plan", label: "mateSettings.memKindPlan" },
   { id: "episodes", label: "mate.notebookExperiences" },
 ];
+const ENTITY_ICON: Record<GraphKind, IconName> = {
+  user: "user", us: "heart", self: "sparkles", person: "user", place: "map-pin", org: "users", work: "folder",
+  game: "gamepad", thing: "brain", concept: "lightbulb", topic: "lightbulb", event: "calendar",
+};
+
 type Draft = Pick<Memory, "text" | "kind" | "importance" | "due_at">;
 const EMPTY: Draft = { text: "", kind: "fact", importance: 3, due_at: null };
 
@@ -184,23 +195,24 @@ function MemoryCard({
       setBusy(false);
     }
   };
+  const item = memory.predicate && memory.predicate !== "habit" ? memory.predicate : "";
   return (
     <article
-      className="space-y-3 rounded-xl border border-border bg-surface-2/40 p-4"
+      className="space-y-2 border-t border-border/60 py-3 first:border-t-0 first:pt-0 last:pb-0"
       data-testid="memory-card"
       data-id={memory.id}
     >
-      <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
-          {memory.subject?.slice(0, 1) || <Icon name="brain" size={17} />}
-        </span>
+      <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="break-words text-[14px] font-semibold">
-            {memory.subject || t(KINDS[memory.kind])}
-          </h3>
+          {!editing && (
+            <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-content">
+              {item && <span className="mr-1.5 font-semibold text-content-dim" data-testid="memory-item">{item}</span>}
+              {memory.text}
+            </p>
+          )}
           <p className="mt-0.5 text-[11px] text-content-faint">
-            {t(KINDS[memory.kind])} · {relTime(memory.updated_at)}
-            {memory.core && ` · ${t("mateSettings.memCore")}`}
+            {memory.predicate === "habit" ? t("mate.notebookHabit") : t(KINDS[memory.kind])} · {relTime(memory.updated_at)}
+            {memory.pinned && ` · ${t("mateSettings.memCore")}`}
           </p>
         </div>
         <button
@@ -240,11 +252,7 @@ function MemoryCard({
             )
           }
         />
-      ) : (
-        <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-content-dim">
-          {memory.text}
-        </p>
-      )}
+      ) : null}
       {memory.due_at && (
         <p className="rounded-lg bg-accent-soft px-2.5 py-1.5 text-[12px] text-accent">
           {t("mateSettings.memDueOn", {
@@ -252,7 +260,7 @@ function MemoryCard({
           })}
         </p>
       )}
-      <details className="border-t border-border/60 pt-2 text-[12px]">
+      <details className="text-[12px]">
         <summary className="cursor-pointer text-content-faint">
           {t("mate.notebookManage")}
         </summary>
@@ -314,6 +322,46 @@ function MemoryCard({
         </div>
       </details>
     </article>
+  );
+}
+
+function EntityCard({
+  mateId,
+  group,
+  reload,
+  fail,
+}: {
+  mateId: string;
+  group: MemoryGroup;
+  reload: () => void;
+  fail: (s: string) => void;
+}) {
+  const t = useT(),
+    e = group.entity;
+  return (
+    <section
+      className="rounded-xl border border-border bg-surface-2/40 p-4"
+      data-testid="memory-entity"
+      data-entity={e?.id ?? ""}
+    >
+      <header className="mb-3 flex items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
+          <Icon name={e ? ENTITY_ICON[e.kind] ?? "brain" : "brain"} size={17} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="break-words text-[14px] font-semibold">
+            {e ? e.name : t("mate.notebookUnsorted")}
+          </h3>
+          <p className="mt-0.5 text-[11px] text-content-faint">
+            {e && e.kind !== "user" && e.kind !== "us" ? `${kindLabel(t, e.kind)} · ` : ""}
+            {t("mate.notebookItems", { n: group.items.length })}
+          </p>
+        </div>
+      </header>
+      {group.items.map((m) => (
+        <MemoryCard key={m.id} mateId={mateId} memory={m} reload={reload} fail={fail} />
+      ))}
+    </section>
   );
 }
 
@@ -388,7 +436,8 @@ export default function MemoryNotebook({ mate, onSettings }: { mate: Mate; onSet
   const [adding, setAdding] = useState(false),
     [saving, setSaving] = useState(false),
     [retrying, setRetrying] = useState(false),
-    [moreBusy, setMoreBusy] = useState(false);
+    [moreBusy, setMoreBusy] = useState(false),
+    [tidying, setTidying] = useState(false);
   const [probe, setProbe] = useState(""),
     [preview, setPreview] = useState<RecallPreview | null>(null);
   const generation = useRef(0),
@@ -426,8 +475,9 @@ export default function MemoryNotebook({ mate, onSettings }: { mate: Mate; onSet
     };
   }, [mate.id, rev, showing, search, refresh]);
   useEffect(() => {
-    if (!status || !((status.jobs.pending ?? 0) + (status.jobs.running ?? 0)))
-      return;
+    const busy = (status?.jobs.pending ?? 0) + (status?.jobs.running ?? 0);
+    const sorting = status?.organize?.state === "asked" || status?.organize?.state === "running";
+    if (!status || (!busy && !sorting)) return;
     const timer = setInterval(reload, 5000);
     return () => clearInterval(timer);
   }, [status]);
@@ -437,20 +487,23 @@ export default function MemoryNotebook({ mate, onSettings }: { mate: Mate; onSet
       items.filter(
         (m) =>
           (filter === "all" ||
-            (filter === "person" && m.subject_type === "person") ||
+            (filter === "person" && (m.entity?.kind ?? m.subject_type) === "person") ||
             m.kind === filter) &&
           (!normalized ||
-            `${m.subject || ""} ${m.text}`
+            `${m.entity?.name || m.subject || ""} ${m.predicate || ""} ${m.text}`
               .toLocaleLowerCase()
               .includes(normalized)),
       ),
     [items, filter, normalized],
   );
+  const groups = useMemo(() => groupByEntity(memories), [memories]);
   const showEpisodes =
     showing === "active" && (filter === "all" || filter === "episodes");
   const pending = (status?.jobs.pending ?? 0) + (status?.jobs.running ?? 0),
     failed = status?.jobs.failed ?? 0,
-    last = status?.recent_runs?.[0];
+    last = status?.recent_runs?.[0],
+    organize = status?.organize,
+    organizing = organize?.state === "asked" || organize?.state === "running";
   const save = async (draft: Draft) => {
     setSaving(true);
     try {
@@ -472,6 +525,17 @@ export default function MemoryNotebook({ mate, onSettings }: { mate: Mate; onSet
       setError((e as Error).message);
     } finally {
       setRetrying(false);
+    }
+  };
+  const tidy = async () => {
+    setTidying(true);
+    try {
+      const state = await organizeMemory(mate.id);
+      setStatus((s) => (s ? { ...s, organize: state } : s));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setTidying(false);
     }
   };
   const more = async () => {
@@ -540,6 +604,27 @@ export default function MemoryNotebook({ mate, onSettings }: { mate: Mate; onSet
               {t("mate.notebookSettings")}
             </button>
           )}
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2" data-testid="memory-organize">
+            <span>
+              {organizing
+                ? t("mate.notebookOrganizing")
+                : organize?.state === "done" && organize.at
+                  ? t("mate.notebookOrganized", { when: relTime(organize.at) })
+                  : organize?.state === "failed"
+                    ? t("mate.notebookOrganizeFailed")
+                    : t("mate.notebookOrganizeHint")}
+            </span>
+            {!organizing && items.length > 0 && (
+              <button
+                className="text-accent hover:underline disabled:opacity-50"
+                disabled={tidying}
+                onClick={() => void tidy()}
+                data-testid="memory-organize-button"
+              >
+                {t("mate.notebookOrganize")}
+              </button>
+            )}
+          </div>
           {failed > 0 && prefs.memory.self_save && (
             <button
               className="btn-ghost mt-2 !px-0"
@@ -609,18 +694,18 @@ export default function MemoryNotebook({ mate, onSettings }: { mate: Mate; onSet
               {t(normalized ? "mate.notebookNoMatch" : "mate.notebookEmpty")}
             </div>
           )}
-          {memories.length > 0 && (
+          {groups.length > 0 && (
             <div className="space-y-3" data-testid="notebook-facts">
-              {memories.slice(0, visible).map((m) => (
-                <MemoryCard
-                  key={m.id}
+              {groups.slice(0, visible).map((g) => (
+                <EntityCard
+                  key={g.key}
                   mateId={mate.id}
-                  memory={m}
+                  group={g}
                   reload={reload}
                   fail={setError}
                 />
               ))}
-              {memories.length > visible && (
+              {groups.length > visible && (
                 <button
                   className="btn-soft"
                   onClick={() => setVisible((v) => v + 24)}

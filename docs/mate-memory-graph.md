@@ -135,6 +135,35 @@ Every personal memory is linked to what it names:
 - **Grounding check:** each name the linker returns must appear in the item's own words, or it is dropped.
 - **Existing memories:** after this feature arrives, they are linked the same way, over time.
 
+## One record per thing
+
+Each memory is filed under **the one thing it is about** (`mate_memories.entity_id` → a node), with a short **item** label
+(`predicate`: 호칭, 직장, 즐기는 게임 …) and **one plain sentence** ("하렴은 Path of Exile을 자주 한다."). The words it rests on
+stay with it as evidence (exact quotes, relation `supports`), one click away — the text itself is no longer the joined
+quotes. Three special nodes: the **user**, **her** (`self`) and **the two of them** (`us`, "우리 사이": what they call each
+other, what they are to each other).
+
+- **What is a thing** (`graph.link_entities`): her own name (and a three-syllable Korean name's given name: 한채린 → 채린)
+  is her node, the user's name is theirs; a pronoun or a general word ("걔", "다른 여자", "게임", "질투", `graph.GENERIC`)
+  is never a node — the memory goes under the user.
+- **Extraction** (`consolidation.py`, prompt v3): the extractor gets the things the window is about, each with what she
+  keeps about it (`entities`, ≤ 16 × 24), and answers `add` or `update` per memory — an item that is already covered is
+  updated (merged or corrected text), never written twice. Relations between two things (`relations` → `mem_facts`),
+  habits (filed under the user) and episodes (a short description, not a quote) come with it. What isn't worth months —
+  requests to her, talk about building or testing the app, small talk, a passing mood — is left out. Each item is
+  checked on its own: a bad one is dropped, the rest of the batch stands.
+- **Merge guard** (`store.add_memory`): a new memory with the same thing, kind and item as an active one (not pinned,
+  not the user's own words) updates that one instead (a new revision).
+- **Putting in order** (`memory_org.py`): what she kept before this arrived is put in order once per mate (checkpoint
+  `memory_org_v1:<mate>`), and again when the user asks (기억 → 지금 정리하기, `POST …/knowledge/organize`). Two sealed
+  calls on her engine, in the worker's quiet moments (at most every 3 minutes, never while she is talking): **things**
+  (the same thing under two names merged, a no-one-in-particular node dropped, a node that is her or the user folded
+  into theirs) and **memories** (filed, labelled, rewritten as one sentence from its quotes, same item merged, not worth
+  keeping archived). Every change is a revision; what the user wrote themselves and her diary of moments keep their words.
+- **The 기억 tab** shows one card per thing (the user, the two of them, her, then the rest by the latest change; "아직
+  정리 전" last), each item one line. "늘 기억" marks only what is pinned. In her prompt a memory reads
+  `«thing · item» text`, sorted the same way.
+
 ## Studies
 
 A study is a background agent turn on the mate's own engine, with only the study tools:
@@ -269,6 +298,9 @@ GET    /api/mates/{id}/graph/docs · GET /api/mates/{id}/graph/docs/{did}?chunk=
 GET    /api/mates/{id}/studies · POST /api/mates/{id}/studies {kind: topic|url, topic?, url?, goal?, depth?}
 GET    /api/mates/{id}/studies/{sid} · POST /api/mates/{id}/studies/{sid}/cancel · DELETE /api/mates/{id}/studies/{sid}
 ```
+
+`GET /api/mates/{id}/knowledge/status` also says where putting her memory in order stands (`organize`: never | asked |
+running | done with what changed | failed); `POST /api/mates/{id}/knowledge/organize` asks for it again.
 
 Everything is scoped to the mate: another mate's node, page or study is 404. Changes reach other windows as a `graph` /
 `study` change event.

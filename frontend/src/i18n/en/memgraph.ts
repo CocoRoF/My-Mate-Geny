@@ -34,6 +34,7 @@ export default {
   userNode: "You",
   kind_user: "You",
   kind_self: "Herself",
+  kind_us: "The two of us",
   kind_person: "Person",
   kind_place: "Place",
   kind_org: "Organization",

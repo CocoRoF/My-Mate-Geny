@@ -926,8 +926,23 @@ async def restore_memory_version(mate_id: str, mem_id: str, request: Request) ->
 
 @router.get('/{mate_id}/knowledge/status')
 async def knowledge_status(mate_id: str, request: Request) -> dict:
+    from app.mate.memory_org import org_state
     _mate(request, mate_id)
-    return _svc(request).store.knowledge.stats(mate_id)
+    store = _svc(request).store
+    return {**store.knowledge.stats(mate_id), 'organize': org_state(store._db, mate_id)}
+
+
+@router.post('/{mate_id}/knowledge/organize')
+async def organize_memory(mate_id: str, request: Request) -> dict:
+    """The user asks for her memory to be put in order (기억 → 정리하기): things merged, memories filed under what they
+    are about, the same thing's same item one record — at the next quiet moment (app/mate/memory_org.py)."""
+    from app.mate.consolidation import Consolidator
+    _mate(request, mate_id)
+    svc = _svc(request)
+    org = Consolidator(svc).organizer
+    org.ask(mate_id)
+    svc.store._changed('memory', mate_id)
+    return org.state(mate_id)
 
 
 @router.post('/{mate_id}/knowledge/retry')
