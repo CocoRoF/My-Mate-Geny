@@ -10,7 +10,7 @@ import type { Turn } from "../stores/chatStore";
 /** reasons that are something they did or said (app/mate/state.py AT_THEM: keep the two the same) */
 export const AT_THEM: ReadonlySet<string> = new Set([
   "rude", "hostile", "dismissed", "pestered", "poked", "said", "interrupted", "ignored", "curt", "apology", "declined_call",
-  "missed_call", "brushed_over", "broken_promise", "objectified",
+  "missed_call", "brushed_over", "broken_promise", "objectified", "odd", "dislike",
 ]);
 /** from this anger at them she takes her time: TAKES_LEAST_MS, up to TAKES_MOST_MS at TAKES_MOST_AT and above */
 export const TAKES_TIME_FROM = 0.45;

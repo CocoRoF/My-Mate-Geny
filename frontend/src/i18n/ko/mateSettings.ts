@@ -447,6 +447,7 @@ const ko: Messages<"mateSettings"> = {
   relWhyPoked: "자꾸 건드림",
   relWhyInterrupted: "말을 끊음",
   relWhyDeclinedCall: "전화를 거절함",
+  relWhyOdd: "이상하고 선 넘는 말을 함",
   relWhyManual: "직접 정함",
   relWhyReset: "처음부터 다시 시작",
   relWhyRecomputed: "기록으로 다시 계산",

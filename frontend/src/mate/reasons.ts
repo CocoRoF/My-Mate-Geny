@@ -37,6 +37,7 @@ const WHY: Record<string, MsgKey> = {
   poked: "mateSettings.relWhyPoked",
   interrupted: "mateSettings.relWhyInterrupted",
   declined_call: "mateSettings.relWhyDeclinedCall",
+  odd: "mateSettings.relWhyOdd",
   manual: "mateSettings.relWhyManual",
   reset: "mateSettings.relWhyReset",
   recomputed: "mateSettings.relWhyRecomputed",

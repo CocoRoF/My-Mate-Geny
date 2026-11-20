@@ -246,7 +246,7 @@ def test_a_temperament_is_cleaned_merged_and_changes_how_she_fights_and_holds_on
     m = T.merged(S.TEMPERAMENTS["chaerin"], {"forgives": 1.2, "rise": {"angry": 1.4}})
     assert m["forgives"] == 1.2 and m["rise"] == {"shy": 1.2, "excited": 1.3, "angry": 1.4} and "게임" in m["loves"]
     # (how she fights: said first, the other way still hers)
-    for style, word in (("confront", "say it to their face"), ("withdraw", "go quiet")):
+    for style, word in (("confront", "say it to their face"), ("withdraw", "Cold fury")):
         w, doc = S.who(name="X", temperament={"conflict": style}), S.new()
         for i in range(3):
             S.hear(doc, w, "(X를 때린다)", f"m{i}", NOON, TZ)

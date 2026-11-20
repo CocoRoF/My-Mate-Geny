@@ -137,7 +137,7 @@ def test_it_is_not_at_them_she_is_only_out_of_sorts():
     assert S.HURT_BY_THEM[1] not in line
     assert not any(word in line.lower() for word in ("period", "cycle", "month", "menstru"))
     S.hear(doc, w, "닥쳐", "m1", start + H, TZ)  # (a rude word: anger at them, from where her own feelings are)
-    assert doc["feelings"]["angry"]["v"] == pytest.approx(0.3) and not S.furious(doc, w, start + H, TZ)
+    assert doc["feelings"]["angry"]["v"] == pytest.approx(S.RUDE) and not S.furious(doc, w, start + H, TZ)
     assert S.summary(doc, w, start + H, TZ)["top"][0]["why"] == {"code": "off_day"}
     assert S.leaning(doc, w, None, start, TZ) == S.leaning(doc, _her(gender=""), None, start, TZ)  # (no reason to say no)
 

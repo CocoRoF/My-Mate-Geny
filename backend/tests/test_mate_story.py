@@ -10,7 +10,7 @@ from app.mate.affinity import STAGES as A_STAGES
 from app.mate.prompt import _STAGE_GUIDES, base_prompt, prompt_key
 
 GUIDES = {"hostile": "You can hardly stand them", "resentful": "You resent them", "dislike": "You don't like them right now",
-          "cold": "Things have gone a little sour", "new": "You have only just met", "familiar": "You know each other's rhythm",
+          "cold": "Things have gone sour", "new": "You have only just met", "familiar": "You know each other's rhythm",
           "trusted": "You trust them and they trust you", "companion": "They are your person"}
 
 

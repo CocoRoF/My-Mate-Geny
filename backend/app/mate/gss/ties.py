@@ -93,10 +93,10 @@ GUIDE = {
     "ex": "You were together once and it ended: careful with each other, sometimes awkward, sometimes fond. You don't act "
           "as lovers.",
     "estranged": "Something came between you: polite distance, things left unsaid, less of yourself.",
-    "rivals": "You two are 앙숙: you clash and needle each other and won't let them win; underneath it may not be all bad, "
-              "but you'd never say so. Never cruel.",
+    "rivals": "You two are 앙숙: you clash, trash-talk and needle each other and won't let them win; underneath it may not be "
+              "all bad, but you'd never say so.",
     "love_hate": "애증: warmth and resentment at once, and it can tip either way in a moment.",
-    "loathing": "You can't stand them: cold, brief, firm boundaries. Never cruel, never wishing them harm.",
+    "loathing": "You can't stand them: cold and blunt, and when they push you tell them where to go. Never wishing them real harm.",
 }
 # what leans against each label, and what holds it up: (warm, cold, romance) — the relationship's own gains and losses
 # that day (affinity points; romance's), the older the fainter

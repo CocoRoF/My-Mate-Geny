@@ -59,14 +59,14 @@ def test_keeping_up_the_insults_makes_her_angrier_each_time():
     for i in range(3):
         S.hear(doc, w, "닥쳐, 쓸모없어", f"m{i}", NOON, TZ)
         seen.append(_lv(doc, w)["angry"])
-    assert seen == pytest.approx([0.3, 0.7, 1.0])
+    assert seen == pytest.approx([S.RUDE, S.RUDE * 2 + S.RUDE_MORE, 1.0])  # (0.42, 0.94: it lands as it would on anyone)
     assert S.levels(doc, w, NOON, TZ)["angry"]["why"]["code"] == "rude"
     # (furious with them: blowing up at them or not answering at all, hers to decide; short of that, angry out loud or cold)
     assert S.conduct(S.summary(doc, w, NOON, TZ)).startswith(S.REFUSE)
-    assert "let it out at them" in S.REFUSE and "reply with exactly [SILENT]" in S.REFUSE
+    assert "blow up at them" in S.REFUSE and "swear" in S.REFUSE and "reply with exactly [SILENT]" in S.REFUSE
     hot = {**S.new(), "feelings": {"angry": {"v": 0.75, "at": S.A._iso(NOON), "why": {"code": "rude"}}}}
     said = S.conduct(S.summary(hot, w, NOON, TZ))
-    assert "let it out the way that is truest to you" in said and "“...”" not in said  # (no sample words to parrot)
+    assert "keep going at them" in said and "swearing" in said and "“...”" not in said  # (no sample words to parrot)
     S.hear(doc, w, "닥쳐, 쓸모없어", "m2", NOON, TZ)  # (the same message, looked at again)
     assert _lv(doc, w)["angry"] == 1.0
     fresh = S.new()  # (one now and then isn't keeping it up)
@@ -80,7 +80,8 @@ def test_saying_sorry_in_any_of_its_words_counts(text):
     w, doc = S.who(), S.new()
     S.hear(doc, w, "멍청아", "a", NOON, TZ)
     S.hear(doc, w, text, "b", NOON, TZ)
-    assert _lv(doc, w)["angry"] < S.SHOWN_FROM and doc["rude"] is None  # (one rude word, and sorry: it no longer shows)
+    # (one rude word, and sorry: it eases and starts over — a bare one right after may leave her a little irritated, as anyone)
+    assert _lv(doc, w)["angry"] < S.RUDE and doc["rude"] is None
 
 
 def test_kindness_calms_her_but_good_things_land_less_while_she_is_angry():
@@ -107,7 +108,7 @@ def test_an_apology_takes_the_edge_off():
         S.hear(doc, w, "멍청아", f"m{i}", NOON, TZ)
     S.hear(doc, w, "미안해, 내가 잘못했어", "sorry", NOON, TZ)
     # (owning it, the first time but right after: half of the hurt, times 0.7 (TOO_SOON_RUDE), goes; still about what they said)
-    assert _lv(doc, w)["angry"] == pytest.approx(0.7 - S.APOLOGY * S.TOO_SOON_RUDE_WORTH, abs=0.01)
+    assert _lv(doc, w)["angry"] == pytest.approx(2 * S.RUDE + S.RUDE_MORE - S.APOLOGY * S.TOO_SOON_RUDE_WORTH, abs=0.01)
     assert S.levels(doc, w, NOON, TZ)["angry"]["why"]["code"] == "rude"
     S.hear(doc, w, "멍청아", "again", NOON, TZ)
     assert doc["rude"]["n"] == 1  # (and it starts over)
@@ -267,8 +268,8 @@ def test_every_blend_is_of_real_emotions():
 
 
 @pytest.mark.parametrize(("emotion", "strength", "says"), [
-    ("angry", "strong", "let it out the way that is truest"), ("angry", "moderate", "short with them"), ("angry", "slight", "a little curt"),
-    ("shy", "strong", "flustered"), ("happy", "strong", "playful"), ("sad", "strong", "you may cry"), ("sleepy", "strong", "drowsy"),
+    ("angry", "strong", "keep going at them"), ("angry", "moderate", "snapping back"), ("angry", "slight", "curt, a little sarcastic"),
+    ("shy", "strong", "flustered"), ("happy", "strong", "light up"), ("sad", "strong", "you may cry"), ("sleepy", "strong", "drowsy"),
 ])
 def test_how_she_feels_comes_out_in_how_she_talks(emotion, strength, says):
     w, doc = S.who(closeness=0.0), S.new()
@@ -512,7 +513,7 @@ async def test_a_turn_hears_the_message_tells_her_and_leaves_it_at_that(db):
     _says(mates, sid, "닥쳐")
     req, _prompt = _turn(mates, mid, "닥쳐")
     assert "How you feel right now: angry, a little (they were rude to you: “닥쳐”)." in req.preamble
-    assert "How it comes out now: You are a bit put out" in req.preamble
+    assert "How it comes out now: You are irritated" in req.preamble
     assert f"{oid} “잠옷”" in req.preamble and "default (your usual clothes" in req.preamble
     assert mates.get(mid)["state"]["label"] == "angry"
     before = mates.state_view(mid)["log"]

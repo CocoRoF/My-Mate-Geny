@@ -81,7 +81,8 @@ LOSSES = {"dismissed": (0.8, 1.6),      # they brushed her off
           "pestered": (0.5, 1.0),       # they kept on at her about her clothes
           "poked": (0.3, 0.9),          # they wouldn't stop poking her
           "interrupted": (0.2, 0.6),    # they cut her off
-          "declined_call": (0.6, 1.2)}  # she called and they turned it down
+          "declined_call": (0.6, 1.2),  # she called and they turned it down
+          "odd": (0.5, 1.5)}            # they said strange, out-of-line things to her (a reading's "inappropriate")
 # more than one number between them (docs/geny-state-system.md, roadmap 4): ``affinity`` is how close they are; beside it
 # ``trust`` (hurt and repair, promises), ``romance`` (only from romantic exchanges, and only on trust and closeness) and
 # ``respect`` (how they treat her: put-downs, pestering, brushing her off, thanks). 0 – 100 each; the stage follows closeness,
@@ -99,6 +100,7 @@ RESPECT_HURT = {"demeaning": 6.0, "coercion": 4.0, "violence": 3.0, "threat": 3.
 RESPECT_RUDE = 0.5
 # what else moves them, handed on like LOSSES (``cost``): {code: {bond: change}}
 BOND_EVENTS = {"dismissed": {"trust": -0.5, "respect": -0.5}, "ignored": {"trust": -0.5}, "pestered": {"respect": -1.0},
+               "odd": {"respect": -0.5},
                "declined_call": {"trust": -0.3}, "promise_kept": {"trust": 1.5}, "promise_broken": {"trust": -3.0},
                "made_up": {"trust": 2.0}}
 GRACE_DAYS = 2                      # quiet days that cost nothing

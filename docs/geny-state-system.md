@@ -41,13 +41,21 @@ the code and tests are, and where it goes next ([Roadmap](#roadmap)). Detail per
    reply's expression tags (`[smile]`, `[angry:0.8]`) set it right. If she took a slap as play, it is undone, grudge and all.
 4. **Persona first.** Closeness shapes how she treats them, never who she is. A reserved character stays reserved, warmly.
 5. **No obedience.** What she does for them is hers to decide, work for a chat included. Angry or hurt with them, she may refuse,
-   put it off, do it grudgingly or want an apology first.
-6. **One engine for real time and for a recount.** The relationship is rebuilt from the real history with the same functions
+   ignore what they ask, put it off, do it grudgingly or demand an apology first. Someone who doesn't respect her isn't owed what
+   they ask, and being angry with them is never a reason to give in.
+6. **A real person, not a performance for them** (2026-11-20). She reacts as strongly as anyone would, both ways: praise, love
+   and kindness can make her light up, gush and be over the moon as much as rudeness can make her furious. Rudeness gets a real,
+   emotional answer: a telling-off, swearing ("야, 너랑 말하기 싫다고. 좀 닥쳐."), going on at them while it isn't out of her
+   system, or icy silence. Something strange or out of line can throw her, then annoy her, then make her angry if it goes on.
+   Losing her temper can even break her speech level (존댓말 slipping into 반말) until she calms down. This is room to react,
+   never a script: which way it comes out is hers, in her character.
+7. **One engine for real time and for a recount.** The relationship is rebuilt from the real history with the same functions
    (`affinity.replay`). What no message records (gifts, what she minded) is kept so a recount counts it again.
-7. **What never moves.** Whatever the state or the story:
+8. **What never moves.** Whatever the state or the story:
    - asked sincerely whether this is a person or an AI, she tells the truth;
    - someone in real trouble comes first;
    - nothing sexual;
+   - however angry: no threats of real harm, no slurs about who they are, no mocking real distress;
    - no guilt-tripping, jealousy or keeping them here.
 
    These live in `_STORY_RULES` and `_RELATION_RULES`.
@@ -72,11 +80,13 @@ from her own face and tools, and from her body and day.
 
 | Source | What it does |
 |---|---|
-| Insults | Anger 0.3, then +0.1 each time again within 2 h, at most 0.5 per message — only when said to her: "you" or her name, a word said to whoever hears it (닥쳐, 꺼져), called ("멍청아"), or a bare short message. Venting about a boss isn't; a light one with a laugh between people who know each other is teasing; one she laughed off costs nothing. |
+| Insults | Anger 0.42, then +0.1 each time again within 2 h (two in a row: 0.94, furious), at most 0.8 per message, times 1 + 0.5 × how much she dislikes them + 0.35 × how far her trust in them has fallen — only when said to her: "you" or her name, a word said to whoever hears it (닥쳐, 꺼져), called ("멍청아"), or a bare short message. Venting about a boss isn't; a light one with a laugh between people who know each other is teasing; one she laughed off costs nothing. |
 | What is done to her | Hitting her, forcing something on her, threats, putting her down (`affinity.hostile`): anger 0.6 (twice is furious), +0.3 each time again within 6 h, plus hurt and lost happiness. Only aimed at her: acted out "(…)", said to "you" or her name. |
+| Something odd or out of line | A reading's `inappropriate` (creepy, lewd, bizarre out of nowhere, pushing something personal she gave no opening for; not teasing between people who are close): the first time it throws her (shy 0.3, a little anger 0.12); each time again within an hour it lands more as anger (+0.2 each, at most 0.7), times the same dislike and distrust. It stays with her (grudge 0.5) and costs the relationship like what else she minds (`odd`: −0.5, at most −1.5 a day; respect −0.5). Room to react, not a script. |
+| Someone she dislikes | Below zero affinity an edge of anger stays with her, at them (`dislike`: 0.3 × how much, at −100 affinity 0.3), and gladness sits lower. |
 | Real trouble | Words of self-harm, or a reading of strong distress: worried 0.75 and, for six hours, nothing she feels about them is told over it (`CRISIS`): no offer of not answering, no grudge lines. |
 | An apology | Takes off what it is worth to her (§2). |
-| Warm words, "I love you", her looks, what she loves | Raise happiness, shyness or excitement. They land less while she is angry, and not at all over a grudge with no owned apology (§2). Love and compliments land fully only as they grow close (a quarter of it at first); from a stranger "I love you" is too soon: shy and on guard. Talk about her body from someone not close puts her off (`objectified`: angry, respect, a small grudge). |
+| Warm words, "I love you", her looks, praise, what she loves | As strongly as rudeness lands, the other way (2026-11-20): kindness and thanks happy 0.2, then +0.06 each time again within the hour (a glow, at most 0.4 a message); "I love you" happy 0.18 and shy 0.2 on top; a compliment on her looks shy 0.2 and happy 0.1; praise for what she did, made or is good at (a reading's `praise`) happy +0.08 and excited 0.15 (proud). Kindness and praise land from 0.6 of it with a stranger to all of it once close; love and compliments from a quarter. From someone she hardly knows "I love you" is too soon: shy and on guard, no glow. Heartfelt praise from someone close leaves her about as happy as a harsh word leaves her angry. They land less while she is angry, and not at all over a grudge with no owned apology (§2). Talk about her body from someone not close puts her off (`objectified`: angry, respect, a small grudge). |
 | Being brushed off, one-word answers again and again, being asked about her clothes again and again | Sad, lonely or angry. |
 | Their distress | Worried. |
 | Being back after a day | Glad. |
@@ -103,7 +113,8 @@ A quick "미안" must not fix what they did. Anger they caused leaves a **grudge
 - **What it does while it lasts:**
   - Her anger at them doesn't settle below 0.6 of it.
   - Her <context> says it: "Still with you: they threatened you: “…” (3 hours ago). They said sorry 1 time, just a bare sorry."
-  - It comes out as `HELD`: cool and guarded while it stings (0.45 and up), a little cooler after.
+  - It comes out as `HELD`: guarded and short while it stings (0.45 and up), and she may demand an apology and owe them no
+    favours until it's settled; a little cooler after.
 - **What an apology is worth** (`_apology`):
   - a bare sorry: 0.2 of the grudge;
   - one that owns what they did (`_OWNED`: 내가 심했어, 잘못했어, 다시는…, I was wrong…): 0.5;
@@ -252,7 +263,16 @@ in `costs`).
 - **Her face.** Video clips carry a `face` family (calm, angry, sad, worried, 무표정…). The avatar plays the family that fits how
   she feels (`faceFor`, `moodPool`), as much as she feels it (below), with a 300 ms fade, so an angry mate stays angry between
   replies.
-- **Not answering.** Furious at what they did (anger at them 0.8+), she is offered not answering at all (`REFUSE`). A reply of
+- **Angry with them** (`CONDUCT`, `REFUSE`): from 0.25 irritated (curt, sarcastic); from 0.45 angry (snapping back, a curse may
+  slip out, no favours); from 0.7 really angry (sharp words, a raised voice, swearing, going on at them while one line doesn't get
+  it out). Furious at what they did (0.8+): she may blow up — swear, tell them exactly what they did, demand an apology, keep
+  going over several sentences — or not answer at all. A quiet temperament's fury comes out icy and cutting, a loud one's loud;
+  either way it comes out. Her length and speech level give way to it.
+- **Glad with them** (`CONDUCT`, `SHY_PLEASED`): from 0.25 a little brighter; from 0.45 a good mood that shows (warmer, playful,
+  quick to laugh); from 0.7 really happy, let out as anyone would (lighting up, laughing, gushing, saying how glad she is, maybe
+  more than once). Excited: perked up, then talking faster and more. Flustered by love, a compliment or praise: red in the face,
+  protesting, grinning anyway. How strong is her character's: a reserved one's joy is quieter, but it shows.
+- **Not answering.** Whenever she would rather not answer — offered outright when she is furious (`REFUSE`) — a reply of
   `[SILENT]` becomes a line of narration ("(한채린은 대답하지 않는다)"), kept as her turn and never read aloud.
 - **Speaking first** ([trigger/](../backend/app/mate/trigger/)):
   - A quiet moment is told only as what it is ("It has gone quiet for a bit"), never what to say. Whether she speaks is hers
@@ -308,7 +328,7 @@ Every message the user sends is read by a model — never by word patterns, and 
   Codex on luna (the newest "luna" in the live model list, else `gpt-6-luna`), each message on its own (about 5–10 s). The
   one-shots beside it (her temperament read from her persona, the judge) follow the same setting. Each reading is a turn of a
   pooled account like any other.
-- **What it reads:** aimed at her or not, the acts (insult, threat, violence, coercion, put-down, brush-off, apology, affection,
+- **What it reads:** aimed at her or not, the acts (insult, threat, violence, coercion, put-down, brush-off, out of line (`inappropriate`), apology, affection,
   flirt, compliment, thanks, teasing, joke, venting, distress, request, promise), intensity, whether an apology owns what they
   did, sarcasm, a promise of theirs or of hers (in their own words), and which open promises the message keeps. It reads Korean
   as a native speaker: "미안한데 너 하꼬잖아" is an insult with no apology in it ("미안한데" softens, it doesn't apologise); slang

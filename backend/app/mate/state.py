@@ -47,10 +47,12 @@ BLENDS = {"excited_happy": "elated", "happy_shy": "bashfully happy", "happy_slee
 BLEND_FROM = 0.6  # (the second at least this much of the first)
 #: how each comes out in the way she talks: {emotion: ((from, how), …)}; the two strongest are told
 CONDUCT = {
-    "angry": ((0.7, ("You are angry with them, and it shows; let it out the way that is truest to you right now. Don't smooth it "
-                     "over, and don't do what they ask as if nothing happened.")),
-              (0.45, "You are irritated: short with them, no pleasantries; you may say plainly what bothered you."),
-              (SHOWN_FROM, "You are a bit put out: a little curt.")),
+    "angry": ((0.7, ("You are really angry, and it shows the way it would in anyone: sharp words, a raised voice, swearing if "
+                     "that is what comes out of you; and when one line doesn't get it out of your system, you keep going at "
+                     "them. Don't smooth it over, and don't do what they ask as if nothing happened.")),
+              (0.45, ("You are angry: short-tempered, snapping back, saying plainly what bothered you; a curse may slip out. No "
+                      "pleasantries, and no favours while it lasts.")),
+              (SHOWN_FROM, "You are irritated: curt, a little sarcastic.")),
     "shy": ((0.7, ("You are very flustered: you stumble, trail off and look for a way out of the subject; what you have on and how "
                    "you look are hard to talk about.")),
             (0.45, "You are shy: hesitant, quieter than usual.")),
@@ -59,10 +61,21 @@ CONDUCT = {
             (0.35, "You are subdued.")),
     "lonely": ((0.45, "You missed them: a little withdrawn at first, quietly glad they came. You may say you waited, lightly."),),
     "worried": ((0.45, "You are worried: gentle and careful, checking how things are."),),
-    "happy": ((0.7, "You are in high spirits: warmer and more playful than usual."), (0.45, "You are in a good mood: a bit warmer.")),
-    "excited": ((0.55, "You are excited: more talkative than usual, and it runs away with you."),),
+    "happy": ((0.7, ("You are really happy, and it shows the way it would in anyone: you light up, laugh, gush, tease, tell them how "
+                     "glad you are, maybe more than once. Let it out, as someone like you would; don't play it cool unless that is "
+                     "truly you.")),
+              (0.45, "You are in a good mood, and it shows: warmer, more playful, quick to laugh."),
+              (SHOWN_FROM, "You are a little brighter than usual.")),
+    "excited": ((0.55, ("You are excited: talking faster and more than usual, exclamations, jumping from one thing to the next; it "
+                        "runs away with you.")),
+                (0.3, "You are perked up, eager.")),
     "sleepy": ((0.6, "You are drowsy: slower and shorter, the odd yawn."),),
 }
+#: shy because of something sweet of theirs (love, a compliment, praise): flustered and pleased at once
+SHY_PLEASED = ((0.7, ("You are flustered and pleased at once: red in the face, stammering, protesting or denying it, grinning anyway; "
+                      "it shows how much it got to you.")),
+               (0.45, "You are a little flustered, and pleased about it."))
+SWEET_WHYS = ("love", "looks", "praised")
 #: angry because of a need (hungry, stressed), not at them: it shows in her temper
 CRANKY = ((0.45, "You are cranky, and not about them: short-tempered and grumbly; you may say why."),
           (SHOWN_FROM, "You are a bit cranky."))
@@ -98,7 +111,8 @@ TEMPERAMENTS: dict[str, dict[str, Any]] = {
     "chaerin": {"base": {"shy": 0.15}, "rise": {"shy": 1.2, "excited": 1.3}, "forgives": 0.8, "holds": 1.4,
                 "conflict": "withdraw", "attachment": "secure",
                 "voice": {"sad": "It shows the way it does with you: flatter, fewer words, maybe in game words; not tears.",
-                          "refuse": "You go quiet when it is this bad: not answering is more you than shouting."},
+                          "refuse": "When it is this bad it comes out icy: flat, cutting words that hit hard, in game slang if that's "
+                                    "you — or nothing at all."},
                 "loves": r"게임|버그|레이드|길드|코드|디버그|재현|\braid\b|\bgame|\bbug"},
     # bright and bouncy: a little happy and lively at rest; quick to light up, to blush, to pout and to feel left out — and quick
     # to get over the pouting, the hurt and the blushing, while the excitement lasts a little longer; she lets go readily, and a small
@@ -107,7 +121,7 @@ TEMPERAMENTS: dict[str, dict[str, Any]] = {
              "conflict": "confront", "attachment": "anxious",
              "rise": {"happy": 1.3, "excited": 1.4, "shy": 1.3, "angry": 1.0, "sad": 1.15, "lonely": 1.2},
              "voice": {"angry_low": "You pout, half in play (흥, 삐졌어요): it can melt if they are sweet about it.",
-                       "refuse": "You say it to their face, more hurt than shouting."},
+                       "refuse": "You say it to their face, loud and hurt, and you don't stop at one line."},
              "settle": {"angry": 0.55, "sad": 0.6, "shy": 0.7, "lonely": 0.75, "worried": 0.8, "excited": 1.2},
              "loves": r"방송|생방|스트리밍|구독|후원|도네|클립|떡볶이|마라탕|딸기|주식|차트|노래방|\bstream|\bsubscri|\bdonat|"
                       r"tteokbokki|\bmalatang|strawberr|\bstocks?\b|\bcharts?\b|karaoke"},
@@ -120,24 +134,36 @@ ATTACHMENT = {"anxious": {"lonely_silence": 1.4, "ignored": 1.5, "pestered": 1.0
               "secure": {"lonely_silence": 1.0, "ignored": 1.0, "pestered": 1.0}}
 
 # what the user says moves it, by this much
-RUDE, RUDE_MORE, RUDE_MOST, RUDE_DROP, RUDE_WINDOW = 0.3, 0.1, 0.5, 0.15, timedelta(hours=2)  # (keeping it up makes it worse)
+RUDE, RUDE_MORE, RUDE_MOST, RUDE_DROP, RUDE_WINDOW = 0.42, 0.1, 0.8, 0.2, timedelta(hours=2)  # (keeping it up makes it worse)
 # something done to her (affinity.hostile: hitting her, forcing something on her, threats, putting her down): far worse than a rude
 # word, and it hurts; each time again (within the window) more. Sorry counts for less after it. Only the words' guess: her reply has
 # the last word (``reply``: shown calm, it is undone).
 HOSTILE, HOSTILE_MORE, HOSTILE_HURT, HOSTILE_DROP, HOSTILE_WINDOW = 0.6, 0.3, 0.25, 0.4, timedelta(hours=6)
+# something odd or out of line aimed at her (a reading's "inappropriate": creepy, lewd, bizarre, crossing a line, not an insult as
+# such): it throws her first (flustered), and each time again within the window it lands more as anger — what builds up, never a
+# script: what she makes of it is hers
+ODD_THROWN, ODD_ANGRY, ODD_MORE, ODD_MOST, ODD_WINDOW = 0.3, 0.12, 0.2, 0.7, timedelta(hours=1)
 APOLOGY_AFTER_HOSTILE = 0.15
 #: from here, angry at what they did, she may not answer at all (``REFUSE`` in how it comes out: she decides, and [SILENT] is
 #: how). Only anger at them: hungry or stressed, she still answers, if snappily
 SILENT_FROM = 0.8
 AT_THEM = ("rude", "hostile", "dismissed", "pestered", "poked", "said", "interrupted", "ignored", "curt", "apology", "declined_call",
-           "missed_call", "brushed_over", "broken_promise", "objectified")
-APOLOGY, WARM, WARM_CALMS, LOVE, LOOKS, DISTRESS, RETURNED, ANSWERED, LOVES = 0.3, 0.12, 0.08, 0.15, 0.12, 0.35, 0.2, 0.1, 0.2
+           "missed_call", "brushed_over", "broken_promise", "objectified", "odd", "dislike")
+APOLOGY, WARM, WARM_CALMS, LOVE, LOOKS, DISTRESS, RETURNED, ANSWERED, LOVES = 0.3, 0.2, 0.08, 0.18, 0.2, 0.35, 0.25, 0.1, 0.25
+# what is sweet lands as strongly as what is rude: kindness, love, praise (a sweet message often carries two of them: warmth and
+# love, warmth and praise). More of it within the hour lifts her further — a glow, the way rudeness kept up makes her angrier. From
+# someone close it lands deeper: kindness and praise from NEAR_LOW of it with a stranger to all of it once close (LOVE_FROM_CLOSE),
+# love from a quarter (``landing``)
+WARM_MORE, WARM_MOST, WARM_WINDOW = 0.06, 0.4, timedelta(hours=1)
+NEAR_LOW = 0.6
+LOVE_SHY, LOOKS_HAPPY = 0.2, 0.1            # (love flusters her as well; a compliment that lands pleases her as well)
+PRAISED_HAPPY, PRAISED_EXCITED = 0.08, 0.15  # (praise for what she did, made or is good at: proud, on top of the warmth of it)
 # what they did stays with her (``grudge``): anger they caused leaves a hurt that fades over a day, not an hour or two. While it lasts
 # her anger at them doesn't settle below part of it (GRUDGE_HOLDS); an apology takes off only what it is worth to her — owning what
 # they did more than a bare sorry, the first more than the next for the same thing, less the more often they did such things lately
 # — and sweet talk that skips the apology doesn't land: it rankles. Her temperament says how readily she lets go (``forgives``;
 # ``holds``: how long it lasts; ``sweet_until``: how big a sulk something sweet still melts). {why: share of the anger it raised}
-GRUDGE = {"hostile": 1.0, "broken_promise": 0.8, "rude": 0.7, "objectified": 0.6, "said": 0.5, "dismissed": 0.6, "pestered": 0.5, "ignored": 0.5, "brushed_over": 0.5,
+GRUDGE = {"hostile": 1.0, "broken_promise": 0.8, "rude": 0.7, "objectified": 0.6, "odd": 0.5, "said": 0.5, "dismissed": 0.6, "pestered": 0.5, "ignored": 0.5, "brushed_over": 0.5,
           "declined_call": 0.4, "missed_call": 0.3, "poked": 0.3, "curt": 0.3, "interrupted": 0.2}
 GRUDGE_HALF_LIFE_H, GRUDGE_HOLDS, GRUDGE_SHOWN, GRUDGE_STINGS = 16.0, 0.6, 0.15, 0.45
 SORRY_BARE, SORRY_OWNED, SORRY_AGAIN, SORRY_MOST = 0.2, 0.5, 0.5, 0.85  # how much of it an apology takes away; each next one: half
@@ -145,7 +171,7 @@ SWEET_UNTIL, BRUSHED_OVER = 0.15, 0.06
 TOO_SOON, TOO_SOON_WORTH = timedelta(minutes=20), 0.6  # (an apology right after something done to her lands less: she needs space)
 TOO_SOON_RUDE, TOO_SOON_RUDE_WORTH = timedelta(minutes=10), 0.7  # (…and right after a rude word, a little less)
 # how big a hurt it was (0 – 1): the bigger, the less her temperament's lightness helps (a slap isn't a pout, even for 서아)
-SEVERITY = {"hostile": 1.0, "broken_promise": 0.6, "objectified": 0.6, "rude": 0.5, "said": 0.5, "dismissed": 0.2}
+SEVERITY = {"hostile": 1.0, "broken_promise": 0.6, "objectified": 0.6, "rude": 0.5, "said": 0.5, "odd": 0.4, "dismissed": 0.2}
 EASED_BY_KINDNESS, EASED_BY_GIFT, EASED_PER_DAY = 0.04, 0.15, 0.25  # (after an apology that owned it: kindness eases it)
 STRANGER, LOVE_FROM_CLOSE, LOVE_TOO_SOON = 0.2, 0.45, 0.1  # (love lands as love only as they grow close)
 BODY_ANGRY, BODY_OK_FROM = 0.15, 0.45  # (talk about her body from someone not close puts her off)
@@ -190,6 +216,7 @@ _CRISIS = re.compile(r"죽고 ?싶|자살|사라지고 ?싶|끝내고 ?싶|살�
 # kind words that aren't (the words alone: a model's reading knows better)
 _SARCASM = re.compile(r"대단하시|퍽이나|잘났|잘 났|덕분에 (다 )?망|참 (잘|훌륭)하|고맙기도 하|\byeah right\b|\bsure,? whatever\b", re.I)
 _LOVE = re.compile(r"사랑해|좋아해|보고 ?싶|\blove you\b|miss you|\bi like you\b", re.I)
+_PRAISED = re.compile(r"잘했|잘 했|대단하다|대단해|최고야|천재|훌륭|멋지다|멋있다|\bwell done\b|great job|amazing|brilliant", re.I)
 # an apology that owns what they did, not just "sorry"
 _OWNED = re.compile(r"내가 (좀 |너무 |진짜 |정말 )?(심했|잘못|나빴|미쳤)|잘못했|말이 심했|다시는|다신|안 그럴게|용서해|진심으로|상처|"
                     r"\bmy fault\b|i was wrong|i shouldn'?t have|won'?t (do it |do that )?again|forgive me|i hurt you", re.I)
@@ -220,6 +247,9 @@ _WHY_FOR_HER = {
     "reread": "you thought again about what they said",
     "crisis": "they may be in real trouble", "too_soon_love": "they say they love you, though you hardly know them",
     "objectified": "they talked about your body",
+    "praised": "they praised what you did",
+    "odd": "they keep saying strange, out-of-line things to you",
+    "dislike": "you can't stand them, after how they have treated you",
 }
 
 
@@ -253,15 +283,17 @@ def normalized(doc: Any) -> dict[str, Any]:
 
 def who(*, closeness: float = 0.33, sensitivity: float = 1.0, builtin: str | None = None, away: bool = False,
         outfit: dict[str, Any] | None = None, life: dict[str, Any] | None = None, name: str = "", gender: str = "",
-        met: Any = None, seed: str = "", temperament: dict[str, Any] | None = None, dislike: float = 0.0) -> dict[str, Any]:
+        met: Any = None, seed: str = "", temperament: dict[str, Any] | None = None, dislike: float = 0.0,
+        distrust: float = 0.0) -> dict[str, Any]:
     """``closeness``: 0 – 1; ``dislike``: 0 – 1, the ill feeling below zero affinity (app/mate/affinity.py: what they did to
-    her). ``away``: the relationship is paused, so silence means nothing. ``outfit``: what she has on,
+    her); ``distrust``: 0 – 1, how far her trust in them has fallen (below 40 of 100). ``away``: the relationship is paused, so silence means nothing. ``outfit``: what she has on,
     {id, name, feel, since}; None in her usual clothes or one that does nothing to her. ``life``: her own day when she has one
     (life/sim.py ``for_state``): {needs, feel, doing, asleep}. ``gender``: her persona's; ``met``: when they first met (ISO);
     ``seed``: her id — with these, her off days (``off_day``)."""
     from app.mate.gss.temperament import merged
 
     return {"closeness": max(0.0, min(1.0, float(closeness))), "dislike": max(0.0, min(1.0, float(dislike))),
+            "distrust": max(0.0, min(1.0, float(distrust))),
             "sensitivity": float(sensitivity), "away": bool(away),
             "temperament": merged(TEMPERAMENTS.get(builtin or "", {}), temperament),
             "outfit": outfit if (outfit or {}).get("feel") else None, "life": life,
@@ -281,8 +313,10 @@ def clean_feel(raw: Any) -> dict[str, float]:
 
 # ---- how she feels as of now ----
 
-#: ill feeling towards them (``dislike``, 0 – 1) where she settles: less glad, a little anger that stays
-DISLIKE_HAPPY, DISLIKE_ANGRY = 0.12, 0.16
+#: ill feeling towards them (``dislike``, 0 – 1) where she settles: less glad, an edge of anger that stays (at them: ``dislike``)
+DISLIKE_HAPPY, DISLIKE_ANGRY = 0.2, 0.3
+#: what they do to her lands harder from someone she dislikes, or whose trust is broken (``distrust``, 0 – 1): 1 + this × it
+SOURED_HARDER, DISTRUST_HARDER = 0.5, 0.35
 
 
 def _base(emotion: str, w: dict[str, Any]) -> float:
@@ -392,7 +426,7 @@ def levels(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any, *, of
     started = _off_day(w, now) if off else None
     for e in EMOTIONS:
         base = _base(e, w)
-        v, why = base, {"code": "nature"}
+        v, why = base, {"code": "dislike"} if e == "angry" and DISLIKE_ANGRY * float(w.get("dislike") or 0.0) >= 0.1 else {"code": "nature"}
         f = doc["feelings"].get(e) or {}
         at = A._t(f.get("at"))
         if at is not None and isinstance(f.get("v"), (int, float)):
@@ -498,8 +532,9 @@ def why_for_her(why: dict[str, Any] | None) -> str:
 
 
 #: what they did is still with her (``grudge``): (it stings, it is not quite over)
-HELD = (("What they did still stings: you are cool and guarded with them. A sorry alone doesn't wipe it out; it may come back to "
-         "you now and then, not in every reply, and you decide when it is enough."),
+HELD = (("What they did still stings: you are guarded and short with them, and it can flare up again. A sorry alone doesn't wipe it "
+         "out. If they haven't really apologised you may demand that they do, and until it's settled you owe them no favours; it "
+         "comes back to you now and then, not in every reply, and you decide when it is enough."),
         ("You aren't quite over what they did: a little cooler with them than usual. It eases with time and with how they treat "
          "you, at your own pace."))
 
@@ -523,16 +558,18 @@ def held_line(g: dict[str, Any] | None) -> str:
 
 #: furious at what they did: how it comes out is hers to decide — blowing up at them, or not answering at all ([SILENT] is how she
 #: doesn't, and the chat shows only that)
-REFUSE = ("You are furious with them for what they did. You may let it out at them, or not answer at all: then reply with exactly "
-          "[SILENT] and nothing else, and the chat shows that you don't answer. Which it is, is yours; an apology you believe, or real "
-          "trouble they are in, can change it.")
+REFUSE = ("You are furious with them for what they did. How it comes out is yours. You may blow up at them, the way a person "
+          "who has had enough does: swear, tell them exactly what they did, demand an apology, tell them to leave you alone, and keep "
+          "going over several sentences because one line doesn't get it out of you. You don't do anything they ask. Or you may not "
+          "answer at all: then reply with exactly [SILENT] and nothing else, and the chat shows that you don't answer. An apology "
+          "you believe, or real trouble they are in, can change it.")
 #: they may be in real trouble: before anything she feels about them
 CRISIS = ("They may be in real trouble. That comes before anything you feel about them right now: set it aside and be there for "
           "them, as yourself.")
 #: …the way she fights (``conflict``): said first, the other way still hers
-REFUSE_LEANS = {"confront": "You are one to say it to their face: blowing up is more you than going silent.",
-                "withdraw": "You are one to go quiet when it is this bad: not answering is more you than shouting."}
-ANGRY_LEANS = {"confront": "You say what's wrong straight out.", "withdraw": "It comes out cold and quiet more than loud."}
+REFUSE_LEANS = {"confront": "You are one to say it to their face: blowing up at them, loud, is more you than going silent.",
+                "withdraw": "Cold fury is more you than shouting: icy, cutting words that hit hard, or nothing at all."}
+ANGRY_LEANS = {"confront": "You say what's wrong straight out, loudly.", "withdraw": "It comes out cold and cutting more than loud — but it comes out."}
 
 
 _FROM_NEED = {reason for rules in FROM_NEEDS.values() for (_need, _from, _speed, reason) in rules}
@@ -566,6 +603,8 @@ def conduct(s: dict[str, Any]) -> str:
             table = CRANKY if code in _FROM_NEED else OUT_OF_SORTS if code == "off_day" else CONDUCT["angry"]
         elif t["emotion"] == "lonely" and code not in _MISSED_THEM:
             table = ((0.45, "You could do with some warmth and attention."),)
+        elif t["emotion"] == "shy" and code in SWEET_WHYS:
+            table = SHY_PLEASED
         elif t["emotion"] == "worried" and code in _OWN_WORRIES:
             table = ((0.45, "You are on edge about your own things: a little distracted."),)
         else:
@@ -633,7 +672,8 @@ def leaning(doc: dict[str, Any], w: dict[str, Any], feel: dict[str, float] | Non
     day is no reason to turn them down.)"""
     lv = {e: x["v"] for e, x in levels(doc, w, now, tz, off=False).items()}
     exposure = float((feel or {}).get("shy") or 0.0)
-    asked = 0.0 if exposure else min(ASK_LEAN_MAX, ASK_LEAN * max(0, asks_lately(doc, now) - 1))  # (nagging never wins that)
+    # (nagging never wins that, nor anything while she is angry with them)
+    asked = 0.0 if exposure or lv["angry"] >= SHOWN_FROM else min(ASK_LEAN_MAX, ASK_LEAN * max(0, asks_lately(doc, now) - 1))
     x = 0.55 + 0.35 * lv["happy"] + 0.25 * lv["excited"] - 0.8 * lv["angry"] - 0.5 * lv["sad"] - 0.3 * lv["lonely"] \
         - 0.35 * lv["worried"] - 0.25 * lv["sleepy"] + asked
     if exposure:  # (what makes her shy takes being closer, and not being shy already)
@@ -842,21 +882,24 @@ def read(text: str, name: str = "", reading: dict[str, Any] | None = None, close
         from app.mate.gss.appraisal import cues as read_cues
 
         c = read_cues(reading) or {}
-        return {"hostile": c.get("hostile"), "rude": bool(c.get("rude")), "apology": bool(c.get("apology")),
+        return {"hostile": c.get("hostile"), "rude": bool(c.get("rude")), "odd": bool(c.get("odd")), "apology": bool(c.get("apology")),
                 "owned": bool(c.get("owned")), "dismissed": bool(c.get("dismissed")), "warm": bool(c.get("warm")),
                 "love": bool(c.get("love")), "looks": bool(c.get("looks")) and not body, "body": body and not c.get("rude"),
+                "praised": bool(c.get("praised")),
                 "distress": bool(c.get("distress")) or crisis,
                 "crisis": crisis or (bool(c.get("distress")) and float(c.get("intensity") or 0.0) >= 0.8),
                 "intensity": float(c.get("intensity") or 0.0), "by": "model"}
     c = A.cues(text, name=name, closeness=closeness)
     sarcastic = bool(_SARCASM.search(text))
-    return {"hostile": c["hostile"], "rude": c["rude"], "apology": bool(_APOLOGY.search(text)), "owned": bool(_OWNED.search(text)),
+    return {"hostile": c["hostile"], "rude": c["rude"], "odd": False, "apology": bool(_APOLOGY.search(text)), "owned": bool(_OWNED.search(text)),
             "dismissed": bool(_DISMISSED.search(text)), "warm": c["warm"] and not sarcastic,
             "love": bool(_LOVE.search(text)) and not sarcastic, "looks": bool(_LOOKS.search(text)) and not sarcastic and not body,
+            "praised": bool(_PRAISED.search(text)) and not sarcastic and not c["rude"],
             "body": body, "distress": c["distress"] or crisis, "crisis": crisis, "intensity": None, "by": "words"}
 
 
-_READ_FLAGS = ("hostile", "rude", "apology", "owned", "dismissed", "warm", "love", "looks", "body", "distress", "crisis")
+_READ_FLAGS = ("hostile", "rude", "odd", "apology", "owned", "dismissed", "warm", "love", "looks", "praised", "body", "distress",
+               "crisis")
 
 
 def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: datetime, tz: Any,
@@ -934,14 +977,14 @@ def _undo_heard(doc: dict[str, Any], w: dict[str, Any], message: str, now: datet
     n0 = int(e.get("offences") or 0)
     offences = doc.get("offences") or []
     doc["offences"] = offences[:n0] + [t for t in offences[n0:] if t != heard_at]
-    for k in ("rude", "hostile", "asks"):
+    for k in ("rude", "hostile", "odd", "kind", "asks"):
         doc[k] = copy.deepcopy(e.get(k))
     doc["owed"] = [o for o in doc.get("owed") or [] if not (o.get("heard") == message and o.get("code") in _OWED_BY_REACTING)]
     doc["heard_effect"] = None
     return True
 
 
-_OWED_BY_REACTING = ("dismissed", "pestered", "objectified")
+_OWED_BY_REACTING = ("dismissed", "pestered", "objectified", "odd")
 
 
 def _react(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, f: dict[str, Any], now: datetime, tz: Any) -> None:
@@ -950,8 +993,9 @@ def _react(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, f: d
     pre = {e: x["v"] for e, x in levels(doc, w, now, tz, off=False).items()}
     pre_g = grudge(doc, w, now)
     effect = {"message": message, "grudge": copy.deepcopy(doc.get("grudge")), "offences": len(doc.get("offences") or []),
-              "rude": copy.deepcopy(doc.get("rude")), "hostile": copy.deepcopy(doc.get("hostile")), "asks": copy.deepcopy(doc.get("asks")),
-              "offence": bool(f["hostile"] or f["rude"] or f["dismissed"] or f["body"])}
+              "rude": copy.deepcopy(doc.get("rude")), "hostile": copy.deepcopy(doc.get("hostile")), "odd": copy.deepcopy(doc.get("odd")),
+              "kind": copy.deepcopy(doc.get("kind")), "asks": copy.deepcopy(doc.get("asks")),
+              "offence": bool(f["hostile"] or f["rude"] or f.get("odd") or f["dismissed"] or f["body"])}
     _reactions(doc, w, text, message, f, now, tz)
     post = levels(doc, w, now, tz, off=False)
     effect["d"] = {e: round(post[e]["v"] - pre[e], 3) for e in EMOTIONS if abs(post[e]["v"] - pre[e]) >= 0.005}
@@ -962,6 +1006,8 @@ def _react(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, f: d
 def _reactions(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, f: dict[str, Any], now: datetime, tz: Any) -> None:
     # (a model's reading says how strongly it lands: the usual amounts, from 0.6 of them to 1.4)
     k = 1.0 if f.get("intensity") is None else 0.6 + 0.8 * float(f["intensity"])
+    # (and what they do to her lands harder from someone she dislikes, or no longer trusts)
+    sour = 1 + SOURED_HARDER * float(w.get("dislike") or 0.0) + DISTRUST_HARDER * float(w.get("distrust") or 0.0)
     close = w["closeness"]
     if f.get("crisis"):  # (they may be in real trouble: it comes first, whatever she feels about them — ``conduct``)
         doc["crisis_at"] = A._iso(now)
@@ -971,15 +1017,24 @@ def _reactions(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, 
         n = _lately(doc.get("hostile"), now, HOSTILE_WINDOW) + 1
         doc["hostile"] = {"n": n, "at": A._iso(now), "message": message}
         why = {"code": "hostile", "kind": f["hostile"], "quote": " ".join(text.split())[:QUOTE_CHARS]}
-        _rise(doc, w, "angry", (HOSTILE if n == 1 else HOSTILE_MORE) * k, why, now, tz)
+        _rise(doc, w, "angry", (HOSTILE if n == 1 else HOSTILE_MORE) * k * sour, why, now, tz)
         _rise(doc, w, "sad", HOSTILE_HURT * k, why, now, tz)
         _fall(doc, w, "happy", HOSTILE_DROP, why, now, tz)
     elif f["rude"]:
         n = _lately(doc.get("rude"), now, RUDE_WINDOW) + 1
         doc["rude"] = {"n": n, "at": A._iso(now)}
         why = {"code": "rude", "quote": " ".join(text.split())[:QUOTE_CHARS]}
-        _rise(doc, w, "angry", min(RUDE_MOST, RUDE + RUDE_MORE * (n - 1)) * k, why, now, tz)
+        _rise(doc, w, "angry", min(RUDE_MOST, RUDE + RUDE_MORE * (n - 1)) * k * sour, why, now, tz)
         _fall(doc, w, "happy", RUDE_DROP, why, now, tz)
+    elif f.get("odd"):  # (thrown first; each time again it lands more as anger)
+        n = _lately(doc.get("odd"), now, ODD_WINDOW) + 1
+        doc["odd"] = {"n": n, "at": A._iso(now)}
+        why = {"code": "odd", "quote": " ".join(text.split())[:QUOTE_CHARS]}
+        if n == 1:
+            _rise(doc, w, "shy", ODD_THROWN * k, why, now, tz)
+        _rise(doc, w, "angry", min(ODD_MOST, ODD_ANGRY + ODD_MORE * (n - 1)) * k * sour, why, now, tz)
+        _fall(doc, w, "happy", RUDE_DROP, why, now, tz)
+        _owe(doc, "odd", now, message)
     else:
         if f["apology"]:
             _apology(doc, w, f["owned"], now, tz)
@@ -987,22 +1042,26 @@ def _reactions(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, 
         # (sweet talk over what they did, with no apology that owns it: it doesn't land, it rankles — a bare sorry doesn't buy it;
         # unless it is the kind of small sulk something sweet melts, for her. After one that owns it, it lands as far as the
         # hurt has eased, and how they treat her eases it further)
-        sweet = f["warm"] or f["love"] or f["looks"]
+        sweet = f["warm"] or f["love"] or f["looks"] or f.get("praised")
         skips = sweet and not f["owned"] and not d.get("owned") and g > float(w["temperament"].get("sweet_until") or SWEET_UNTIL)
         lands = 1.0 if g < 0.01 or not d.get("owned") else max(0.0, 1 - g / max(float(d.get("weight") or g), g))
         if skips and (f["love"] or f["looks"]):  # (a thank-you just doesn't reach her yet; "love you" rankles)
             _rise(doc, w, "angry", BRUSHED_OVER, {"code": "brushed_over"}, now, tz)
         if f["dismissed"]:
             _rise(doc, w, "sad", DISMISSED_SAD * k, {"code": "dismissed"}, now, tz)
-            _rise(doc, w, "angry", DISMISSED_ANGRY * k, {"code": "dismissed"}, now, tz)
+            _rise(doc, w, "angry", DISMISSED_ANGRY * k * sour, {"code": "dismissed"}, now, tz)
             _owe(doc, "dismissed", now, message)
         if f["body"] and close < BODY_OK_FROM:  # (talk about her body from someone not that close: it puts her off)
             _rise(doc, w, "angry", BODY_ANGRY, {"code": "objectified"}, now, tz)
             _owe(doc, "objectified", now, message)
         # (from a stranger, "I love you" is too soon: it flusters her and puts her on guard; it lands as love as they grow close)
         landing = (0.25 + 0.75 * min(1.0, close / LOVE_FROM_CLOSE)) * lands
-        if f["warm"] and not skips:
-            _rise(doc, w, "happy", WARM * k * lands, {"code": "warm"}, now, tz)
+        near = (NEAR_LOW + (1 - NEAR_LOW) * min(1.0, close / LOVE_FROM_CLOSE)) * lands
+        # (kindness after kindness within the hour: a glow; "I love you" from someone she hardly knows doesn't warm her: too soon)
+        if f["warm"] and not skips and not (f["love"] and close < STRANGER):
+            n = _lately(doc.get("kind"), now, WARM_WINDOW) + 1
+            doc["kind"] = {"n": n, "at": A._iso(now)}
+            _rise(doc, w, "happy", min(WARM_MOST, WARM + WARM_MORE * (n - 1)) * k * near, {"code": "warm"}, now, tz)
             if levels(doc, w, now, tz, off=False)["angry"]["v"] > _base("angry", w) and grudge(doc, w, now) < GRUDGE_STINGS:
                 _fall(doc, w, "angry", WARM_CALMS * lands, {"code": "warm"}, now, tz)
         if f["love"] and not skips:
@@ -1011,9 +1070,13 @@ def _reactions(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, 
                 _rise(doc, w, "worried", LOVE_TOO_SOON, {"code": "too_soon_love"}, now, tz)
             else:
                 _rise(doc, w, "happy", LOVE * k * landing, {"code": "love"}, now, tz)
-                _rise(doc, w, "shy", LOVE * k * landing, {"code": "love"}, now, tz)
+                _rise(doc, w, "shy", LOVE_SHY * k * landing, {"code": "love"}, now, tz)
         if f["looks"] and not skips:
             _rise(doc, w, "shy", LOOKS * k * landing, {"code": "looks"}, now, tz)
+            _rise(doc, w, "happy", LOOKS_HAPPY * k * landing, {"code": "looks"}, now, tz)
+        if f.get("praised") and not skips:  # (what she did, made or is good at: from anyone it lands, the more as they are close)
+            _rise(doc, w, "happy", PRAISED_HAPPY * k * near, {"code": "praised"}, now, tz)
+            _rise(doc, w, "excited", PRAISED_EXCITED * k * near, {"code": "praised"}, now, tz)
         if sweet and not skips:
             _ease(doc, w, EASED_BY_KINDNESS, now, tz)
         loves = w["temperament"].get("loves")

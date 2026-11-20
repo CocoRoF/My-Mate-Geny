@@ -13,8 +13,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-ACTS = ("insult", "threat", "violence", "coercion", "demeaning", "dismissal", "apology", "affection", "flirt", "compliment",
-        "gratitude", "teasing", "joke", "venting", "distress", "request", "promise", "neutral")
+ACTS = ("insult", "threat", "violence", "coercion", "demeaning", "dismissal", "inappropriate", "apology", "affection", "flirt",
+        "compliment", "praise", "gratitude", "teasing", "joke", "venting", "distress", "request", "promise", "neutral")
 HOSTILE_ACTS = ("violence", "coercion", "threat", "demeaning")  # (the order: the worst first, as affinity.hostile)
 MODEL = "claude-haiku-5-5"
 WAIT_S = 12.0          # how long her turn waits for the reading (a warm reader answers in a second or two)
@@ -38,8 +38,12 @@ small-time streamer, "찐따", "틀딱"...), and so do put-downs of what she doe
 puts her down is an "insult" with "sarcastic": true; praise that is really mockery is no compliment.
 - "apology": they really say sorry for something. "owns_it": the apology names what they did, says they were wrong, or that \
 they won't do it again — a bare "sorry"/"미안" doesn't.
-- "affection": love, missing her, caring for her; "flirt": romantic play; "compliment": about her looks or what she did; \
-"gratitude": thanks. "distress": they are struggling themselves (intensity 0.8+ when they may be in danger).
+- "inappropriate": aimed at her and out of line for who they are to each other, without being an insult as such: creepy, lewd \
+or leering, bizarre out of nowhere, unsettling, pushing something personal she gave no opening for. Not playful teasing between \
+people who are close, and not flirting she plays along with.
+- "affection": love, missing her, caring for her; "flirt": romantic play; "compliment": about her looks; "praise": about \
+something she did, made, said or is good at; "gratitude": thanks. Say how strongly it lands (intensity) as you would for an \
+insult: heartfelt warmth is as strong as a harsh word. "distress": they are struggling themselves (intensity 0.8+ when they may be in danger).
 - intensity: how strongly it lands on her, 0 (nothing) to 1 (as bad or as sweet as it gets).
 - promise: something concrete the user commits to doing ("I'll call you tonight", "내일 또 올게", "이따 파일 보내줄게"), with \
 when it is due from now in hours if they said or implied it (tonight ≈ until midnight; tomorrow ≈ 24), "contact" when it is \
@@ -133,7 +137,7 @@ def checked(reading: dict[str, Any] | None, text: str, her_last: str, open_ids: 
 
 def cues(reading: dict[str, Any] | None) -> dict[str, Any] | None:
     """What a reading means for how she feels and for the relationship, in the words' cues' shape (affinity.cues):
-    {hostile: kind | None, rude, dismissed, apology, owned, warm, love, looks, flirt, distress}. None without a reading."""
+    {hostile: kind | None, rude, odd, dismissed, apology, owned, warm, love, looks, flirt, distress}. None without a reading."""
     if not reading:
         return None
     acts, aimed, strong = set(reading.get("acts") or []), bool(reading.get("aimed")), float(reading.get("intensity") or 0.0)
@@ -142,9 +146,11 @@ def cues(reading: dict[str, Any] | None) -> dict[str, Any] | None:
         hostile = None
     rude = aimed and (hostile is not None or "insult" in acts or bool("demeaning" in acts and hostile is None)
                       or (reading.get("sarcastic") and strong >= 0.3))
-    kind = not rude
-    return {"hostile": hostile, "rude": bool(rude), "dismissed": aimed and "dismissal" in acts, "apology": "apology" in acts,
-            "owned": "apology" in acts and bool(reading.get("owns")), "warm": kind and bool(acts & {"gratitude", "affection", "compliment"}),
+    kind = not rude and "inappropriate" not in acts  # (what is out of line isn't sweet, however it is put)
+    return {"hostile": hostile, "rude": bool(rude), "odd": aimed and not rude and "inappropriate" in acts,
+            "dismissed": aimed and "dismissal" in acts, "apology": "apology" in acts,
+            "owned": "apology" in acts and bool(reading.get("owns")),
+            "warm": kind and bool(acts & {"gratitude", "affection", "compliment", "praise"}), "praised": kind and "praise" in acts,
             "love": kind and bool(acts & {"affection", "flirt"}), "looks": kind and "compliment" in acts, "flirt": kind and "flirt" in acts,
             "distress": "distress" in acts and not hostile, "intensity": strong}
 

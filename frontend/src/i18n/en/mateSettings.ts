@@ -446,6 +446,7 @@ export default {
   relWhyPoked: "Kept poking her",
   relWhyInterrupted: "Cut her off",
   relWhyDeclinedCall: "Turned down her call",
+  relWhyOdd: "Said strange, out-of-line things to her",
   relWhyManual: "Set by hand",
   relWhyReset: "Started over",
   relWhyRecomputed: "Recalculated from history",
