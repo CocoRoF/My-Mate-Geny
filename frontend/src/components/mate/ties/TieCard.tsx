@@ -102,7 +102,7 @@ export default function TieCard({ mate }: { mate: Mate }) {
                   <span className="font-medium text-content">{tieChangeText(t, c)}</span>
                   <span className="text-[11px] text-content-faint">
                     <When at={c.at} />
-                    {t(TIE_BY[c.by]) ? ` · ${t(TIE_BY[c.by])}` : ""}
+                    {TIE_BY[c.by] ? ` · ${t(TIE_BY[c.by]!)}` : ""}
                   </span>
                 </span>
                 {/* (the latest one's words are hers now, shown above) */}

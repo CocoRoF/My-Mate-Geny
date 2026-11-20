@@ -29,7 +29,8 @@ test("every label has a name, a description, a look and a tone, in both language
       assert.ok(!t(TIE_DESC[l]).startsWith("ties."), `${lang} ${l} description`);
       assert.ok(TIE_EMOJI[l], `${l} emoji`);
     }
-    for (const by of ["moment", "night", "first"] as const) assert.ok(!t(TIE_BY[by]).startsWith("ties."), `${lang} ${by}`);
+    for (const by of ["moment", "night", "first"] as const) assert.ok(!t(TIE_BY[by]!).startsWith("ties."), `${lang} ${by}`);
+    assert.equal(TIE_BY.start, undefined);
   }
   assert.equal(tieName(KO, "rivals"), "앙숙");
   assert.equal(tieName(KO, "love_hate"), "애증");

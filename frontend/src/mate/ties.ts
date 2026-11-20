@@ -8,7 +8,8 @@ import type { MsgKey, TFunction } from "../i18n";
 export const TIE_LABELS: TieLabel[] = ["stranger", "indifferent", "acquaintance", "friend", "close_friend", "crush", "flirting", "lovers", "ex", "estranged", "rivals", "love_hate", "loathing"];
 export const TIE_LABEL = Object.fromEntries(TIE_LABELS.map((l) => [l, `ties.label_${l}`])) as Record<TieLabel, MsgKey>;
 export const TIE_DESC = Object.fromEntries(TIE_LABELS.map((l) => [l, `ties.desc_${l}`])) as Record<TieLabel, MsgKey>;
-export const TIE_BY: Record<TieBy, MsgKey> = { moment: "ties.by_moment", night: "ties.by_night", first: "ties.by_first", start: "ties.by_start" };
+/** how she came to it, in words (as it began: nothing to say) */
+export const TIE_BY: Partial<Record<TieBy, MsgKey>> = { moment: "ties.by_moment", night: "ties.by_night", first: "ties.by_first" };
 export const TIE_EMOJI: Record<TieLabel, string> = {
   stranger: "❔",
   indifferent: "😶",
