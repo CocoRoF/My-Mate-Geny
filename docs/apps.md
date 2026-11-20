@@ -149,20 +149,20 @@ balanced by `backend/tests/durations.json`; refresh it with `pytest -n 4 --durat
 shape changes a lot), the Windows stdio bridges, the avatar pipeline, the UI, the desktop's and the phone app's unit
 tests, the iOS app's compile, the compose files. Kept small (`.github/scripts/ci_gate.py`):
 
-- **A PR runs Linux jobs only.** The Windows stdio bridges (when a bridge or its test changed) and the iOS compile (when
-  the iOS project changed) run on a PR only with the label `ci:windows` / `ci:ios` — added after the run, re-run the PR's
-  ci; otherwise they run on the push to main.
+- **Linux runners only.** The Windows stdio bridges (when a bridge or its test changed) and the iOS compile (when the
+  iOS project changed) run only on a PR with the label `ci:windows` / `ci:ios` — added after the run, re-run the PR's
+  ci — never on a push (the release build compiles iOS anyway).
 - **A merge isn't tested twice.** The PR's `tested` job leaves the tree it tested (the merge GitHub made) and the jobs
   that passed on it as the commit status `ci: tested tree` on the PR's head; the merge's push to main skips those jobs
   when it is that very tree (nothing landed on main in between). A direct push to main runs as always.
 - A newer push cancels the run before it; every job has a time limit.
 
-The heavy suites on Windows and macOS runners run only when wanted (`ci_gate.py heavy`):
-on a schedule when what they check changed since they last ran on main, on a PR only with their label (re-run after
-adding it), and by hand (Actions → Run workflow):
+The heavy suites on Windows and macOS runners run only when asked for (since 2026-11-20, the owner: "과도한 테스트,
+과도한 CI 중지"; `ci_gate.py heavy`): by hand (Actions → the workflow → Run workflow), or on a PR that changes what they
+check with their label (re-run after adding it):
 
-| workflow | what | scheduled, when changed | PR label |
-|---|---|---|---|
-| `voice-local.yml` | local voice engines installed and speaking on Windows ×4, macOS ×3 (`docs/local-voice.md`) | nightly 18:47 UTC: `backend/app/voicehost/runtimes/`, `…/worker/`, `backend/tools/voice_smoke.py` | `ci:voice` |
-| `windows-update.yml` | the in-app update on Windows with the real installers (~40 min) | weekly, Sundays 19:17 UTC: the updater, `main.js`, `quit.js`, `local-runtime.js`, `package*.json`, its e2e tests (they change most days) | `ci:windows` |
-| `local-desktop.yml` | the native local runtime on every OS | — (a push to `codex/native-local`, by hand) | — |
+| workflow | what | PR label |
+|---|---|---|
+| `voice-local.yml` | local voice engines installed and speaking on Windows ×4, macOS ×3 (`docs/local-voice.md`) | `ci:voice` |
+| `windows-update.yml` | the in-app update on Windows with the real installers (~40 min) | `ci:windows` |
+| `local-desktop.yml` | the native local runtime on every OS (a push to `codex/native-local`) | — |
