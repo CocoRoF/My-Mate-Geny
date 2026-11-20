@@ -96,21 +96,59 @@ def test_in_comes_a_new_mate_of_her_own_and_her_voice_only_as_far_as_it_works_he
     assert store.get(m["id"])["avatar"]["rig"]["stills"]["neutral"].startswith(f"/api/mates/{m['id']}/")
 
 
-def test_a_built_in_goes_out_as_her_own_mate_with_its_bundled_files_and_temperament(db, tmp_path):
+def test_a_built_in_goes_out_without_her_bundled_art_which_stays_in_the_app_but_what_was_added_to_her_goes(db, tmp_path):
     svc, store, mates = _svc(db)
     m = store.create(name="한채린", persona={"language": "ko"})
-    db.execute("UPDATE mates SET builtin = 'chaerin' WHERE id = ?", (m["id"],))
-    mates.update(m["id"], {"avatar": {"kind": "photo", "rig": {"aspect": [3, 4], "home": "/api/mates/builtin/chaerin/neutral.webp",
-                                                                "stills": {"neutral": "/api/mates/builtin/chaerin/neutral.webp"},
-                                                                "clips": []}}})
-    zf, manifest, _ = _package(mates, m["id"], tmp_path)
-    doc = manifest["mate"]
-    assert doc["avatar"]["rig"]["home"] == "asset:builtin/chaerin/neutral.webp"
-    assert zf.read("assets/builtin/chaerin/neutral.webp") == files.resolve_builtin("chaerin", "neutral.webp").read_bytes()
+    mid = m["id"]
+    db.execute("UPDATE mates SET builtin = 'chaerin' WHERE id = ?", (mid,))
+    bundled = {"kind": "photo", "rig": {"aspect": [3, 4], "home": "/api/mates/builtin/chaerin/neutral.webp",
+                                        "stills": {"neutral": "/api/mates/builtin/chaerin/neutral.webp"}, "clips": []}}
+    mates.update(mid, {"avatar": bundled})
+    # (what was added to her: an outfit made for her, in her own folder — and her profile picture, cut from her bundled art)
+    (files.assets_dir(mid) / "outfits/o9").mkdir(parents=True)
+    (files.assets_dir(mid) / "outfits/o9/neutral.webp").write_bytes(b"MINE")
+    oid = mates.add_outfit(mid, "새로 만든 옷")
+    mates.set_outfit_avatar(mid, oid, {"kind": "photo", "rig": {"aspect": [3, 4], "home": files.asset_url(mid, "outfits/o9/neutral.webp"),
+                                                               "stills": {"neutral": files.asset_url(mid, "outfits/o9/neutral.webp")},
+                                                               "clips": []}})
+    (files.assets_dir(mid) / "profile").mkdir(parents=True)
+    (files.assets_dir(mid) / "profile/face.png").write_bytes(b"FACE")
+    store.set_icon(mid, files.asset_url(mid, "profile/face.png"))
+    # (her bundled voice clip, copied into her folder when she was made)
+    mates.update(mid, {"voice": files.ailism_voice({"doc": {}}, files.builtin_voice_dir("chaerin"), mid)})
+    clip = store.get(mid)["voice"]["tts"]["ref"]
+    assert clip.startswith("voice/")
+
+    zf, manifest, _ = _package(mates, mid, tmp_path)
+    doc, names = manifest["mate"], set(zf.namelist())
+    assert doc["avatar"]["rig"]["home"] == "builtin:chaerin/neutral.webp"  # (named, not packed)
+    assert not any(n.startswith("assets/builtin/") for n in names) and f"assets/{clip}" not in names
+    assert "assets/profile/face.png" not in names and doc["icon"] == ""
+    assert doc["voice"]["tts"]["ref"] == "builtin-voice:chaerin"
+    assert "assets/outfits/o9/neutral.webp" in names  # (what was added to her goes)
     t = doc["prefs"]["temperament"]  # (her bundled temperament, written out: a copy is no built-in)
     assert t["conflict"] == "withdraw" and t["holds"] == 1.4 and "게임" in t["loves"]
-    new = mates.import_mate(str(tmp_path / "out.zip"), lambda e: True)["mate"]
-    assert new["avatar"]["rig"]["home"] == files.asset_url(new["id"], "builtin/chaerin/neutral.webp")
+
+    # (an app with the bundle: its own copy, pictures and voice clip alike)
+    out = mates.import_mate(str(tmp_path / "out.zip"), lambda e: True)
+    new = out["mate"]
+    assert new["avatar"]["rig"]["home"] == "/api/mates/builtin/chaerin/neutral.webp" and out["notes"] == []
+    added = next(it for it in new["outfits"]["items"] if it["name"] == "새로 만든 옷")
+    assert store.outfit_avatar(new["id"], added["id"])["rig"]["home"] == files.asset_url(new["id"], "outfits/o9/neutral.webp")
+    assert new["voice"]["tts"]["ref"] == clip and (files.assets_dir(new["id"]) / clip).is_file()
+
+    # (an app without it: those sets are left empty, the voice clip with them, and the import says so)
+    gone = tmp_path / "gone.zip"
+    with zipfile.ZipFile(tmp_path / "out.zip") as src, zipfile.ZipFile(gone, "w") as dst:
+        for info in src.infolist():
+            data = src.read(info)
+            if info.filename == "mate.json":
+                data = data.decode().replace("builtin:chaerin/", "builtin:nobody/").replace("builtin-voice:chaerin", "builtin-voice:nobody").encode()
+            dst.writestr(info, data)
+    out = mates.import_mate(str(gone), lambda e: True)
+    assert out["mate"]["avatar"]["kind"] == "none" and "builtin" in out["notes"] and "voice:clip" in out["notes"]
+    added = next(it for it in out["mate"]["outfits"]["items"] if it["name"] == "새로 만든 옷")
+    assert store.outfit_avatar(out["mate"]["id"], added["id"])["kind"] == "photo"  # (what was added to her still came)
 
 
 def test_what_is_no_mate_file_is_turned_away_and_leaves_nothing_behind(db, tmp_path):

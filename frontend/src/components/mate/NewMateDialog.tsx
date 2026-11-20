@@ -62,7 +62,7 @@ export default function NewMateDialog({ open, initialTab = "blank", onClose, onD
         useMateStore.getState().setActive(r.mate.id);
         // (what of her couldn't come along as it was: her voice's service isn't set up here, her AI engine)
         const voice = r.notes.find((n) => n.startsWith("voice:tts:"));
-        const extra = [voice ? t("mate.importedVoiceDefault", { engine: voice.slice("voice:tts:".length) }) : "", r.notes.includes("llm") ? t("mate.importedLlmDefault") : ""].filter(Boolean);
+        const extra = [voice ? t("mate.importedVoiceDefault", { engine: voice.slice("voice:tts:".length) }) : "", r.notes.includes("llm") ? t("mate.importedLlmDefault") : "", r.notes.includes("builtin") ? t("mate.importedBuiltinMissing") : ""].filter(Boolean);
         onDone([t("mate.importedOne", { name: r.mate.name }), ...extra].join(" "));
         setFile(null);
       } else {

@@ -530,7 +530,7 @@ export default {
   exportHint: "One file with everything that makes her who she is: her character, how she talks, her temperament, her avatar and outfits, her profile picture and her voice settings. Another My Mate Geny imports it as a new mate (새 메이트 → 파일에서).",
   exportStays: "Her memories, your conversations and your relationship stay here: they are between the two of you.",
   exportVoice: "Her voice comes along where the other side has the same voice service set up; otherwise she starts with the default voice.",
-  exportBuiltin: "A built-in mate goes out as a mate of her own: her bundled world of days stays with the app.",
+  exportBuiltin: "A built-in mate's bundled pictures, videos and voice stay in the app, not in the file: the importing app shows its own. Outfits and avatars made for her go along.",
   exportBtn: "Export (.mate.zip)",
   exportDraft: "Finish her in 메이트 편집 first.",
   settingsSub: "Mate settings · this mate only",

@@ -1370,14 +1370,17 @@ dialog's **파일에서** tab) makes a new mate from it (`POST /api/mates/import
 
 - **What goes**: the character (persona), how she talks (her conversation style), her temperament, her avatar, her wardrobe
   with every outfit, her profile picture, her voice settings with her reference clip, her AI engine and her screen settings.
-  Her files go with her: everything in her own folder (all but import folders no avatar of hers uses any more), and for a
-  built-in mate the bundled files her avatar and outfits use (a Live2D model with its whole folder).
+  Her files go with her: everything in her own folder (all but import folders no avatar of hers uses any more).
 - **What stays**: what is between her and this user — memories, conversations, the relationship, how she feels, her day,
   the other mates, what she thinks they are — and the user's own name.
 - **The package**: a zip of `mate.json` (`format: my-mate-geny.mate`, `version`, `mate`) and `assets/…`. Every file is named in
   `mate.json` as `asset:<path>`, never as this installation's URL; importing makes each one her copy's URL.
 - **A built-in mate** goes out as a mate of her own: her bundled temperament is written out with her; her world of days stays
-  with the bundle.
+  with the bundle. Her bundled pictures, videos, Live2D model and voice clip never go into the file: they stay in the app.
+  The package names them (`builtin:<key>/<path>`, `builtin-voice:<key>`), and the importing app uses its own copy of the
+  bundle; a set made of bundled files it doesn't have is left empty (`notes`: `builtin`, `voice:clip`). Her profile picture
+  (cut from her bundled art) stays too. What was added to her — outfits and avatars made for her, in her own folder — goes as
+  any mate's files do.
 - **Her voice** goes with her only where it can work: an engine the importing installation hasn't set up (no key for
   ElevenLabs, OpenAI or Google, no server address for OmniVoice, HTTP or Whisper) leaves her with the default voice, and the
   import says so (`notes`: `voice:tts:<engine>`); her other voice settings and her reference clip stay. An AI engine the

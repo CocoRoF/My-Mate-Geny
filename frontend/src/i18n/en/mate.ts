@@ -278,6 +278,7 @@ export default {
   needFile: "Choose a mate file first",
   importedVoiceDefault: "Her voice service ({engine}) isn't set up here, so she has the default voice for now: set it up in Settings, then pick her voice again.",
   importedLlmDefault: "Her AI engine isn't available here, so she uses the default one.",
+  importedBuiltinMissing: "Some of her bundled looks aren't in this app, so those are empty for now.",
   importedOne: "Imported {name}",
   importedMany: { one: "Imported {count} mate: {names}", other: "Imported {count} mates: {names}" },
 

@@ -275,6 +275,7 @@ const ko: Messages<"mate"> = {
   needFile: "메이트 파일을 먼저 골라 주세요",
   importedVoiceDefault: "{engine} 음성 서비스가 여기 설정돼 있지 않아 지금은 기본 목소리예요. 설정에서 연결한 뒤 목소리를 다시 골라 주세요.",
   importedLlmDefault: "그녀의 AI 엔진을 여기서 쓸 수 없어 기본 엔진으로 두었어요.",
+  importedBuiltinMissing: "이 앱에 없는 기본 메이트 모습이 있어 그 모습은 비워 두었어요.",
   importedOne: "{name:을} 가져왔어요",
   importedMany: "메이트 {count}명을 가져왔어요: {names}",
 

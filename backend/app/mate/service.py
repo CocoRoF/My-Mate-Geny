@@ -588,16 +588,36 @@ class MateService:
                 llm, notes = normalize_llm(None), [*notes, "llm"]
             voice, voice_notes = transfer.voice_here(doc.get("voice"), usable)
             notes += [f"voice:{n}" for n in voice_notes]
+            # (a built-in's bundled voice clip is named, not packed: this app's own copy goes in once she exists)
+            tts = (voice or {}).get("tts") if isinstance((voice or {}).get("tts"), dict) else {}
+            bundled_clip = str(tts.get("ref") or "") if str(tts.get("ref") or "").startswith(transfer.BUILTIN_VOICE) else ""
+            if bundled_clip:
+                tts["ref"] = ""
             mate = self.store.create(name=name, persona=doc.get("persona") or {}, prefs=prefs, llm=llm, voice=voice)
             mid = mate["id"]
             try:
                 transfer.unpack(zf, mid)
-                avatar = normalize_avatar(transfer.placed(doc.get("avatar") or {"kind": "none"}, mid))
+
+                def settled(av: Any) -> dict[str, Any]:
+                    """A set as it can be here: one made of a built-in's bundled files this app doesn't have is left empty."""
+                    if transfer.missing(av):
+                        if "builtin" not in notes:
+                            notes.append("builtin")
+                        return {"kind": "none"}
+                    return normalize_avatar(av or {"kind": "none"})
+
+                avatar = settled(transfer.placed(doc.get("avatar") or {"kind": "none"}, mid))
                 wardrobe = transfer.placed(doc.get("outfits") or {}, mid)
                 wardrobe = {"worn": wardrobe.get("worn") or "default", "worn_at": wardrobe.get("worn_at"),
-                            "base": normalize_avatar(wardrobe["base"]) if isinstance(wardrobe.get("base"), dict) else None,
-                            "items": [{**it, "avatar": normalize_avatar(it.get("avatar") or {"kind": "none"})}
+                            "base": settled(wardrobe["base"]) if isinstance(wardrobe.get("base"), dict) else None,
+                            "items": [{**it, "avatar": settled(it.get("avatar"))}
                                       for it in wardrobe.get("items") or [] if isinstance(it, dict) and it.get("id")]}
+                if bundled_clip:
+                    v, lost = transfer.voice_clip({"tts": {"ref": bundled_clip, "ref_text": tts.get("ref_text") or ""}}, mid)
+                    if lost:
+                        notes.append("voice:clip")
+                    else:
+                        self.store.update(mid, {"voice": {"tts": {"ref": v["tts"]["ref"], "ref_text": v["tts"].get("ref_text") or ""}}})
                 self.store._save_wardrobe(mid, wardrobe, avatar=avatar)
                 icon = transfer.placed(doc.get("icon") or "", mid)
                 if icon:
