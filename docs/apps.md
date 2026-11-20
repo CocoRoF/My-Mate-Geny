@@ -58,6 +58,19 @@ files); `n` is one past the highest release of the line, drafts included (a run 
 that published nothing gives it back). Android's versionCode is the run number; iOS's build number is
 `<run>.<attempt>`. The 5 newest releases are kept, and each platform's newest.
 
+The web console and the server built from a commit say that commit's version too, never the bare line (until 2026-11-20
+they said `1.1.0` whatever the release). `deploy/app-version.py [<commit>]` gives it, in this order:
+
+1. the release tag on the commit;
+2. else the commit's draft release (asked of GitHub);
+3. else the newest release before it on the line (a commit that built no app);
+4. else the line.
+
+`deploy/swap-frontend.sh --build` builds the console with it (`APP_VERSION` → `vite.config.ts` → `src/version.ts`; a
+build without it takes the newest release tag in git). `--write-backend` writes `backend/app/build.json`, which the server
+reports from its next start (`app.build_version`: `/api/health`, `/api/config`). The desktop app hands its own version to
+the server it bundles (`GENY_APP_VERSION`), and its Settings and sidebar show the app's version.
+
 **By hand** (Actions → apps → Run workflow): `platforms` = `all`, `changed`, or a list (`windows,linux,macos-arm64,
 macos-x64,android,ios`); `channel` = `release` (from main only) or `test` — `apps-test-v<version>` releases, never
 `apps-latest` and never the public TestFlight link: a branch's pipeline can be tried without anyone getting it.

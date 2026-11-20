@@ -115,6 +115,7 @@ function UpdatesSection() {
   const t = useT();
   const local=useConfigStore(s=>s.executionMode)==="local";
   const serverVersion = useConfigStore((s) => s.version);
+  const nativeVersion = useNativeVersion();
   const [web, setWeb] = useState<ConsoleUpdate | "checking" | "error" | null>(null);
   const native = window.hrhNative;
 
@@ -127,8 +128,10 @@ function UpdatesSection() {
     }
   };
 
+  // (in the desktop app's own server the console is the app's: its version)
+  const webVersion = local && nativeVersion ? nativeVersion : APP_VERSION;
   const meta = [
-    t("settings.webBuild", { version: APP_VERSION }),
+    t("settings.webBuild", { version: webVersion }),
     BUILD_COMMIT && t("settings.webCommit", { commit: BUILD_COMMIT }),
     BUILD_TIME && t("settings.webBuilt", { when: relTime(BUILD_TIME) }),
     serverVersion && t("settings.serverVersion", { version: serverVersion }),

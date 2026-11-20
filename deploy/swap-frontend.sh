@@ -4,7 +4,8 @@
 #   deploy/swap-frontend.sh [--build] [--keep-days N] [FRONTEND_DIR]
 #
 # FRONTEND_DIR (default: this repo's frontend/) holds dist/ (served as STATIC_DIR) and the new build in dist-next/.
-# --build first runs `vite build --outDir dist-next` there (inside `capped -m 4G` when available).
+# --build first runs `vite build --outDir dist-next` there (inside `capped -m 4G` when available), with this commit's
+# version (APP_VERSION, else deploy/app-version.py: the number its apps got).
 #
 # Why: a page (console, Mate windows, a phone) that loaded the previous build keeps importing the previous build's
 # code-split files (assets/<View>-<hash>.js) as views are opened. Deleting them with the old dist/ made those imports
@@ -43,6 +44,8 @@ LEDGER="$FE/.dist-retired.tsv"
 if [ "$BUILD" = 1 ]; then
   cap=()
   command -v capped >/dev/null 2>&1 && cap=(capped -m 4G --)
+  # (this commit's version, as its apps are numbered: deploy/app-version.py)
+  export APP_VERSION="${APP_VERSION:-$(python3 "$(dirname "$0")/app-version.py" 2>/dev/null || true)}"
   (cd "$FE" && "${cap[@]}" npx vite build --outDir dist-next --emptyOutDir)
 fi
 

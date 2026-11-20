@@ -18,7 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 
-from app import __version__
+from app import build_version
 from app.auth import AuthManager, AuthMiddleware, OpenCORSMiddleware
 from app.net.ingress import NetIngress
 from app.mate.asset_versions import BuiltinAssetVersions
@@ -276,7 +276,7 @@ async def lifespan(app: FastAPI):
     db.close()
 
 
-app = FastAPI(title="My Mate Geny", version=__version__, lifespan=lifespan)
+app = FastAPI(title="My Mate Geny", version=build_version(), lifespan=lifespan)
 
 
 class ErrorLogMiddleware(BaseHTTPMiddleware):

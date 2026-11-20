@@ -52,7 +52,7 @@ let deviceEditOrigin = "";
 const deviceRuntime = deviceRuntimeModule.createRuntimeWindow({BrowserWindow,preload:path.join(__dirname,"preload.js"),version:app.getVersion(),serverUrl,allowed:sameOrigin});
 const core = require("./connect-core");
 const localRuntime = require("./local-runtime").createLocalRuntime({
-  root: envRuntimeRoot(), dataDir:path.join(app.getPath("userData"),"local"),
+  root: envRuntimeRoot(), dataDir:path.join(app.getPath("userData"),"local"), version: app.getVersion(), // (its server says this version)
   cookies:{set: value=>session.defaultSession.cookies.set(value)},
   preferredPort:()=>{try{return new URL(readSettings().localOrigin).port;}catch{return 0;}},
   log:m=>mainLog.info(`[local] ${m}`),

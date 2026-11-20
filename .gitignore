@@ -63,3 +63,5 @@ backend/app/mate/builtin/personas/mao.json
 /frontend/node_modules
 
 /desktop/.local-install-check-*/
+# this build's version, written at deploy (deploy/app-version.py --write-backend)
+backend/app/build.json

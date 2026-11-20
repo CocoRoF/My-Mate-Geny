@@ -12,8 +12,8 @@ test('readiness + native bootstrap + one owned process, no secret to renderer',a
  let secret='',spawned=0,seenCookie=null,child;
  const server=http.createServer((req,res)=>{assert.equal(req.headers['x-geny-local-bootstrap'],secret);res.end(JSON.stringify(req.url.endsWith('bootstrap')?{name:'hrh_session',token:'test-only',expires:600}:{ok:true}));if(req.url.endsWith('shutdown'))queueMicrotask(()=>{child.exitCode=0;child.emit('exit',0);});});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>{server.close();fs.rmSync(root,{recursive:true,force:true});});
- const runtime=createLocalRuntime({root,dataDir:root,cookies:{set:async c=>seenCookie=c},spawnProcess:(exe,args,opts)=>{
-  spawned++;assert.equal(opts.env.HOME,process.env.HOME);secret=opts.env.LOCAL_BOOTSTRAP_SECRET;
+ const runtime=createLocalRuntime({root,dataDir:root,version:'1.1.14',cookies:{set:async c=>seenCookie=c},spawnProcess:(exe,args,opts)=>{
+  spawned++;assert.equal(opts.env.HOME,process.env.HOME);secret=opts.env.LOCAL_BOOTSTRAP_SECRET;assert.equal(opts.env.GENY_APP_VERSION,'1.1.14');
   child=new EventEmitter();Object.assign(child,{stdout:new PassThrough(),stderr:new PassThrough(),exitCode:null});
   setImmediate(()=>child.stdout.write('GENY_LOCAL_READY '+JSON.stringify({port:server.address().port})+'\n'));return child;
  }});

@@ -121,7 +121,8 @@ importing that build's code-split files (`dist/assets/<View>-<hash>.js`) when
 a view is opened, and if they are gone the page went black. Use:
 
 ```bash
-deploy/swap-frontend.sh --build              # vite build → dist-next, then swap
+deploy/app-version.py --write-backend        # this commit's version → backend/app/build.json (the server says it once restarted)
+deploy/swap-frontend.sh --build              # vite build → dist-next (with this commit's version), then swap
 # or, after building dist-next yourself:
 (cd frontend && npx vite build --outDir dist-next --emptyOutDir)
 deploy/swap-frontend.sh [--keep-days 7] [frontend/]

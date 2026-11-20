@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app import __version__
+from app import build_version
 
 router = APIRouter()
 
@@ -12,4 +12,4 @@ async def health() -> dict:
     """Public liveness probe + server identity for native connect screens
     (``Access-Control-Allow-Origin: *``, see docs/auth.md). Old clients only
     look at ``status``; fields are only ever added."""
-    return {"status": "ok", "service": "my-mate-geny", "version": __version__, "product": "My Mate Geny"}
+    return {"status": "ok", "service": "my-mate-geny", "version": build_version(), "product": "My Mate Geny"}
