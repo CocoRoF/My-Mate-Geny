@@ -10,6 +10,7 @@ import type { Mate } from "../../../api/mates";
 import { useLang, useT, type MsgKey } from "../../../i18n";
 import { fmtTime } from "../../../i18n/format";
 import { STATE_EMOJI } from "../../../mate/relationJournal";
+import { temperWord } from "../../../mate/gss";
 import Icon from "../../ui/Icon";
 import { RelationRing, STAGE_LABEL } from "../RelationRing";
 import { stateName, stateWhy } from "../StateCard";
@@ -43,8 +44,6 @@ const LIFE_TABS: WindowTab<Tab>[] = [
   { id: "gifts", icon: "gift", label: "life.tabGifts" },
   { id: "keepsakes", icon: "sparkles", label: "life.tabKeepsakes" },
 ];
-/** her temper (state.temper), as the user reads it */
-const TEMPER_LABEL: Record<"edge" | "outburst" | "aftermath", MsgKey> = { edge: "mate.temperEdge", outburst: "mate.temperOutburst", aftermath: "mate.temperAftermath" };
 const BIRTHDAY: Record<"her" | "user" | "both", MsgKey> = { her: "life.birthdayHer", user: "life.birthdayUser", both: "life.birthdayBoth" };
 
 /** cards in two columns when the window is wide enough (top to bottom, then the next column), one otherwise */
@@ -118,11 +117,7 @@ export default function StatusWindow({ mate, phone, wide = false, panel = false,
                 {state && (
                   <p className="mt-0.5 truncate text-[12.5px] text-content-dim" data-testid="stage-status-feeling" data-state={state.label}>
                     <span aria-hidden>{STATE_EMOJI[state.label]}</span> {stateName(t, state)}
-                    {state.temper && state.temper !== "calm" && (
-                      <span className="pill ml-1.5 bg-danger/15 text-danger" data-testid="stage-status-temper" data-temper={state.temper}>
-                        {t(TEMPER_LABEL[state.temper])}
-                      </span>
-                    )}
+                    {state.label === "angry" && temperWord(t, state.temper) ? ` (${temperWord(t, state.temper)})` : ""}
                     {stateWhy(t, state.top[0]?.why) ? ` · ${stateWhy(t, state.top[0]?.why)}` : ""}
                   </p>
                 )}

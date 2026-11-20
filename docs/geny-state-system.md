@@ -111,8 +111,8 @@ Beside how angry she is, how worked up she is right now (`heat`, 0–1; `state.t
 
 Kept up, three harsh insults in a row: angry, then furious at the edge, then the outburst. An apology takes the edge off at once
 (0.35 owning it, 0.15 a bare one), kindness a little (0.05); what she took as play (a calm reply) winds her up no more. The phase
-is in her summary (`temper`, `heat`; it raises her `arousal`), in what she is told, on the ♥ status window (폭발 직전 / 폭발! /
-폭발 뒤), in her voice (`voice.TEMPER_HOW`: furious and loud; tense and clipped), and her outburst is in her state's log
+is in her summary (`temper`, `heat`; it raises her `arousal`), in what she is told, beside her anger on the ♥ status window
+("화남 · 몹시 · 폭발 직전", "화남 (폭발)"; no badge of its own), in her voice (`voice.TEMPER_HOW`: furious and loud; tense and clipped), and her outburst is in her state's log
 (`outburst`). Room to react, never a script: how it comes out is hers.
 
 ## 2. What stays with her

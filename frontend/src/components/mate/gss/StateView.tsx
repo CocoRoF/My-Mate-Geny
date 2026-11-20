@@ -9,7 +9,7 @@ import { getGss, prefsOf, type GssBonds, type GssEntry, type GssPromise, type Gs
 import { useMateStore } from "../../../stores/mateStore";
 import { useT } from "../../../i18n";
 import { stateWhy } from "../../../mate/reasons";
-import { BOND_AXES, BOND_LABEL, bondPercent, bondScale, EMOTIONS, feelingWord, grudgeParts, mergeEntries, promiseStatusText, promiseTone, promiseWhen, wordText } from "../../../mate/gss";
+import { BOND_AXES, BOND_LABEL, bondPercent, bondScale, EMOTIONS, feelingWord, grudgeParts, mergeEntries, promiseStatusText, promiseTone, promiseWhen, temperWord, wordText } from "../../../mate/gss";
 import HelpTip from "../../ui/HelpTip";
 import { FeelingRow } from "../StateCard";
 import { STAGE_COLOR, STAGE_LABEL } from "../RelationRing";
@@ -100,7 +100,10 @@ export function Mind({ s, name }: { s: GssState; name: string }) {
         {EMOTIONS.map((e) => {
           const f = byEmotion.get(e);
           const v = f?.v ?? 0;
-          return <FeelingRow key={e} emotion={e} v={v} word={feelingWord(t, f?.word, v)} why={f && v >= 0.05 && f.why?.code !== "nature" ? stateWhy(t, f.why) : ""} />;
+          // (her temper is part of her anger: 폭발 직전 / 폭발 / 폭발 뒤 beside how strong it is)
+          const temper = e === "angry" ? temperWord(t, s.temper) : "";
+          const word = [feelingWord(t, f?.word, v), temper].filter(Boolean).join(" · ");
+          return <FeelingRow key={e} emotion={e} v={v} word={word} why={f && v >= 0.05 && f.why?.code !== "nature" ? stateWhy(t, f.why) : ""} />;
         })}
       </ul>
       {s.grudge && g && (

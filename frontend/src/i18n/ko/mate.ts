@@ -68,7 +68,7 @@ const ko: Messages<"mate"> = {
   stateWhy_dislike: "그동안 한 짓 때문에 꼴도 보기 싫어서",
   stateWhy_outburst: "폭발해 버려서",
   temperEdge: "폭발 직전",
-  temperOutburst: "폭발!",
+  temperOutburst: "폭발",
   temperAftermath: "폭발 뒤",
   stateWhy_too_soon_love: "아직 잘 모르는 사이인데 사랑한다고 해서",
   stateWhy_crisis: "큰일이 생긴 것 같아서",

@@ -38,6 +38,7 @@ import {
   scoreTone,
   simSeries,
   whenText,
+  temperWord,
   wordText,
 } from "../src/mate/gss";
 
@@ -261,4 +262,13 @@ test("the simulator's own steps: hours to look in after, steps that say or do so
       { after_min: 10, reply: "…" },
     ],
   );
+});
+
+test("her temper reads as part of her anger: 폭발 직전, 폭발, 폭발 뒤 — nothing when calm", () => {
+  assert.equal(temperWord(KO, "edge"), "폭발 직전");
+  assert.equal(temperWord(KO, "outburst"), "폭발");
+  assert.equal(temperWord(KO, "aftermath"), "폭발 뒤");
+  assert.equal(temperWord(EN, "outburst"), "Blowing up");
+  assert.equal(temperWord(KO, "calm"), "");
+  assert.equal(temperWord(KO, undefined), "");
 });

@@ -25,6 +25,10 @@ import type { MsgKey, TFunction } from "../i18n";
 import { stateWhy, whyText } from "./reasons";
 import { tieEntryText } from "./ties";
 
+/** her temper (app/mate/state.py ``temper``), as part of her anger: at the end of her patience, bursting, after it; "" calm */
+const TEMPER_WORD: Record<string, MsgKey> = { edge: "mate.temperEdge", outburst: "mate.temperOutburst", aftermath: "mate.temperAftermath" };
+export const temperWord = (t: TFunction, temper: string | null | undefined): string => (temper && TEMPER_WORD[temper] ? t(TEMPER_WORD[temper]) : "");
+
 export const EMOTIONS: StateEmotion[] = ["happy", "excited", "shy", "angry", "sad", "lonely", "worried", "sleepy"];
 /** the kinds of the journal the user is shown (never "told" — her prompt — nor "eval": the server leaves them out) */
 export const LAYERS: GssLayer[] = ["heard", "feeling", "grudge", "bond", "tie", "promise", "episode", "said", "temperament"];
