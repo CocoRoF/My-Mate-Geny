@@ -1362,6 +1362,30 @@ window's 관계 tab; reading one, both of them know. Friends go out together. Al
 Little games from the stage's 놀이 menu or by asking her — 끝말잇기, 스무고개, 초성 퀴즈, 가위바위보: [docs/mate-games.md](mate-games.md);
 `GET`/`POST /api/mates/{id}/game` (`{action: start | throw | give_up | close}`), her tool `play_game`.
 
+## Export and import
+
+A mate as one file (`app/mate/transfer.py`, `routers/mate_transfer.py`): Mate settings → **내보내기** downloads her package
+(`GET /api/mates/{id}/export`, `<name>.mate.zip`). In another My Mate Geny, 새 메이트 → ⋯ → **메이트 파일 가져오기** (or the new-mate
+dialog's **파일에서** tab) makes a new mate from it (`POST /api/mates/import` → `{mate, notes}`).
+
+- **What goes**: the character (persona), how she talks (her conversation style), her temperament, her avatar, her wardrobe
+  with every outfit, her profile picture, her voice settings with her reference clip, her AI engine and her screen settings.
+  Her files go with her: everything in her own folder (all but import folders no avatar of hers uses any more), and for a
+  built-in mate the bundled files her avatar and outfits use (a Live2D model with its whole folder).
+- **What stays**: what is between her and this user — memories, conversations, the relationship, how she feels, her day,
+  the other mates, what she thinks they are — and the user's own name.
+- **The package**: a zip of `mate.json` (`format: my-mate-geny.mate`, `version`, `mate`) and `assets/…`. Every file is named in
+  `mate.json` as `asset:<path>`, never as this installation's URL; importing makes each one her copy's URL.
+- **A built-in mate** goes out as a mate of her own: her bundled temperament is written out with her; her world of days stays
+  with the bundle.
+- **Her voice** goes with her only where it can work: an engine the importing installation hasn't set up (no key for
+  ElevenLabs, OpenAI or Google, no server address for OmniVoice, HTTP or Whisper) leaves her with the default voice, and the
+  import says so (`notes`: `voice:tts:<engine>`); her other voice settings and her reference clip stay. An AI engine the
+  installation doesn't run gives her the default one (`llm`).
+- **Checks**: `mate.json` read and its format and version checked (a newer file asks for an update); only `assets/…` unpacked,
+  every path checked, at most `MATE_IMPORT_MAX_MB` (600) unpacked and 20 000 files. A failed import leaves no half-made mate.
+- Tests: `tests/test_mate_transfer.py`.
+
 ## Starting over with her
 
 **Mate settings → 관계와 기억 → 처음부터 다시 시작하기** (Start over; `POST /api/mates/{id}/memory/wipe {confirm: her name}`) goes back

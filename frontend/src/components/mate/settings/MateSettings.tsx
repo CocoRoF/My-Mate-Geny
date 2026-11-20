@@ -13,16 +13,19 @@ import { BuiltinBadge } from "../MateStage";
 import { SaveBarSlot } from "./ui";
 import BondTab from "./BondTab";
 import DangerTab from "./DangerTab";
+import ExportTab from "./ExportTab";
 import MateTab from "../../settings/MateTab";
 import { openAppSettings } from "../../../lib/openAppSettings";
 import { useT, type MsgKey } from "../../../i18n";
 
-export type Tab = "bond" | "common" | "danger";
+export type Tab = "bond" | "common" | "export" | "danger";
 
 const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "bond", label: "mateSettings.tabBond" },
   // (what holds for every mate — the same as Settings → 메이트, here too)
   { id: "common", label: "mateSettings.tabCommon" },
+  // (her as one file, for another My Mate Geny)
+  { id: "export", label: "mateSettings.tabExport" },
   { id: "danger", label: "mateSettings.tabDanger" },
 ];
 
@@ -103,6 +106,7 @@ export default function MateSettings({ mate, onClose, initialTab = "bond", onGui
           {/* key: a different mate starts from its own values */}
           {tab === "bond" && <BondTab key={mate.id} mate={mate} />}
           {tab === "common" && <MateTab />}
+          {tab === "export" && <ExportTab key={mate.id} mate={mate} />}
           {tab === "danger" && <DangerTab key={mate.id} mate={mate} onDeleted={onClose} />}
         </div>
       </div>

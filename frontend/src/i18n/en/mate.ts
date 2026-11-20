@@ -272,6 +272,12 @@ export default {
   import: "Import",
   needName: "Give your mate a name",
   needPath: "Enter a folder or file path on the server",
+  importFromFile: "From a file",
+  importFileLabel: "A mate file (.mate.zip)",
+  importFileHint: "A file exported from My Mate Geny (Mate settings → Export).",
+  needFile: "Choose a mate file first",
+  importedVoiceDefault: "Her voice service ({engine}) isn't set up here, so she has the default voice for now: set it up in Settings, then pick her voice again.",
+  importedLlmDefault: "Her AI engine isn't available here, so she uses the default one.",
   importedOne: "Imported {name}",
   importedMany: { one: "Imported {count} mate: {names}", other: "Imported {count} mates: {names}" },
 

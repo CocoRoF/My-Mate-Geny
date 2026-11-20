@@ -269,6 +269,12 @@ const ko: Messages<"mate"> = {
   import: "가져오기",
   needName: "메이트 이름을 정해 주세요",
   needPath: "서버의 폴더 또는 파일 경로를 입력해 주세요",
+  importFromFile: "파일에서",
+  importFileLabel: "메이트 파일 (.mate.zip)",
+  importFileHint: "My Mate Geny에서 내보낸 파일이에요 (메이트 설정 → 내보내기).",
+  needFile: "메이트 파일을 먼저 골라 주세요",
+  importedVoiceDefault: "{engine} 음성 서비스가 여기 설정돼 있지 않아 지금은 기본 목소리예요. 설정에서 연결한 뒤 목소리를 다시 골라 주세요.",
+  importedLlmDefault: "그녀의 AI 엔진을 여기서 쓸 수 없어 기본 엔진으로 두었어요.",
   importedOne: "{name:을} 가져왔어요",
   importedMany: "메이트 {count}명을 가져왔어요: {names}",
 

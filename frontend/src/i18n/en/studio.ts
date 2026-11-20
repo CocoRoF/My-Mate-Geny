@@ -25,6 +25,7 @@ export default {
   fromTemplate: "Start from a mate…",
   templateHint: "Copies that mate's profile, conversation style, voice and model into this draft (not the name or the avatar).",
   importPack: "Import a mate pack…",
+  importFile: "Import a mate file (.mate.zip)…",
   quickCreate: "Quick create (name only)…",
   quickTitle: "Other ways to add a mate",
   quickHint: "Without the AI: a blank mate with just a name, or a mate pack from the server.",

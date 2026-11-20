@@ -676,6 +676,16 @@ export default function MateStudio() {
             {t("studio.fromTemplate")}
           </MenuItem>
           <MenuItem
+            icon="upload"
+            onClick={() => {
+              close();
+              setDialog("file");
+            }}
+            testId="studio-import-file"
+          >
+            {t("studio.importFile")}
+          </MenuItem>
+          <MenuItem
             icon="download"
             onClick={() => {
               close();

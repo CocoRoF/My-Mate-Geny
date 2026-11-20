@@ -542,6 +542,78 @@ class MateService:
         shutil.rmtree(files.outfit_upload_dir(mate_id, oid), ignore_errors=True)
         return mate
 
+    # ---- a mate as a file (app/mate/transfer.py) ----
+
+    def _columns(self, mate_id: str) -> dict[str, Any]:
+        row = self.store._db.query_one("SELECT persona, prefs, avatar, outfits, icon, voice, llm, screen FROM mates WHERE id = ?",
+                                       (mate_id,))
+        if row is None:
+            raise KeyError(f"mate not found: {mate_id}")
+        out: dict[str, Any] = {"icon": row["icon"] or ""}
+        for k in ("persona", "prefs", "avatar", "outfits", "voice", "llm", "screen"):
+            try:
+                out[k] = json.loads(row[k] or "{}") or {}
+            except ValueError:
+                out[k] = {}
+        return out
+
+    def export_mate(self, mate_id: str, dest: Any) -> tuple[Any, str]:
+        """Her package (a .zip) at ``dest``. → (dest, its file name)."""
+        from app import build_version
+        from app.mate import transfer
+
+        mate = self.store.get(mate_id)
+        if mate.get("draft"):
+            raise MateError("she isn't finished yet: finish her in the studio first", status=409)
+        transfer.export(mate, self._columns(mate_id), dest, app_version=build_version())
+        self._log("info", f"mate “{mate['name']}” exported", code="mate.exported", detail={"mate": mate_id})
+        return dest, transfer.file_name(mate["name"])
+
+    def import_mate(self, zip_path: str, usable: Any) -> dict[str, Any]:
+        """A new mate from a package. ``usable(engine)``: whether a voice engine works here (transfer.usable_here). →
+        {mate, notes} — notes: what of her couldn't come along as it was (a voice engine not set up here, her AI engine)."""
+        from app.mate import transfer
+        from app.mate.store import normalize_avatar, normalize_llm
+
+        zf, doc = transfer.read(zip_path)
+        notes: list[str] = []
+        with zf:
+            name = str(doc.get("name") or "").strip()
+            if not name:
+                raise MateError("the mate file has no name for her")
+            prefs = {k: v for k, v in (doc.get("prefs") or {}).items() if k not in transfer.NOT_HERS}
+            try:
+                llm = normalize_llm(doc.get("llm") or None)
+            except MateError:
+                llm, notes = normalize_llm(None), [*notes, "llm"]
+            voice, voice_notes = transfer.voice_here(doc.get("voice"), usable)
+            notes += [f"voice:{n}" for n in voice_notes]
+            mate = self.store.create(name=name, persona=doc.get("persona") or {}, prefs=prefs, llm=llm, voice=voice)
+            mid = mate["id"]
+            try:
+                transfer.unpack(zf, mid)
+                avatar = normalize_avatar(transfer.placed(doc.get("avatar") or {"kind": "none"}, mid))
+                wardrobe = transfer.placed(doc.get("outfits") or {}, mid)
+                wardrobe = {"worn": wardrobe.get("worn") or "default", "worn_at": wardrobe.get("worn_at"),
+                            "base": normalize_avatar(wardrobe["base"]) if isinstance(wardrobe.get("base"), dict) else None,
+                            "items": [{**it, "avatar": normalize_avatar(it.get("avatar") or {"kind": "none"})}
+                                      for it in wardrobe.get("items") or [] if isinstance(it, dict) and it.get("id")]}
+                self.store._save_wardrobe(mid, wardrobe, avatar=avatar)
+                icon = transfer.placed(doc.get("icon") or "", mid)
+                if icon:
+                    try:
+                        self.store.set_icon(mid, icon)
+                    except MateError:
+                        notes.append("icon")
+                if isinstance(doc.get("screen"), dict) and doc["screen"]:
+                    self.store.update(mid, {"screen": doc["screen"]})
+            except Exception:
+                self.store.delete(mid)
+                transfer.clean_up(mid)
+                raise
+        self._log("info", f"mate “{name}” imported", code="mate.imported", detail={"mate": mid, "notes": notes})
+        return {"mate": self.store.get(mid), "notes": notes}
+
     def delete(self, mate_id: str) -> None:
         mate = self.store.get(mate_id)
         sid = self._live_session(mate)

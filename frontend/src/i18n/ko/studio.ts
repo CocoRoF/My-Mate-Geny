@@ -26,6 +26,7 @@ const studio: Messages<"studio"> = {
   fromTemplate: "다른 메이트에서 시작…",
   templateHint: "그 메이트의 프로필, 대화 방식, 목소리, 모델을 이 초안에 복사해요 (이름과 아바타는 빼고).",
   importPack: "메이트 팩 가져오기…",
+  importFile: "메이트 파일 가져오기 (.mate.zip)…",
   quickCreate: "빠르게 만들기 (이름만)…",
   quickTitle: "메이트를 추가하는 다른 방법",
   quickHint: "AI 없이 이름만 정해 빈 메이트를 만들거나, 서버에 있는 메이트 팩을 가져와요.",
