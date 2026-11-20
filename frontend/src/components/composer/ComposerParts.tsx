@@ -8,7 +8,7 @@ import { useT } from "../../i18n";
 export type PickKind = "photo" | "camera" | "file";
 
 /** The + menu: Photos / Camera (touch screens) / Files, Share screen where the page can, and — a work chat — another chat's
- *  conversation kept above the message box (components/chat/LinkedChat.tsx). */
+ *  conversation forwarded with the next message (대화 전달: docs/chat-forward.md). */
 export function AttachMenu({
   onPick,
   onClose,

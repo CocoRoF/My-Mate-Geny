@@ -192,6 +192,25 @@ def handoff_preamble(engine: str, blocks: list[Block]) -> str:
     )
 
 
+def forward_document(session: dict[str, Any], blocks: list[Block], *, at: str, working: bool = False) -> str:
+    """Another chat's conversation as the user forwards it (+ → 대화 전달, docs/chat-forward.md): a short header (which
+    chat, where it ran, when it was forwarded) and its transcript, oldest first — what the receiving agent reads."""
+    text, shown = transcript(blocks)
+    total = len([b for b in blocks if render_block(b)])
+    engines = sorted({ENGINE_LABEL.get(b.engine or "", b.engine or "") for b in blocks if b.engine} - {""})
+    where = session.get("workspace_path") or ""
+    lines = [f"# Conversation forwarded from the chat \u201c{session.get('title') or 'Untitled'}\u201d", ""]
+    if engines:
+        lines.append(f"- Agent: {', '.join(engines)}")
+    if where:
+        lines.append(f"- Folder: {where}" + (" (on a remote host)" if session.get("connection_id") else ""))
+    lines.append(f"- Forwarded: {at[:16].replace('T', ' ')} UTC")
+    lines.append(f"- Exchanges: {total}" + (f" (the last {shown} below)" if shown < total else ""))
+    if working:
+        lines.append("- That chat was still working when this was forwarded: its current turn is not in it.")
+    return "\n".join(lines) + "\n\n" + (text or "(nothing said there yet)") + "\n"
+
+
 def catchup_preamble(engine: str, blocks: list[Block]) -> str:
     text, _ = transcript(blocks)
     others = sorted({ENGINE_LABEL.get(b.engine or "", "another agent") for b in blocks if b.engine and b.engine != engine})

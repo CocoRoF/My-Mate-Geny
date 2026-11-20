@@ -76,6 +76,19 @@ async def upload(
     return out
 
 
+@router.post("/api/sessions/{sid}/forward")
+async def forward(sid: str, body: dict, sessions: SessionService = Depends(session_service)) -> dict:
+    """+ → 대화 전달 (docs/chat-forward.md): another chat's conversation into this chat's composer, as a pending
+    attachment that goes into the next message in full."""
+    other = str((body or {}).get("session_id") or "")
+    try:
+        return sessions.forward(sid, other)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/api/attachments/{aid}/content")
 async def content(aid: str, request: Request, download: bool = False, variant: str = "original"):
     row = _svc(request).get(aid)

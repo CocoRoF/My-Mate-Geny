@@ -22,7 +22,7 @@ const ko: Messages<"composer"> = {
   shareScreen: "화면 공유",
   shareScreenHint: "메시지를 보낼 때마다 화면을 함께 보여 줘요",
   shareScreenOn: "공유 중이에요 · 바꾸거나 끌 수 있어요",
-  linkChat: "다른 세션의 대화",
-  linkChatHint: "다른 채팅의 최근 대화를 위에 띄워 두고 봐요",
+  linkChat: "대화 전달",
+  linkChatHint: "다른 채팅의 대화를 이 채팅의 에이전트에게 넘겨줘요",
 };
 export default ko;

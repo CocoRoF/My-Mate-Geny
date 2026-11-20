@@ -226,6 +226,23 @@ class AttachmentService:
         )
         return self.out(self.get(aid))
 
+    def save_forward(self, sid: str, name: str, text: str) -> dict[str, Any]:
+        """Another chat's conversation the user forwards into ``sid`` (docs/chat-forward.md): its transcript as a pending
+        attachment of the composer (origin ``forward``) — sent with the next message, it goes into it in full."""
+        name = _safe_name(name)
+        aid = new_id("att_")
+        folder = self.session_dir(sid) / aid
+        folder.mkdir(parents=True, exist_ok=True)
+        dest = folder / name
+        data = text.encode("utf-8")
+        dest.write_bytes(data)
+        self._db.execute(
+            "INSERT INTO attachments (id, session_id, message_id, name, mime, size, kind, origin, path, created_at) "
+            "VALUES (?, ?, NULL, ?, 'text/plain; charset=utf-8', ?, 'file', 'forward', ?, ?)",
+            (aid, sid, name, len(data), str(dest), now_iso()),
+        )
+        return self.out(self.get(aid))
+
     def copy_to(self, row: dict[str, Any], sid: str) -> dict[str, Any]:
         """Copy an attachment (of another session) into ``sid`` as a pending
         upload — exactly what the user uploading the same file there makes
@@ -376,6 +393,7 @@ class AttachmentService:
             model_mime=row["model_mime"],
             label=str(row.get("screen_label") or ""),  # (one of several screen pictures: app/services/screen.py)
             screen=row.get("origin") == "screen",
+            forwarded=row.get("origin") == "forward",
         )
 
     # ---- link / delete ----

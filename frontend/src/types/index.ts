@@ -104,7 +104,7 @@ export interface DirEntry {
 }
 
 export interface Attachment {
-  origin?: "user" | "screen";
+  origin?: "user" | "screen" | "forward"; // forward: another chat's conversation (+ → 대화 전달)
   id: string;
   name: string;
   mime: string;
