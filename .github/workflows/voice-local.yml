@@ -3,32 +3,54 @@
 # *.macos-arm64.txt) and made to speak and hear through the app's own service (backend/tools/voice_smoke.py).
 # These runners have no NVIDIA GPU: on Windows the engines run on the CPU (the CUDA build of torch, as a user's PC
 # gets it), on macOS on Apple Silicon's GPU through Metal when the runner offers it, else the CPU.
-# Heavy (torch and the model weights, several GB per job): on changes to the engines or their lock files, and by hand.
+# Heavy (torch and the model weights, several GB per job; 4 Windows + 3 macOS runners, ~10–15 min each), so only when it
+# is wanted (2026-11-20, the owner: Actions use was far too high; .github/scripts/ci_gate.py heavy decides):
+#   - nightly (18:47 UTC), when the engines, their lock files or the smoke changed since it last ran on main;
+#   - on a pull request that changes them only with the label ci:voice (added later: re-run the PR's voice-local);
+#   - by hand.
 name: voice-local
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "47 18 * * *"
   pull_request:
-    paths:
-      - backend/app/voicehost/**
-      - backend/tools/voice_smoke.py
-      - .github/workflows/voice-local.yml
-  push:
-    branches: [main]
     paths:
       - backend/app/voicehost/runtimes/**
       - backend/app/voicehost/worker/**
+      - backend/tools/voice_smoke.py
       - .github/workflows/voice-local.yml
 
 permissions:
   contents: read
+  actions: read # (when it last ran)
+  pull-requests: read # (a PR's labels)
 
 concurrency:
   group: voice-local-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # (what changed since it last ran)
+          filter: blob:none
+      - id: gate
+        run: >
+          python3 .github/scripts/ci_gate.py heavy ci:voice
+          backend/app/voicehost/runtimes backend/app/voicehost/worker backend/tools/voice_smoke.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   smoke:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     name: ${{ matrix.os }} · ${{ matrix.set.name }}
     strategy:
       fail-fast: false
@@ -44,7 +66,7 @@ jobs:
           # (VoxCPM2 runs in fp32 on Metal — bf16 garbles it there —: ~9 GB, more than the 7 GB of a macOS runner)
           - { os: macos-15, set: { name: vox, models: "--model voxcpm2 --model whisper-large-v3-turbo" } }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 100
+    timeout-minutes: 60 # (a set takes 10–15 min; the slowest yet, 33)
     defaults:
       run:
         working-directory: backend

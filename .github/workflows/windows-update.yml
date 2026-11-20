@@ -4,9 +4,15 @@
 # connect screen. Two versions of the same commit are built; they are cached by the sources they come from, so a
 # change to the test alone does not build them again. Run by hand with two release tags (older, newer), the published
 # installers themselves are checked instead: what a user on the older one gets, and the newer one installed fresh.
+# A Windows runner for ~40 min, so only when it is wanted (2026-11-20, the owner: Actions use was far too high;
+# .github/scripts/ci_gate.py heavy decides): nightly (19:17 UTC) when the update's code changed since it last ran on main;
+# on a pull request that changes it only with the label ci:windows (added later: re-run the PR's windows-update); on a
+# push to an e2e/windows-update… branch; by hand.
 name: windows-update
 
 on:
+  schedule:
+    - cron: "17 19 * * *"
   pull_request:
     paths:
       - "desktop/src/updater.js"
@@ -34,6 +40,8 @@ on:
 
 permissions:
   contents: read
+  actions: read # (when it last ran)
+  pull-requests: read # (a PR's labels)
 
 concurrency:
   group: windows-update-${{ github.ref }}
@@ -44,9 +52,30 @@ env:
   UV_VERSION: '0.13.6'
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # (what changed since it last ran)
+          filter: blob:none
+      - id: gate
+        run: >
+          python3 .github/scripts/ci_gate.py heavy ci:windows
+          desktop/src/updater.js desktop/src/main.js desktop/src/quit.js desktop/src/local-runtime.js
+          desktop/package.json desktop/package-lock.json
+          desktop/test/e2e/windows-update-e2e.js desktop/test/e2e/windows-local-e2e.js
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   update:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
