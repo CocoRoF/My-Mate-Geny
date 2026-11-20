@@ -840,6 +840,8 @@ export interface ModelList {
 /** a voice provider set up in Global settings (GET /api/mates/providers) */
 export interface ProviderStatus {
   media_models?: Record<string, { id: string; name: string }[]>;
+  /** its last check is old or missing: a new one is under way (`ok` is the last result meanwhile) */
+  checking?: boolean;
   engine: string;
   label: string;
   kind?: "tts" | "stt";
@@ -1112,7 +1114,10 @@ export const listVoices = (engine: string) =>
 export const listModels = (engine: string, kind: "tts" | "stt") =>
   apiFetch<ModelList>(`/api/mates/models?engine=${enc(engine)}&kind=${kind}`);
 /** every provider's state; configured ones are (re-)verified when stale, or all of them with `refresh` */
-export const getProviders = (refresh = false) => apiFetch<Providers>(`/api/mates/providers${refresh ? "?refresh=1" : ""}`);
+/** at once, as last checked (`checking`: a check is under way behind it); `wait`: once those checks are done;
+ *  `refresh`: every provider checked anew, now */
+export const getProviders = (refresh = false, wait = false) =>
+  apiFetch<Providers>(`/api/mates/providers${refresh ? "?refresh=1" : wait ? "?wait=1" : ""}`);
 export const verifyProvider = (engine: string) =>
   apiFetch<ProviderStatus>(`/api/mates/providers/${enc(engine)}/verify`, { method: "POST" });
 

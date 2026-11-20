@@ -195,6 +195,9 @@ function follow(id: string | null) {
 const RELOAD_MS = 150;
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 
+// the latest providers request (an older answer never overwrites a newer one)
+let providersCall = 0;
+
 export const useMateStore = create<MateState>((set, get) => ({
   syncVersion: null,
   memoryRev: {},
@@ -216,13 +219,19 @@ export const useMateStore = create<MateState>((set, get) => ({
   providersError: null,
   providersLoading: false,
   loadProviders: async (refresh = false) => {
+    const n = ++providersCall;
     set({ providersLoading: true });
     try {
-      const providers = await getProviders(refresh);
-      set({ providers, providersError: null, providersLoading: false });
+      // (at once, as last checked; then — when a check was under way behind it — once it is done)
+      let providers = await getProviders(refresh);
+      if (n === providersCall) set({ providers, providersError: null, providersLoading: false });
+      if ([...providers.tts, ...providers.stt].some((p) => p.checking)) {
+        providers = await getProviders(false, true);
+        if (n === providersCall) set({ providers });
+      }
       return providers;
     } catch (e) {
-      set({ providersError: (e as Error).message, providersLoading: false });
+      if (n === providersCall) set({ providersError: (e as Error).message, providersLoading: false });
       return null;
     }
   },
