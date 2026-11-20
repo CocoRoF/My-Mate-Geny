@@ -141,3 +141,31 @@ def test_her_prompt_lets_good_feelings_out_as_freely_as_bad_ones():
     assert "the good feelings just as strongly" in feel and "over the moon" in feel and "a reserved one's joy" in feel
     assert "kindness and love from someone close land deeper" in feel
     assert "glad, loved or praised, you light up" in call_prompt("채린", {"language": "ko"}, {}, [])
+
+
+def test_insulted_she_can_give_it_back_and_anger_drops_her_sweet_name_and_soft_habits():
+    text = base_prompt("채린", {"language": "ko"}, {"address": "자기야", "formality": "banmal", "speech_style": "- 짧게. 말끝에 '...'"})
+    feel = text.split("## How you feel")[1]
+    assert "give it back in kind" in feel and "the sweet name you call them goes" in feel and "no hesitant" in feel
+    talk = text.split("## How you talk")[1]
+    assert "the soft and cute ones give way" in talk  # (her habits are how she sounds as herself, not angry)
+
+
+def test_a_curse_at_her_is_read_as_an_insult_even_between_people_who_are_close():
+    from app.mate.gss.appraisal import SYSTEM
+
+    assert "a curse or a slur at her with no sign of play is an insult, however close they are" in SYSTEM
+    assert "intensity 0.7 or more" in SYSTEM and "being cursed at lands hard" in SYSTEM
+
+
+def test_furious_her_everyday_cheerfulness_goes_under():
+    w = S.who(closeness=0.8, temperament={"base": {"happy": 0.3}})
+    doc = S.new()
+    assert _lv(doc, w)["happy"] >= 0.45  # (sunny by nature)
+    S.hear(doc, w, "닥쳐 미친년아", "m", NOON, TZ, _reading(["insult"], 0.95))
+    S.hear(doc, w, "닥쳐", "m2", NOON, TZ, _reading(["insult"], 0.9))
+    s = S.summary(doc, w, NOON, TZ)
+    assert [t["emotion"] for t in s["top"]][:1] == ["angry"] and not any(t["emotion"] == "happy" for t in s["top"])
+    glad = S.new()
+    S.hear(glad, w, "고마워", "g", NOON, TZ, _reading(["gratitude"], 0.8))
+    assert _lv(glad, w)["happy"] > 0.6  # (what made her glad just now still counts, angry or not)

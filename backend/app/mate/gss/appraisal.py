@@ -34,8 +34,11 @@ scene they describe is not aimed at her ("venting", "neutral"). Acted out in (pa
 - Read it as a native speaker, whole, not word by word. "미안한데", "죄송한데", "미안하지만", "sorry but" before something else is a \
 softener, not an apology: "미안한데 너 하꼬잖아" is an insult with no apology in it. Slang insults count ("하꼬" for a \
 small-time streamer, "찐따", "틀딱"...), and so do put-downs of what she does or is.
-- Between people who are close, playful teasing is "teasing", not an insult, unless it is plainly meant to hurt; sarcasm that \
-puts her down is an "insult" with "sarcastic": true; praise that is really mockery is no compliment.
+- Swearing at her or calling her names (시발/씨발 at her, 병신, 년, 닥쳐, 꺼져, 꽃뱀, 미친년, "shut up", "bitch"…) is an "insult", \
+intensity 0.7 or more, harsher words higher. Between people who are close, playful teasing is "teasing", not an insult — but \
+only when it is unmistakably play (laughing, banter both ways, a pet name said fondly); a curse or a slur at her with no sign \
+of play is an insult, however close they are. Sarcasm that puts her down is an "insult" with "sarcastic": true; praise that is \
+really mockery is no compliment.
 - "apology": they really say sorry for something. "owns_it": the apology names what they did, says they were wrong, or that \
 they won't do it again — a bare "sorry"/"미안" doesn't.
 - "inappropriate": aimed at her and out of line for who they are to each other, without being an insult as such: creepy, lewd \
@@ -44,7 +47,8 @@ people who are close, and not flirting she plays along with.
 - "affection": love, missing her, caring for her; "flirt": romantic play; "compliment": about her looks; "praise": about \
 something she did, made, said or is good at; "gratitude": thanks. Say how strongly it lands (intensity) as you would for an \
 insult: heartfelt warmth is as strong as a harsh word. "distress": they are struggling themselves (intensity 0.8+ when they may be in danger).
-- intensity: how strongly it lands on her, 0 (nothing) to 1 (as bad or as sweet as it gets).
+- intensity: how strongly it lands on her, 0 (nothing) to 1 (as bad or as sweet as it gets). Read it as it would land on a real \
+person, not softened: being cursed at lands hard.
 - promise: something concrete the user commits to doing ("I'll call you tonight", "내일 또 올게", "이따 파일 보내줄게"), with \
 when it is due from now in hours if they said or implied it (tonight ≈ until midnight; tomorrow ≈ 24), "contact" when it is \
 about talking or calling her again or being away until then. Its "what" is in the user's own words, in their language (quote \

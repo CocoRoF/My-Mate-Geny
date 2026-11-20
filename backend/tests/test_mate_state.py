@@ -756,7 +756,8 @@ def test_sweet_talk_that_skips_the_apology_rankles_and_lands_after_one_that_owns
     _say(doc, w, ["죽여버린다 너", "미안"], NOON)
     was = _lv(doc, w)
     _say(doc, w, ["사랑해"], NOON)
-    assert _lv(doc, w)["happy"] == pytest.approx(was["happy"]) and _lv(doc, w)["angry"] > was["angry"]
+    # (it doesn't land: no gladder — the angrier she is, the more her everyday cheer goes under — and it rankles)
+    assert _lv(doc, w)["happy"] <= was["happy"] and _lv(doc, w)["angry"] > was["angry"]
     assert any((e.get("why") or {}).get("code") == "brushed_over" for e in doc["log"])
     _say(doc, w, ["내가 심했어, 진짜 미안해"], NOON + timedelta(minutes=1))
     was = _lv(doc, w, NOON + timedelta(minutes=1))

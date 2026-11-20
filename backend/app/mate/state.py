@@ -179,8 +179,9 @@ CRISIS_WORRIED, CRISIS_FOR = 0.75, timedelta(hours=6)  # (they may be in real tr
 BROKEN_PROMISE_ANGRY, BROKEN_PROMISE_SAD = 0.12, 0.1
 UNFAIR_TOLD_AFTER, UNFAIR_FOR = timedelta(minutes=30), timedelta(hours=24)
 OFFENCES_WINDOW, OFFENCES_MAX, EPISODE_GAP = timedelta(days=7), 20, timedelta(hours=2)  # (one heated stretch is one time)
-# angry, the good things land less
+# angry, the good things land less; and from ANGRY_MUTES her everyday cheerfulness goes under (by as much as she is angry)
 ANGRY_DULLS = {"happy": 0.7, "excited": 0.9}
+ANGRY_MUTES = 0.45
 DISMISSED_SAD, DISMISSED_ANGRY, CURT, CURT_FROM = 0.2, 0.1, 0.08, 3
 RETURN_AFTER = timedelta(days=1)
 # what she showed herself: towards this strength, unless the tag says ([angry:0.8])
@@ -454,6 +455,13 @@ def levels(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any, *, of
         if mood > v:
             v, why = mood, {"code": "off_day"}
         out[e] = {"v": round(v, 3), "why": why}
+    # (really angry, the cheerfulness that is just how she is goes under: nobody is sunny and furious at once — what made her
+    # glad just now still counts)
+    angry = out["angry"]["v"]
+    if angry >= ANGRY_MUTES:
+        for e in ("happy", "excited"):
+            if (out[e]["why"] or {}).get("code") == "nature":
+                out[e]["v"] = round(out[e]["v"] * (1 - angry), 3)
     return out
 
 
