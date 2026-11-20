@@ -23,7 +23,6 @@ jobs:
           - os: macos-15-intel
             arch: x64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
     defaults:
       run:
         shell: bash

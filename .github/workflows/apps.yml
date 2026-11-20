@@ -1,43 +1,42 @@
 # Native apps: desktop (Windows / macOS / Linux, Electron), Android and iOS (Capacitor) — docs/apps.md "Releases".
 #
-# Built for a release only, never for a push (2026-11-20, the owner: Actions use was far too high — every push to main
-# built both Macs, ~300 macOS minutes a day). A release is:
-#   - by hand: Actions → apps → Run workflow, or `gh workflow run apps -R CocoRoF/My-Mate-Geny` (from main);
-#   - nightly, 18:17 UTC (03:17 KST), when something an app is made of changed since its last build — a night with
-#     nothing new builds nothing (the plan job, seconds on Linux). Off without a change here: the repository variable
-#     APPS_NIGHTLY=off.
+# Each platform is built and published on its own (.github/scripts/apps_publish.py): the moment its build is done it goes
+# into this run's release (apps-v<version>) and into the rolling `apps-latest` the Download page and the desktop's own
+# updater read. A slow macOS build never holds the others back, and the Download page shows each platform's own version.
 #
-# A release builds only the platforms something they are made of changed for since their newest published build
+# A push builds only the platforms something they are made of changed for since their newest published build
 # (.github/scripts/apps_plan.py): the desktop bundles the backend and the UI (local execution), so it follows those; the
-# phone apps load the console live from the user's server, so only mobile/ changes them (iOS only its own part of it).
-# A build is never made again for the same sources. By hand: any platforms, on the release channel (main) or the test
-# channel (apps-test-v…: never apps-latest, never the public link).
+# phone apps load the console live from the user's server, so only mobile/ changes them. By hand (Run workflow): any
+# platforms, on the release channel (main) or the test channel (apps-test-v…: never apps-latest, never the public link).
 #
-# Each platform's build goes into this run's release (apps-v<version>) as it is done; once every one is there, the latest
-# job puts them onto the rolling `apps-latest` the Download page and the desktop's own updater read — together.
-# One release run at a time per channel: a newer one waits (a release is never cancelled half-way) and replaces any older
-# one still waiting. The desktop is published only once this commit's tests have passed (the verify jobs run beside the
-# builds). Every job has a time limit: a hung build stops there.
+# One build per platform at a time (job concurrency): a newer push's waits, and replaces any older one still waiting.
+# The desktop is published only once this commit's tests have passed (the verify jobs run beside the builds).
 # Artifacts are named `my-mate-geny-<version>-…` since 0.3 (formerly `hr-harnessor-…`; the Download page matches both).
 name: apps
 
 on:
-  schedule:
-    - cron: "17 18 * * *" # 03:17 KST: what the day changed, at most once a day
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "backend/**"
+      - "frontend/**"
+      - "mobile/**"
+      - "assets/**"
+      - ".github/workflows/apps.yml"
+      - ".github/scripts/apps_*.py"
+      - ".github/scripts/asc.py"
+      - ".github/scripts/ios_signing.py"
   workflow_dispatch:
     inputs:
       platforms:
-        description: "changed (only what changed since its last build), all, or some of: windows,linux,macos-arm64,macos-x64,android,ios"
-        default: changed
+        description: "all, changed (as a push), or some of: windows,linux,macos-arm64,macos-x64,android,ios"
+        default: all
       channel:
         description: "release = the Download page (main only); test = apps-test-v… releases only"
         type: choice
         options: [release, test]
         default: release
-
-concurrency:
-  group: apps-${{ inputs.channel || 'release' }}
-  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -56,10 +55,7 @@ env:
 
 jobs:
   plan:
-    # (the nightly one: unless the repository variable APPS_NIGHTLY is off)
-    if: github.event_name != 'schedule' || vars.APPS_NIGHTLY != 'off'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     outputs:
       desktop: ${{ steps.plan.outputs.desktop }}
       android: ${{ steps.plan.outputs.android }}
@@ -84,7 +80,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.any == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    concurrency:
+      group: apps-version-${{ inputs.channel || 'release' }} # (one at a time: two runs never take one number)
     outputs:
       version: ${{ steps.begin.outputs.version }}
       tag: ${{ steps.begin.outputs.tag }}
@@ -102,12 +99,9 @@ jobs:
           [ '${{ needs.plan.outputs.ios }}' = true ] && platforms="$platforms ios"
           python3 .github/scripts/apps_publish.py begin "$APP_LINE" "$CHANNEL" $platforms
 
-  # The local-execution UI, built once for every desktop platform
+  # The local-execution UI, built once for every desktop platform (from the start: it doesn't wait for the plan)
   ui:
-    needs: plan
-    if: needs.plan.outputs.desktop != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -135,7 +129,6 @@ jobs:
     needs: plan
     if: needs.plan.outputs.desktop != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -180,7 +173,9 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.desktop) }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ matrix.timeout }} # (apps_plan.py: 25 Linux, 30 Windows, 45 / 55 the Macs)
+    timeout-minutes: 75
+    concurrency:
+      group: apps-${{ matrix.name }}-${{ inputs.channel || 'release' }}
     defaults:
       run:
         working-directory: desktop
@@ -289,7 +284,9 @@ jobs:
     needs: [plan, version]
     if: needs.plan.outputs.android == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    concurrency:
+      group: apps-android-${{ inputs.channel || 'release' }}
     env:
       VERSION: ${{ needs.version.outputs.version }}
       TAG: ${{ needs.version.outputs.tag }}
@@ -343,7 +340,9 @@ jobs:
     needs: [plan, version]
     if: needs.plan.outputs.ios == 'true'
     runs-on: macos-26
-    timeout-minutes: 35
+    timeout-minutes: 45
+    concurrency:
+      group: apps-ios-${{ inputs.channel || 'release' }}
     outputs:
       uploaded: ${{ steps.upload.outputs.uploaded }}
       build: ${{ steps.upload.outputs.build }}
@@ -482,7 +481,9 @@ jobs:
     needs: [version, ios]
     if: needs.ios.outputs.uploaded == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 110 # (Linux, waiting on Apple: processing, then beta review — up to 45 min of it)
+    timeout-minutes: 110
+    concurrency:
+      group: apps-testflight-${{ inputs.channel || 'release' }}
     env:
       VERSION: ${{ needs.version.outputs.version }}
       TAG: ${{ needs.version.outputs.tag }}
@@ -506,16 +507,14 @@ jobs:
         run: python .github/scripts/apps_publish.py publish ios "${{ steps.tf.outputs.ios_version }}" - --latest "${{ steps.tf.outputs.ios_json }}"
 
   # Every platform of this version onto the Download page together, once all of them are built (apps_publish.py
-  # promote): never one of them ahead of the others. A platform that failed holds them all at the last version until it
-  # is run again (Re-run failed jobs runs this one after it) — or until the next release, which brings up with its own
-  # builds the ones it didn't need to make again.
+  # promote): the apps there are always the same version. A platform that failed holds them all at the last version
+  # until it is run again (Re-run failed jobs runs this one after it).
   latest:
     needs: [plan, version, desktop, android]
     if: >-
       always() && (inputs.channel || 'release') == 'release' && needs.version.result == 'success' &&
       needs.plan.outputs.any == 'true' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     env:
       VERSION: ${{ needs.version.outputs.version }}
       TAG: ${{ needs.version.outputs.tag }}
@@ -529,14 +528,13 @@ jobs:
         run: |
           platforms=$(python3 -c 'import json, os; print(" ".join(x["name"] for x in json.loads(os.environ["DESKTOP"] or "[]")))')
           [ "$ANDROID" = true ] && platforms="$platforms android"
-          # (none: an iOS-only run — still brings up what an earlier failed run held back)
+          [ -n "${platforms// /}" ] || { echo "nothing built for the Download page"; exit 0; }
           python3 .github/scripts/apps_publish.py promote "$VERSION" "$TAG" $platforms
 
   finalize:
     needs: [plan, version, desktop, android, ios, latest]
     if: always() && needs.version.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     env:
       TAG: ${{ needs.version.outputs.tag }}
     steps:

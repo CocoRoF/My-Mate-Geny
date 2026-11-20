@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""Which platforms a release run of the apps builds (.github/workflows/apps.yml; docs/apps.md "Releases").
+"""Which platforms this run of the apps builds (.github/workflows/apps.yml; docs/apps.md "Releases").
 
-A release (Run workflow, or the nightly one) builds a platform only when something it is made of changed since its newest
-published build — that build's release (apps-v<version>, the one holding its installer) names the commit it came from:
+A push builds a platform only when something it is made of changed since its newest published build — that build's
+release (apps-v<version>, the one holding its installer) names the commit it came from:
 
   desktop (Windows, Linux, macOS ×2)  bundles the backend and the UI for local execution: desktop/, backend/app/, the UI
-  android                             loads the console live from the user's server: mobile/ (not its iOS project)
-  ios                                 the same: mobile/ (not its Android project) and the IPA's signing script
+  android, ios                        load the console live from the user's server: only mobile/ makes a new one
 
-A build whose sources nothing changed for is never made again: its artifact is in its release, and the latest job puts
-it onto the Download page if a failed run left it behind (apps_publish.py promote). Tests, docs, tools and this workflow
-make nothing (they are not in the apps); to build anyway, run it by hand with the platforms: PLATFORMS=all, or a list
-(windows,linux,macos-arm64,macos-x64,android,ios), builds those whatever changed; PLATFORMS=changed decides as above.
+This workflow and its scripts make every platform again. By hand (Run workflow): PLATFORMS=all, or a list
+(windows,linux,macos-arm64,macos-x64,android,ios), builds those whatever changed; PLATFORMS=changed decides as a push does.
 
 Outputs (GITHUB_OUTPUT): desktop = the desktop matrix (JSON), android / ios / any = true|false. A table of why goes to
 the run's summary.
@@ -25,24 +22,24 @@ import re
 import subprocess
 import sys
 
-# (timeout: minutes for the job — a hung build stops there; macOS signs, makes the image and waits on Apple's notary)
 DESKTOP = {
-    "linux": {"os": "ubuntu-latest", "timeout": 25},
-    "windows": {"os": "windows-latest", "timeout": 30},
-    "macos-arm64": {"os": "macos-15", "arch": "arm64", "timeout": 45},
-    "macos-x64": {"os": "macos-15-intel", "arch": "x64", "timeout": 55},
+    "linux": {"os": "ubuntu-latest"},
+    "windows": {"os": "windows-latest"},
+    "macos-arm64": {"os": "macos-15", "arch": "arm64"},
+    "macos-x64": {"os": "macos-15-intel", "arch": "x64"},
 }
 ALL = [*DESKTOP, "android", "ios"]
 # what each is made of (a directory/ = everything under it) — and what never changes a build
+COMMON = [".github/workflows/apps.yml", ".github/scripts/apps_plan.py", ".github/scripts/apps_publish.py"]
 SOURCES = {
     "desktop": ["desktop/", "backend/app/", "backend/local_main.py", "backend/pyproject.toml", "frontend/", "assets/"],
     "android": ["mobile/"],
-    "ios": ["mobile/", ".github/scripts/ios_signing.py"],
+    "ios": ["mobile/", ".github/scripts/asc.py", ".github/scripts/ios_signing.py"],
 }
 NOT = {
-    "desktop": ["desktop/test/", "frontend/test/", "frontend/e2e/", "frontend/scripts/i18n-scan.mjs"],
-    "android": ["mobile/ios/", "mobile/test/", "mobile/tools/"],
-    "ios": ["mobile/android/", "mobile/test/", "mobile/tools/"],
+    "desktop": ["desktop/test/e2e/", "frontend/test/", "frontend/e2e/", "frontend/scripts/i18n-scan.mjs"],
+    "android": ["mobile/ios/", "mobile/tools/appstore.py"],
+    "ios": ["mobile/android/"],
 }
 NEVER = ["*.md", "*/README*", "*/docs/*"]
 # a platform's build, by the file it leaves in its versioned release
@@ -65,6 +62,8 @@ def under(path: str, prefixes: list[str]) -> bool:
 
 
 def counts(platform: str, path: str) -> bool:
+    if path in COMMON:
+        return True
     if any(fnmatch.fnmatch(path, n) for n in NEVER):
         return False
     f = family(platform)

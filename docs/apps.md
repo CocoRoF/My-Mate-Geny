@@ -6,23 +6,13 @@ console live from the user's own server; the desktop's local execution bundles t
 
 ## Releases
 
-`.github/workflows/apps.yml` builds them — **for a release only, never for a push** (since 2026-11-20; until then every
-push to main built both Macs, Windows, Linux and whatever else changed — about 300 macOS runner minutes a day, and the
-owner: "사용량이 과해"). A release is one of:
-
-- **by hand** — *ship the apps now*: Actions → apps → Run workflow (branch `main`), or
-  `gh workflow run apps -R CocoRoF/My-Mate-Geny` (`-f platforms=…` / `-f channel=test` as below); `gh run watch` follows it;
-- **nightly**, 18:17 UTC (03:17 KST): the day's changes, at most one release a day. A night with nothing new for any app
-  builds nothing (only the plan job, seconds on Linux). Switched off — without a change to the workflow — by the
-  repository variable `APPS_NIGHTLY=off` (Settings → Secrets and variables → Actions → Variables); on again by deleting it.
-
-Either way the release builds only what changed (below). Pushing to main builds no app: a change reaches the apps with
-the next release (that night, or the moment someone runs it). The jobs:
+`.github/workflows/apps.yml` builds them; each platform is **built and published on its own** — the moment its build is
+done it is on the Download page, whatever the others are doing:
 
 | job | what | publishes |
 |---|---|---|
-| plan | which platforms this release needs (below) | — |
-| version | this run's version `<line>.<n>` and its draft release `apps-v<version>` | — |
+| plan | which platforms this push needs (below) | — |
+| version | this run's version `<line>.<n>` and its draft release `apps-v<version>` (one run at a time) | — |
 | ui | the local-execution UI, built once for every desktop platform | an artifact |
 | verify | the backend's tests (three parts side by side) and the UI's typecheck / unit / i18n tests | — |
 | desktop (linux, windows, macos-arm64, macos-x64) | the installers; macOS signed and notarized once (the .dmg) | its files, once verify has passed |
@@ -31,26 +21,18 @@ the next release (that night, or the moment someone runs it). The jobs:
 | testflight | waits for Apple, the public link's group, beta review | `ios.json` once a build has passed |
 | finalize | an empty draft goes; old releases are pruned | — |
 
-**What a release builds** (`.github/scripts/apps_plan.py`). A platform is built when something it is made of changed
-since its newest published build (the release holding its installer names the commit): the desktop (all four of it,
-which share their sources) follows `desktop/`, `backend/app/`, `backend/pyproject.toml`, `frontend/` and `assets/` — it
-bundles the backend and the UI for local execution; Android follows `mobile/` but its iOS project, iOS `mobile/` but its
-Android project — the phone apps load the console from the server, so a backend or UI change never makes a new phone
-app, and an Android change no iOS build (macOS, an App Store upload, a beta review). Tests, docs, tools and the
-workflow and its scripts make nothing: a build is never made again from the same sources (to anyway: by hand with the
-platforms). The run's summary has the table of what was built and why.
-
-So each platform has its own version — the Download page shows each one's (the phones stay at theirs while only the
-desktop changes); what one release builds goes up together, never one platform ahead of the others.
+**What a push builds** (`.github/scripts/apps_plan.py`). A platform is built when something it is made of changed since
+its newest published build (the release holding its installer names the commit): the desktop follows `desktop/`,
+`backend/app/`, `backend/pyproject.toml`, `frontend/` and `assets/` (tests and docs don't count); Android and iOS follow
+`mobile/` only — they load the console from the server, so a backend or UI change doesn't make a new phone app. The
+workflow and its scripts make every platform again. The run's summary has the table of what was built and why.
 
 **Publishing** (`.github/scripts/apps_publish.py`): each platform's files go into this run's versioned release the moment
 it is built (`publish`; the first one to arrive makes the draft public). **Onto the Download page together**: once every
 platform the run built is there, the `latest` job puts them all onto the rolling `apps-latest` at once (`promote`) — so
-no platform of a release shows on the Download page before the others (since 2026-11-19; before, each platform went up
-the moment it was built and for a quarter of an hour Android said 1.1.7 while the desktop still said 1.1.6). A platform
-that failed holds them all at the last version until it is run again (Re-run failed jobs runs `latest` after it) — or
-until the next release, which brings up with its own builds those of the held-back one it didn't need to make again
-(nothing they are made of changed: `held_back`). Onto `apps-latest`:
+the apps there are always the same version (since 2026-11-19; before, each platform went up the moment it was built and
+for a quarter of an hour Android said 1.1.7 while the desktop still said 1.1.6). A platform that failed holds them all
+at the last version until it is run again (Re-run failed jobs runs `latest` after it). Onto `apps-latest`:
 
 1. every platform's installers first, the update feeds last (`latest.yml`, `latest-linux.yml`, `latest-mac-<arch>.yml`,
    `ios.json`): a feed never names a file that isn't there yet — and while the installers go up the Download page offers
@@ -68,8 +50,8 @@ serves the one of its own architecture as `latest-mac.yml`. Apps up to 1.1.0 rea
 written (`apps_publish.py mac-legacy`) once both architectures of one version are up, and the files it names stay until
 then.
 
-**One release at a time** (per channel): a newer run waits for the running one (a release is never cancelled half-way:
-it would leave one half up) and replaces any older one still waiting — so two runs never build the same thing.
+**One build per platform at a time.** Each platform's job has its own concurrency group: a newer push's build waits for
+the running one (it is never cancelled half-way) and replaces any older one still waiting.
 
 **Versions.** `<line>.<n>`: the line is the product's version (`APP_LINE`, `backend/app/__init__.py`, the package.json
 files); `n` is one past the highest release of the line, drafts included (a run still building holds its number; a run
@@ -89,23 +71,14 @@ build without it takes the newest release tag in git). `--write-backend` writes 
 reports from its next start (`app.build_version`: `/api/health`, `/api/config`). The desktop app hands its own version to
 the server it bundles (`GENY_APP_VERSION`), and its Settings and sidebar show the app's version.
 
-**By hand** (Actions → apps → Run workflow, or `gh workflow run apps -R CocoRoF/My-Mate-Geny -f platforms=… -f
-channel=…`): `platforms` = `changed` (the default: what changed since each platform's last build), `all`, or a list
-(`windows,linux,macos-arm64,macos-x64,android,ios`) — those whatever changed; `channel` = `release` (from main only) or
-`test` — `apps-test-v<version>` releases, never `apps-latest` and never the public TestFlight link: a branch's pipeline
-can be tried without anyone getting it (`gh workflow run apps --ref <branch> -f channel=test -f platforms=linux`).
+**By hand** (Actions → apps → Run workflow): `platforms` = `all`, `changed`, or a list (`windows,linux,macos-arm64,
+macos-x64,android,ios`); `channel` = `release` (from main only) or `test` — `apps-test-v<version>` releases, never
+`apps-latest` and never the public TestFlight link: a branch's pipeline can be tried without anyone getting it.
 
 **Time.** The phone apps are up in a few minutes, Windows and Linux in about five; macOS takes longest (signing a
 ~530 MB app, one notarization of the .dmg — Apple's ticket covers the app inside, and both are stapled — and the image
-itself, ~10 min on the Intel runner): ~10 min on Apple Silicon, 12–30 on Intel. Every job has a time limit (the Macs 45
-and 55 min, `apps_plan.py` `DESKTOP`), so a hung one stops there. Caches: npm, uv, the desktop's managed Python and its
-packages (keyed by the dependencies, not the product's version), Electron and electron-builder's downloads, Gradle,
-Capacitor's Swift packages.
-
-**What it costs** (GitHub's runner minutes; macOS ones count ~10× Linux's). Per release: the desktop ~25–40 macOS minutes
-(both Macs) + ~3 Windows + a few Linux; iOS ~2–5 macOS minutes (+ up to 110 Linux ones waiting on Apple's beta review);
-Android ~2 Linux. Until 2026-11-20 that was every push to main (Nov 13–20: ~290 macOS minutes a day for the apps alone);
-now at most once a day.
+itself on the Intel runner). Caches: npm, uv, the desktop's managed Python and its packages (keyed by the dependencies,
+not the product's version), Electron and electron-builder's downloads, Gradle, Capacitor's Swift packages.
 
 ## iOS · iPadOS
 
@@ -128,8 +101,8 @@ feedback e-mail and a privacy policy URL — the testflight job says which are m
 The project (`mobile/ios`, Swift Package Manager) is Capacitor's with `App/GenyServer.swift`: the same server choice as
 Android's `GenyServerPlugin.java` — no server built in; the connect page finds one and signs in, the bridge is made again
 on that server's origin, and the first page is its `/auth/exchange` (the session cookie first-party). CI compiles it for
-the simulator when it changes (`ci.yml` "ios": on the push to main, or on a PR labelled `ci:ios`); the release build
-signs only the app target by hand (`.github/scripts/ios_signing.py`: Swift packages take no profile).
+the simulator on every change to it (`ci.yml` "ios"); the release build signs only the app target by hand
+(`.github/scripts/ios_signing.py`: Swift packages take no profile).
 
 The Download page's iOS card appears once a build has passed beta review: `ios.json` on `apps-latest` names the build
 and the public TestFlight link (its QR code on other devices; on an iPhone the button opens it). Updates come through
@@ -143,26 +116,7 @@ knows (`desktop/src/update-source.js` `phoneLink`).
 
 ## CI
 
-`.github/workflows/ci.yml`, on pushes to main and on PRs (docs alone run nothing): each part only when something it checks
-changed (the changes job) — the backend's tests in three parts side by side (`backend/tests/conftest.py --shard i/n`,
-balanced by `backend/tests/durations.json`; refresh it with `pytest -n 4 --durations=0 --junitxml=…` when the suite's
-shape changes a lot), the Windows stdio bridges, the avatar pipeline, the UI, the desktop's and the phone app's unit
-tests, the iOS app's compile, the compose files. Kept small (`.github/scripts/ci_gate.py`):
-
-- **A PR runs Linux jobs only.** The Windows stdio bridges (when a bridge or its test changed) and the iOS compile (when
-  the iOS project changed) run on a PR only with the label `ci:windows` / `ci:ios` — added after the run, re-run the PR's
-  ci; otherwise they run on the push to main.
-- **A merge isn't tested twice.** The PR's `tested` job leaves the tree it tested (the merge GitHub made) and the jobs
-  that passed on it as the commit status `ci: tested tree` on the PR's head; the merge's push to main skips those jobs
-  when it is that very tree (nothing landed on main in between). A direct push to main runs as always.
-- A newer push cancels the run before it; every job has a time limit.
-
-The heavy suites on Windows and macOS runners run only when wanted (`ci_gate.py heavy`):
-on a schedule when what they check changed since they last ran on main, on a PR only with their label (re-run after
-adding it), and by hand (Actions → Run workflow):
-
-| workflow | what | scheduled, when changed | PR label |
-|---|---|---|---|
-| `voice-local.yml` | local voice engines installed and speaking on Windows ×4, macOS ×3 (`docs/local-voice.md`) | nightly 18:47 UTC: `backend/app/voicehost/runtimes/`, `…/worker/`, `backend/tools/voice_smoke.py` | `ci:voice` |
-| `windows-update.yml` | the in-app update on Windows with the real installers (~40 min) | weekly, Sundays 19:17 UTC: the updater, `main.js`, `quit.js`, `local-runtime.js`, `package*.json`, its e2e tests (they change most days) | `ci:windows` |
-| `local-desktop.yml` | the native local runtime on every OS | — (a push to `codex/native-local`, by hand) | — |
+`.github/workflows/ci.yml`: each part only when something it checks changed (the changes job) — the backend's tests in
+three parts side by side (`backend/tests/conftest.py --shard i/n`, balanced by `backend/tests/durations.json`; refresh it
+with `pytest -n 4 --durations=0 --junitxml=…` when the suite's shape changes a lot), the Windows stdio bridges, the avatar
+pipeline, the UI, the desktop's and the phone app's unit tests, the iOS app's compile, the compose files.
