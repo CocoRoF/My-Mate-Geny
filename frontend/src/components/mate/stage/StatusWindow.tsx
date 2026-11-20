@@ -19,6 +19,7 @@ import StageWindow, { type WindowTab } from "./StageWindow";
 import Journal from "../gss/Journal";
 import { Between, Mind, NowContext, Promises, useGssView } from "../gss/StateView";
 import OtherMates from "../social/OtherMates";
+import TieCard, { TieChip, useTie } from "../ties/TieCard";
 import { RelationView } from "../RelationPanel";
 import MemoryNotebook from "../MemoryNotebook";
 import MemoryNetwork from "../memory/MemoryNetwork";
@@ -66,6 +67,7 @@ export default function StatusWindow({ mate, phone, wide = false, panel = false,
   const [tab, setTab] = useState<Tab>(initialTab);
   const { v, setV, err, setErr } = useLifeView(mate);
   const gss = useGssView(mate);
+  const tie = useTie(mate).v?.tie;
   const life = v?.enabled ? v : null;
   const tabs = [NOW, RELATION, ...MIND, ...(life ? LIFE_TABS : []), LOG];
   const shown: Tab = tabs.some((x) => x.id === tab) ? tab : "now";
@@ -107,7 +109,10 @@ export default function StatusWindow({ mate, phone, wide = false, panel = false,
               )}
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] text-content-faint">{t("stage.bond")}</p>
-                <p className="truncate text-[14px] font-semibold text-content">{rel?.enabled ? t(STAGE_LABEL[rel.stage]) : t("stage.bondOff")}</p>
+                <p className="flex min-w-0 items-center gap-1.5 text-[14px] font-semibold text-content">
+                  <span className="truncate">{rel?.enabled ? t(STAGE_LABEL[rel.stage]) : t("stage.bondOff")}</span>
+                  {rel?.enabled && tie && tie.label !== "stranger" && <TieChip tie={tie} className="!text-[11px] font-medium" testId="stage-status-tie" />}
+                </p>
                 {state && (
                   <p className="mt-0.5 truncate text-[12.5px] text-content-dim" data-testid="stage-status-feeling" data-state={state.label}>
                     <span aria-hidden>{STATE_EMOJI[state.label]}</span> {stateName(t, state)}
@@ -185,7 +190,7 @@ export default function StatusWindow({ mate, phone, wide = false, panel = false,
         </div>
       ) : shown === "relation" ? (
         // (where you two are in full — then what she is to you, the promises both ways, the others she knows)
-        <RelationView mate={mate} onMemory={() => setTab("memory")} className={wide ? COLS : "space-y-3"}>
+        <RelationView mate={mate} onMemory={() => setTab("memory")} className={wide ? COLS : "space-y-3"} top={<TieCard mate={mate} />}>
           {gss.v && (
             <>
               <Between b={gss.v.bonds} name={mate.name} />

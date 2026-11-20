@@ -47,9 +47,9 @@ const PAGE = 25;
  * Where you two are — the 관계 tab of her status window (stage/StatusWindow.tsx): the stage ring, affinity, mood, days
  * together, what the next stage still needs, stats, 30 days of affinity, milestones and anniversaries, the change journal
  * and her latest memories. It follows the server's pushes (mates.changed → the store). `onMemory`: her memories in full
- * (the 기억 tab).
+ * (the 기억 tab); `top`: what goes right after where you two are (what she sees you as: ties/TieCard.tsx).
  */
-export function RelationView({ mate, onMemory, className = "space-y-4", children }: { mate: Mate; onMemory: () => void; className?: string; children?: ReactNode }) {
+export function RelationView({ mate, onMemory, className = "space-y-4", top, children }: { mate: Mate; onMemory: () => void; className?: string; top?: ReactNode; children?: ReactNode }) {
   const t = useT();
   const [j, setJ] = useState<RelationJournal | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -114,6 +114,7 @@ export function RelationView({ mate, onMemory, className = "space-y-4", children
                 </div>
               )}
               <Hero j={j} mate={mate} />
+              {top}
               <StateCard mate={mate} />
               <NextStage j={j} mate={mate} />
             </>

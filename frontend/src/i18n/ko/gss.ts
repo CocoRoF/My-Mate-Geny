@@ -73,6 +73,7 @@ const ko: Messages<"gss"> = {
   layerFeeling: "감정",
   layerGrudge: "마음에 남은 일",
   layerBond: "둘 사이",
+  layerTie: "우리 사이",
   layerPromise: "약속",
   layerEpisode: "사건",
   layerTold: "전한 맥락",

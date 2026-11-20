@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 KEEP, DAYS = 3000, 90
-LAYERS = ("heard", "feeling", "grudge", "bond", "promise", "episode", "told", "said", "temperament", "eval")
+LAYERS = ("heard", "feeling", "grudge", "bond", "tie", "promise", "episode", "told", "said", "temperament", "eval")
 
 def _iso(t: datetime) -> str:
     return t.astimezone(timezone.utc).isoformat(timespec="seconds")

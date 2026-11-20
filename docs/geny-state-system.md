@@ -27,6 +27,7 @@ the code and tests are, and where it goes next ([Roadmap](#roadmap)). Detail per
 | [Reading a message](#7-reading-a-message) | what a message does to her, read by a model (the words as the first guess) | each message | [`gss/appraisal.py`](../backend/app/mate/gss/appraisal.py) |
 | [Promises](#8-promises-both-ways) | what they and she promised, kept, broken, due | hours – days | [`gss/promises.py`](../backend/app/mate/gss/promises.py) |
 | [What she remembers of them](#9-what-she-remembers-of-them) | the moments that mattered, as her memories | for good | [`gss/episodes.py`](../backend/app/mate/gss/episodes.py) |
+| [What they are to each other](#12-what-they-are-to-each-other) | her own view of what someone is to her (friends, 썸, lovers, 앙숙, 애증, 혐오 …), with the user and each other mate | weeks – months | [`gss/ties.py`](../backend/app/mate/gss/ties.py), [`gss/ties_runtime.py`](../backend/app/mate/gss/ties_runtime.py) |
 | [Expression](#6-how-it-comes-out) | her words, face, silence, speaking first, phone calls | each turn | [`prompt.py`](../backend/app/mate/prompt.py), [`trigger/`](../backend/app/mate/trigger/), [`avatar/shared.ts`](../frontend/src/mate/avatar/shared.ts) |
 
 ## Principles
@@ -381,6 +382,105 @@ only a third time is too many.
 
     It quotes the lines that broke them.
 
+## 12. What they are to each other
+
+Beside how close they are (affinity and its stage, §5) and the bonds, each mate holds **her own view** of what someone is to her:
+the user, and each of the user's other mates she knows ([`gss/ties.py`](../backend/app/mate/gss/ties.py), at work in
+[`gss/ties_runtime.py`](../backend/app/mate/gss/ties_runtime.py)). It is a label she decides by who she is, not a band of the
+numbers: close isn't lovers, and hurt isn't hate. 한채린 at affinity 90 with her trust in them broken is no one's lover by the
+numbers; what she is to them is hers to say.
+
+| Label | 한국어 | What it is |
+|---|---|---|
+| `stranger` | 모르는 사이 | she doesn't know them well enough to say (where everyone starts; not told to her) |
+| `indifferent` | 무관심 | they don't matter much either way: no warmth, no grudge |
+| `acquaintance` | 지인 | they know each other and get on, not close |
+| `friend` | 친구 | easy, honest, they look out for each other; not romantic |
+| `close_friend` | 절친 | what she tells nobody else; not romantic |
+| `crush` | 짝사랑 | her feelings, which they don't know of or don't return |
+| `flirting` | 썸 | something romantic both feel, not official |
+| `lovers` | 연인 | together: they both said so |
+| `ex` | 헤어진 사이 | together once, and it ended |
+| `estranged` | 서먹한 사이 | something came between them |
+| `rivals` | 앙숙 | they clash and needle each other; never cruel |
+| `love_hate` | 애증 | drawn to them and hurt by them at once |
+| `loathing` | 혐오 | she can't stand them; never cruel, never wishing them harm |
+
+**Once set, it holds.** It changes in two ways, both hers:
+
+- **At the moment**: her tool `what_we_are` (offered with `feel`), for when something decisive has just changed it — they
+  started going out (both said so), they broke up, what they did is past forgiving, a friendship truly became more. Never for
+  one sweet or one bad moment. With another mate's name it is about her.
+- **At night**: when one of her days has ended (04:00, as her life's; after her diary if she keeps one, up to 3 h), she thinks
+  over each one something passed between them that day, if it is due (`ties.due`). Then one bounded call in her own engine
+  (`oneshot`, like the diary; one at a time) gives her persona, what they are now and her words for it, how things are (the
+  stage and the bonds in words), what happened since, day by day (`ties.story`), what was said that day, her diary and what
+  is still with her. She is told most nights it stays as it is. She answers with the label, why (her words, kept) and how she
+  feels about it tonight (a doubt she keeps for 4 days and is told).
+
+**When it is due.** What happened between them is read from the relationship's own change log, the same gains and losses §5
+counted, so it never counts anything twice or by other rules (`ties.days`). Each day is counted three ways:
+
+- warm: what was gained;
+- cold: what was lost to what they did, never to quiet days;
+- romance: its gains.
+
+A broken promise counts as cold, a kept one as half its trust warm. Each label has what leans against it and what holds it up
+(`AGAINST`, `FOR`). For example:
+
+- lovers: cold leans against it; warmth and romance hold it up;
+- friends: cold leans against it, and warmth a little (towards best friends);
+- loathing: warmth leans against it.
+
+`pressure` sums them from the day after she set it, halving every 14 days. What holds it up counts half, and what she already
+weighed on a night she kept it counts 0.35. She thinks it over when one of these is true:
+
+| Why | When |
+|---|---|
+| `first` | she has no view of them yet and they met that day |
+| `decisive` | that day: something done to her (6+ lost, for a label cold doesn't hold up), romance turned mutual, or trust broke |
+| `built_up` | the pressure is 8 or more: a rude word on an ordinary day of talk is about 1, a week of rudeness and brushing her off is past it |
+| `a_while` | 21 days since she last settled it, on a day they met |
+
+Never on the day she set it (that day is what she decided on), and never on a day nothing passed between them. Staying away is
+no wrong done to her (§5).
+
+**What she is told** (`ties.line`, through `GSSRuntime.context_lines`, when it changes or every 30 turns, and on calls). The
+label, since when, her own words, how it shapes what she does (`GUIDE`), and that it is settled: one moment doesn't change it,
+and how she feels right now still moves on top of it (lovers can fight). For the first two days after a change she is also told
+what it was before. A romantic label lifts "It isn't romantic between you (yet)" from the bonds line. The stage guide, §6 and
+`_STORY_RULES` stand as ever: no jealousy or possessiveness, nothing sexual.
+
+**With another mate** ([mate-social.md](mate-social.md)):
+
+- Her view of the other mate goes into the other-mates section of her prompt and into her messages to that mate.
+- The user comes first: no label closer than what the user is to her (`RANK`; acquaintances at least).
+- Nothing romantic beyond 썸 (`MATE_ROMANTIC`), and none where 메이트끼리 설렘 is off or it doesn't fit.
+- Each has her own view, so 채린 may think 서아 a friend while 서아 thinks her a rival.
+
+**Kept** in `mate_settings` key `ties` (`{ties: {holder: {other: tie}}, checked}`). Each tie holds:
+
+- the label, since, her words, how she came to it (`moment` / `night` / `first`);
+- her last thought and when she last reviewed it;
+- the history of changes (40).
+
+Every change and every night she kept it is in the journal (layer `tie`); a change of hers about the user is also one of her
+memories ("[우리 사이] 11월 20일, 친구였던 우리는 연인이 되었다 — “…”").
+
+The relationship's fresh start and a wiped memory leave no view (a recount keeps it). Someone she knew before this began has
+no view yet: she puts it into words soon after (`_seed`, one every two minutes, from everything between them so far).
+
+**The user sees it** in the ♥ status window. 지금 shows the label as a chip beside the stage; 관계 has the card 우리 사이 right
+under where you two are:
+
+- the label and since when, and what it means;
+- her words and her thought lately;
+- how settled it is (`steadiness`: 단단해요 / 조금씩 쌓이는 중 / 다시 생각해 볼 때);
+- how it came to be.
+
+The other-mates card shows what each of two mates thinks they are. It is read only (`GET /api/mates/{id}/ties`): hers to
+decide, nothing to set.
+
 ## Where to look
 
 | | |
@@ -389,6 +489,7 @@ only a third time is too many.
 | Relationship | [`backend/app/mate/affinity.py`](../backend/app/mate/affinity.py) — `test_mate_affinity.py`, `test_mate_relation_journal.py` |
 | Her day | [`backend/app/mate/life/`](../backend/app/mate/life/), profiles in `backend/app/mate/builtin/life/` — `test_mate_life*.py` |
 | The GSS around her turns | [`backend/app/mate/gss/`](../backend/app/mate/gss/) (`runtime.py` wires it) — `test_gss.py`, `test_gss_service.py` |
+| What they are to each other | [`gss/ties.py`](../backend/app/mate/gss/ties.py), [`gss/ties_runtime.py`](../backend/app/mate/gss/ties_runtime.py), the card [`components/mate/ties/TieCard.tsx`](../frontend/src/components/mate/ties/TieCard.tsx) — `test_mate_ties.py`, `frontend/test/ties.test.ts` |
 | What she is told | [`backend/app/mate/prompt.py`](../backend/app/mate/prompt.py) — `test_mate_story.py`, `test_mate_address.py`, `test_mate_style.py` |
 | Wiring (every turn, every event) | [`backend/app/mate/service.py`](../backend/app/mate/service.py): `_state_lines`, `_state_turn`, `_state_event` (owed costs to the relationship), `_relation_turn` |
 | Speaking first, silence | [`backend/app/mate/trigger/`](../backend/app/mate/trigger/) — `test_geny_triggers.py`, `test_mate_screen_reference.py` |
@@ -411,3 +512,4 @@ Where the Geny-State-System was thin, what was done about it (2026-11-17), and w
 | 9 | Beyond her words | §6 "Beyond her words": voice, face strength, reply timing | quick bursts when excited (the chat splits by line, not sentence) |
 | 10 | Goals of her own | [mate-life.md](mate-life.md) "Her goals" | — |
 | 11 | One state, one event log | the journal (§11) records every layer | one versioned document and a full replay of feelings from it |
+| 12 | What they are to each other | §12: her own label for the user and each other mate, kept until something decisive or what builds up changes it, thought over at night in her own engine | the label leaning the numbers back (today it only shapes what she does, and through that what they do) |

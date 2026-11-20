@@ -162,6 +162,12 @@ class MateService:
 
         self.gss = GSSRuntime(self)
         sessions.mate_prepare = self.gss.prepare
+        # what they are to each other, in each mate's own view (app/mate/gss/ties.py): the user and the other mates
+        from app.mate.gss.ties_runtime import TiesRuntime
+
+        self.ties = TiesRuntime(self)
+        self.social.tie_words = self.ties.mate_words
+        self.social.tie_view = self.ties.summary
         self._diaries: set[str] = set()                    # mates whose diary is being written
         self._housekept: dict[str, str] = {}               # mate id -> the local day its memory was tidied
         store.on_memory_added = self._memory_added
@@ -611,6 +617,7 @@ class MateService:
         self.relation_reset(mate_id, "zero")
         self.store.wipe_memory(mate_id)
         self.social.forget(mate_id)  # (whom she knew among the other mates, and what they said to each other)
+        self.ties.forget(mate_id)  # (and what she thought everyone was to her, and they her)
         for folder in [*accounts.claude_transcript_dirs(files.home_dir(mate_id)), files.mate_dir(mate_id) / "codex"]:
             shutil.rmtree(folder, ignore_errors=True)
         self._log("info", f"the memory of “{self.store.get(mate_id)['name']}” was reset", code="mate.memory_wiped")
@@ -1004,12 +1011,17 @@ class MateService:
             pass
 
     def _life_tick(self) -> None:
-        """What goes with her day's clock: her diary, and her friends' lives with hers."""
+        """What goes with her day's clock: her diary, her friends' lives with hers, and her night's thinking over what the two
+        of them are (app/mate/gss/ties_runtime.py)."""
         self._life_diaries()
         try:
             self.social.tick()
         except Exception as exc:  # noqa: BLE001 - one bad minute never stops the clock
             self._log("warning", f"social: {exc}")
+        try:
+            self.ties.tick()
+        except Exception as exc:  # noqa: BLE001
+            self._log("warning", f"ties: {exc}")
 
     def _social_event(self, e: dict[str, Any], mates: dict[str, dict[str, Any]]) -> None:
         """Something between her and another mate is final (app/mate/social): logged, and
@@ -1574,6 +1586,7 @@ class MateService:
         if mode == "zero":
             self.store.close_outfits(mate_id)
             self.store.save_state(mate_id, S.new())
+            self.ties.restart(mate_id)  # (a fresh start: no view of them yet)
         return A.view(doc, now, tz)
 
     def _memory_added(self, mate_id: str) -> None:
@@ -1715,6 +1728,15 @@ class MateService:
             key = "last_user" if r["role"] == "user" else "last_answer"
             out.setdefault(key, _clip(r["content"], 200))
         return out
+
+    # ---- what the two of them are, as she sees it (app/mate/gss/ties.py) ----
+
+    async def _tool_what_we_are(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> str:
+        return self.ties.say(mate["id"], str(args.get("label") or ""), str(args.get("reason") or ""), str(args.get("with") or ""))
+
+    def ties_view(self, mate_id: str) -> dict[str, Any]:
+        self.store.get(mate_id)
+        return self.ties.view(mate_id)
 
     # ---- alarms: she phones them at a time they ask for (app/mate/alarms.py) ----
 

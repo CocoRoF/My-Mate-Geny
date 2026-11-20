@@ -247,7 +247,7 @@ class GSSRuntime:
         text = E.text(kind, data, at.astimezone(self.store.tz()), "ko" if lang == "ko" else "en", user)
         if not text:
             return
-        if kind != "hurt":
+        if kind not in ("hurt", "tie"):  # (a hurt is in the journal already; what they are has its own layer, "tie")
             self.journal.record(mate["id"], "episode", kind, data, at)
         try:
             self.store.add_memory(mate["id"], text, kind="fact", importance=4, source="gss")
@@ -262,6 +262,8 @@ class GSSRuntime:
         own of her own, what she has already said, how often it happened."""
         mate_id = mate["id"]
         out: list[str] = []
+        ties = getattr(self.mates, "ties", None)
+        tie = ties.label(mate_id) if ties is not None else None
         if rel and rel.get("enabled") and not rel.get("paused") and rel.get("started_at"):
             words = A.bond_words(rel)
             sig = [words["trust"], words["romance"], words["respect"]]
@@ -271,9 +273,11 @@ class GSSRuntime:
                 line += f"; respect {words['respect']}." if words["respect"] != "fine" else "."
                 if words["trust"] in ("broken", "shaken") and A.STAGES.index(rel["stage"]) >= A.STAGES.index("trusted"):
                     line += " You are close, but right now you don't trust them: guarded, and nothing romantic until that changes."
-                elif words["romance"] in ("none", "a spark"):
+                elif words["romance"] in ("none", "a spark") and tie not in ("crush", "flirting", "lovers", "love_hate"):
                     line += " It isn't romantic between you (yet): warmth, not love talk."
                 out.append(line)
+        if ties is not None and rel and rel.get("enabled") and not rel.get("paused"):
+            out += ties.lines(mate_id, st, turn, now, tz)  # (what the two of you are, as she sees it: gss/ties.py)
         told: list[str] = []
         unfair: list[str] = []
         hurts = 0
@@ -326,7 +330,7 @@ class GSSRuntime:
 
     # what the user is shown of the journal: what happened — never what she is told each turn (the prompt) nor a
     # model's judgement of her replies (a developer's tool: python -m app.mate.gss.evaluate)
-    SHOWN_LAYERS = ("heard", "feeling", "grudge", "bond", "promise", "episode", "said", "temperament")
+    SHOWN_LAYERS = ("heard", "feeling", "grudge", "bond", "tie", "promise", "episode", "said", "temperament")
 
     def inspect(self, mate_id: str, *, limit: int = 200, before: int | None = None) -> dict[str, Any]:
         mate = self.store.get(mate_id)
@@ -340,4 +344,5 @@ class GSSRuntime:
                 "bonds": {**{b: round(float(rel.get(b) or 0.0), 1) for b in A.BONDS}, "affinity": round(float(rel["affinity"]), 1),
                           "stage": rel["stage"], "words": A.bond_words(rel), "romance_open": A.romance_open(rel)},
                 "promises": list(reversed(P.listed(doc))),
+                "tie": self.mates.ties.summary(mate_id, "user") if getattr(self.mates, "ties", None) is not None else None,
                 "journal": self.journal.recent(mate_id, limit=limit, before=before, layers=list(self.SHOWN_LAYERS))}

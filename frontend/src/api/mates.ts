@@ -3,6 +3,7 @@ import { apiFetch, apiResponse, toLogin } from "./client";
 import { tr } from "../i18n";
 import type { Avatar, RigFrame } from "../mate/types";
 import type { Session } from "../types";
+import type { Tie } from "./ties";
 
 /** who she is — the character only (how she talks is the conversation style: MatePrefs) */
 export interface Persona {
@@ -480,7 +481,7 @@ export interface GssPromise {
   status: PromiseStatus;
   settled_at?: string | null;
 }
-export type GssLayer = "heard" | "feeling" | "grudge" | "bond" | "promise" | "episode" | "told" | "said" | "temperament" | "eval";
+export type GssLayer = "heard" | "feeling" | "grudge" | "bond" | "tie" | "promise" | "episode" | "told" | "said" | "temperament" | "eval";
 /** a model's reading of one of their messages (journal: heard) */
 export interface GssReading {
   message?: string;
@@ -517,6 +518,8 @@ export interface GssView {
   temperament_custom: Temperament;
   bonds: GssBonds;
   promises: GssPromise[];
+  /** what the two of you are, in her own view (api/ties.ts) */
+  tie?: Tie | null;
   /** newest first */
   journal: GssEntry[];
 }
@@ -1003,6 +1006,9 @@ export interface SocialMate {
   /** how she feels about them (once they have talked) */
   feels: SocialFeels | null;
   feels_back: SocialFeels | null;
+  /** what the two of them are, in her view, and in theirs (api/ties.ts) */
+  tie?: Tie | null;
+  tie_back?: Tie | null;
   /** romance could come into it (sparks are on, a man and a woman) */
   romance_fits: boolean;
   threads: SocialThreadInfo[];

@@ -13,7 +13,7 @@ HRH_MATE_SESSION; HRH_MATE_SCREEN=1 for ``see_screen`` (a mate's conversation al
 comes back as MCP image content);
 HRH_MATE_STYLE=auto|ask when she may change her own conversation style
 (``update_conversation_style``; absent = not listed); HRH_MATE_OUTFIT=1 when she may change her clothes
-(``change_outfit``); HRH_MATE_STATE=1 for ``feel``; HRH_MATE_LIFE=1 for ``do_activity``; HRH_MATE_SOCIAL=1 for
+(``change_outfit``); HRH_MATE_STATE=1 for ``feel`` and ``what_we_are``; HRH_MATE_LIFE=1 for ``do_activity``; HRH_MATE_SOCIAL=1 for
 ``introduce_friend`` and ``talk_to_mate``; HRH_MATE_GAME=1 for ``play_game``. HRH_MATE_MEMORY=1 adds
 her memory network and studying (``explore_memory`` … ``list_studies``); HRH_MATE_STUDY=1 is a study session's bridge
 instead: only the study tools (``read_page`` … ``finish_study``, app/mate/study.py).
@@ -362,6 +362,32 @@ FEEL = {
     },
 }
 
+# what the two of them are, as she sees it (app/mate/gss/ties.py): with how she feels (HRH_MATE_STATE=1)
+WHAT_WE_ARE = {
+    "name": "what_we_are",
+    "description": (
+        "Say what the two of you are now, as you see it, only when something decisive has just changed it: you just started "
+        "going out (you both said so), you broke up, they did something you can't get past, a friendship has truly become "
+        "something more. Never for one sweet or one bad moment: what you are is settled, and you think it over yourself at "
+        "night anyway. Your <context> says what you are now. The user doesn't hear this as words. Returns Noted, Already, or "
+        "why it can't be."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string", "enum": ["indifferent", "acquaintance", "friend", "close_friend", "crush", "flirting",
+                                                 "lovers", "ex", "estranged", "rivals", "love_hate", "loathing"],
+                      "description": "crush: feelings of yours they don't know of or don't return; flirting: 썸, felt on both "
+                                     "sides, not official; lovers: together, you both said so; ex: it ended; estranged: "
+                                     "something came between you; rivals: 앙숙; love_hate: 애증; loathing: 혐오."},
+            "reason": {"type": "string", "description": "Why, in one sentence of your own, in the user's language: you will remember it."},
+            "with": {"type": "string", "description": "Another of the user's mates you know, by name, when it is about her; "
+                                                      "default: the user."},
+        },
+        "required": ["label", "reason"],
+    },
+}
+
 # offered unless the mate's "changes her clothes herself" setting is off (HRH_MATE_OUTFIT=1)
 CHANGE_OUTFIT = {
     "name": "change_outfit",
@@ -533,7 +559,7 @@ def tools() -> list[dict]:
         return STUDY_TOOLS
     base = (TOOLS + NETWORK_TOOLS) if os.environ.get("HRH_MATE_MEMORY") == "1" else TOOLS[:9]
     return (base + ([UPDATE_STYLE] if os.environ.get("HRH_MATE_STYLE") in ("auto", "ask") else [])
-            + ([FEEL] if os.environ.get("HRH_MATE_STATE") == "1" else [])
+            + ([FEEL, WHAT_WE_ARE] if os.environ.get("HRH_MATE_STATE") == "1" else [])
             + ([CHANGE_OUTFIT] if os.environ.get("HRH_MATE_OUTFIT") == "1" else [])
             + ([DO_ACTIVITY] if os.environ.get("HRH_MATE_LIFE") == "1" else [])
             + ([INTRODUCE_FRIEND, TALK_TO_MATE] if os.environ.get("HRH_MATE_SOCIAL") == "1" else [])

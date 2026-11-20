@@ -67,6 +67,9 @@ class SocialRuntime:
         self.on_event: Callable[[dict[str, Any], dict[str, dict[str, Any]]], None] | None = None
         #: what two friends remember of an outing, in their own words: (event, {id: mate}) -> {text, own, lang} | None
         self.narrate: Callable[[dict[str, Any], dict[str, dict[str, Any]]], Awaitable[dict[str, Any] | None]] | None = None
+        #: what the two of them are, as she sees it (app/mate/gss/ties.py): (her id, theirs) -> in words for her / for the user
+        self.tie_words: Callable[[str, str], str] | None = None
+        self.tie_view: Callable[[str, str], dict[str, Any] | None] | None = None
         self._queue: list[str] = []
         self._running = False
         self._narrating: set[str] = set()
@@ -302,9 +305,10 @@ class SocialRuntime:
         k = B.knows(doc, me, other) or {"how": "told", "note": ""}
         names = {m: mates[m]["name"] for m in t["who"]}
         lang = K.LANG_NAMES.get(mates[me]["language"], "Korean")
+        tie = self._tie_words(me, other)
         system = K.system(mate, mates[other]["name"], how=k["how"], note=k.get("note") or "",
-                          feeling=B.words(B.rel_of(doc, me, other)), romance=self.romance_fits(mates[me], mates[other])
-                          ).replace("{language}", lang)
+                          feeling=B.words(B.rel_of(doc, me, other)) + (f"; {tie}" if tie else ""),
+                          romance=self.romance_fits(mates[me], mates[other])).replace("{language}", lang)
         now = datetime.now(timezone.utc)
         day = ""
         try:
@@ -650,6 +654,9 @@ class SocialRuntime:
             r = B.rel_of(doc, mate_id, o)
             how = "you have talked" if k["how"] == "talked" else "you know of them from the user" + (f" (“{k['note']}”)" if k.get("note") else "")
             line = f"- {mates[o]['name']}: {how}; " + (B.words(r) if r is not None else "you haven't really talked yet")
+            tie = self._tie_words(mate_id, o)
+            if tie:
+                line += f"; {tie}"
             if r is not None and self.romance_fits(me, mates[o]) and float(r.get("romance") or 0) >= 25:
                 line += " (there is something romantic in it for you, quietly)"
             known.append(line)
@@ -665,6 +672,18 @@ class SocialRuntime:
                    "; you don't message them on your own")
                 + ". Their answers come to you later.\n"
                 "- What you two say to each other is between you; the user may read it, and you will know if they did.")
+
+    def _tie_words(self, me: str, other: str) -> str:
+        try:
+            return self.tie_words(me, other) if self.tie_words is not None else ""
+        except Exception:  # noqa: BLE001 - only what she is told
+            return ""
+
+    def _tie_view(self, me: str, other: str) -> dict[str, Any] | None:
+        try:
+            return self.tie_view(me, other) if self.tie_view is not None else None
+        except Exception:  # noqa: BLE001
+            return None
 
     def lines(self, mate_id: str, query: str = "", *, day_of_her_own: bool = False) -> tuple[list[str], Callable[[], None]]:
         """What she is told with this message: news not told yet (a conversation with another mate, an outing, the user having
@@ -823,6 +842,7 @@ class SocialRuntime:
                        for t in reversed(doc["threads"]) if set(t["who"]) == {mate_id, o} and t["messages"]]
             others.append({"id": o, "name": mates[o]["name"], "icon": mates[o]["icon"], "how": k.get("how") or "talked",
                            "since": k.get("since"), "note": k.get("note") or "", "feels": B.summary(r), "feels_back": B.summary(back),
+                           "tie": self._tie_view(mate_id, o), "tie_back": self._tie_view(o, mate_id),
                            "romance_fits": self.romance_fits(mates[mate_id], mates[o]), "threads": threads[:20],
                            "plans": [{"id": p["id"], "kind": p["kind"], "names": dict(O.kinds().get(p["kind"], {}).get("names") or {}),
                                       "at": p["at"], "until": p["until"], "status": p["status"]}

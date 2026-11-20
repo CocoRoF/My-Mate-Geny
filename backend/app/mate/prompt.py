@@ -77,7 +77,8 @@ stopped, say so plainly and suggest a next step. Delegate again only if the user
 clearly needs another step.
 """
 _STYLE_TOOL_LINE = "\n- update_conversation_style: change how you talk, when the user asks for a lasting change."
-_STATE_TOOL_LINE = "\n- feel: say how you feel, when it changed noticeably."
+_STATE_TOOL_LINE = ("\n- feel: say how you feel, when it changed noticeably."
+                    "\n- what_we_are: say what the two of you are now, only when something decisive just changed it.")
 _STATE_RULES = """\
 ## How you feel
 You have feelings of your own, each with its own strength and reason, that make up one state. Your <context> says how you \

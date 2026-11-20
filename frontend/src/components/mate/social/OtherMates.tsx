@@ -16,6 +16,7 @@ import { lifeName } from "../life/needs";
 import { MateThumb } from "../MateStage";
 import { STAGE_COLOR, STAGE_LABEL } from "../RelationRing";
 import { BOND_LABEL } from "../../../mate/gss";
+import { TieChip } from "../ties/TieCard";
 
 const MOOD: Record<string, MsgKey> = { great: "social.mood_great", good: "social.mood_good", okay: "social.mood_okay", awkward: "social.mood_awkward" };
 
@@ -143,6 +144,22 @@ function OtherMate({ o, mate, v }: { o: SocialMate; mate: Mate; v: MateSocial })
           </p>
         </div>
       </div>
+      {(o.tie?.label ?? "stranger") !== "stranger" || (o.tie_back?.label ?? "stranger") !== "stranger" ? (
+        // (what each of them thinks the two of them are: hers, and theirs)
+        <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1.5" data-testid="social-ties">
+          {[
+            { who: mate.name, tie: o.tie, id: "social-tie" },
+            { who: o.name, tie: o.tie_back, id: "social-tie-back" },
+          ].map((x) =>
+            x.tie && x.tie.label !== "stranger" ? (
+              <span key={x.id} className="inline-flex min-w-0 items-center gap-1.5 text-[11.5px] text-content-dim" title={x.tie.why ? `“${x.tie.why}”` : undefined}>
+                {t("ties.her", { name: x.who })}
+                <TieChip tie={x.tie} testId={x.id} />
+              </span>
+            ) : null,
+          )}
+        </div>
+      ) : null}
       {rows.length > 0 && (
         <ul className="mt-2.5 space-y-1.5">
           {rows.map((r) => (

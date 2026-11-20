@@ -726,8 +726,10 @@ class CallService:
                 life = sim.line(now_life[0], now_life[1], now, tz, woke=False, lang=lang)
         except Exception:  # noqa: BLE001 - her day is colour, never a reason a call can't start
             life = ""
+        ties = getattr(m, "ties", None)  # (what the two of them are, as she sees it: app/mate/gss/ties.py)
+        tie_lines = ties.call_lines(call.mate_id, now, tz) if ties is not None and relation else []
         ctx = context_block(local, m._tz_name(tz, now), recalled=recalled,
-                            relation=m._relation_lines(rel, {}, now, tz, 1), outfit=self.store.worn_outfit(call.mate_id),
+                            relation=[*m._relation_lines(rel, {}, now, tz, 1), *tie_lines], outfit=self.store.worn_outfit(call.mate_id),
                             feeling=S.line(summary), life=life)
         return call_prompt(mate["name"], mate.get("persona") or {}, prefs, core, relation=relation,
                            stage=rel["stage"] if relation else None, context=ctx, recent=recent)

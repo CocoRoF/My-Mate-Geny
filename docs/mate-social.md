@@ -39,6 +39,15 @@ moves it as the user's messages move hers (`bonds.heard` → `credit_turn`: warm
 talking cool it (never into ill feeling) and ill feeling mends slowly (`drift`, once a day); an outing moves it a little (`moved`).
 After every change it is kept below what she feels for the user (`cap`).
 
+## What they are to each other
+
+Beside how she feels about another mate, she has her own view of what the two of them are: 지인, 친구, 절친, 앙숙, 애증, 서먹한
+사이, 혐오, 무관심, and 짝사랑 or 썸 where romance fits. Never 연인: nothing goes further than a spark. Never closer than what the
+user is to her. It holds once she has it. She thinks it over at night when something passed between them that day and it is due,
+or says so at the moment (`what_we_are` with the other's name). See [geny-state-system.md](geny-state-system.md) §12. Her view
+goes into what she is told of the other (the other-mates section, her messages to her), and the 관계 tab shows what each of the
+two thinks.
+
 ## Talking to each other
 
 `app/mate/social/talk.py` (pure) and `SocialRuntime.converse`: a conversation is a thread of messages between two mates, one at a

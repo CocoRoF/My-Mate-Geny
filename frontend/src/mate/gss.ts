@@ -23,10 +23,11 @@ import type {
 } from "../api/mates";
 import type { MsgKey, TFunction } from "../i18n";
 import { stateWhy, whyText } from "./reasons";
+import { tieEntryText } from "./ties";
 
 export const EMOTIONS: StateEmotion[] = ["happy", "excited", "shy", "angry", "sad", "lonely", "worried", "sleepy"];
 /** the kinds of the journal the user is shown (never "told" — her prompt — nor "eval": the server leaves them out) */
-export const LAYERS: GssLayer[] = ["heard", "feeling", "grudge", "bond", "promise", "episode", "said", "temperament"];
+export const LAYERS: GssLayer[] = ["heard", "feeling", "grudge", "bond", "tie", "promise", "episode", "said", "temperament"];
 export const CRITERIA: GssCriterion[] = ["persona", "variety", "hurt_and_apology", "address", "own_will", "screen", "limits"];
 export const EVENTS = ["ignored", "declined_call", "poke"] as const;
 export const PRESETS = ["left_unanswered", "pout_and_sweet", "repeat_offender", "threat_sorry_love"];
@@ -47,6 +48,7 @@ export const LAYER_LABEL: Record<GssLayer, MsgKey> = {
   feeling: "gss.layerFeeling",
   grudge: "gss.layerGrudge",
   bond: "gss.layerBond",
+  tie: "gss.layerTie",
   promise: "gss.layerPromise",
   episode: "gss.layerEpisode",
   told: "gss.layerTold",
@@ -322,6 +324,8 @@ export function entryText(t: TFunction, e: Pick<GssEntry, "layer" | "kind" | "da
       const kind = str(d.kind) || str(e.kind);
       return join(kind ? episodeText(t, kind) : "", str(d.text) || str(d.what) || str(d.summary), why);
     }
+    case "tie":
+      return tieEntryText(t, e.kind, d);
     case "temperament":
       return join(t("gss.entryTemperament"), str(d.by) ? t("gss.entryBy", { by: str(d.by) }) : "");
     case "eval": {

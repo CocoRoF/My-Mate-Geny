@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from app.mate.josa import josa
+from app.mate.josa import final_sound, josa
 
 DONE_KO = {"violence": "나를 때렸다", "coercion": "내게 억지로 강요했다", "threat": "나를 위협했다",
            "demeaning": "나를 깔보고 모욕했다"}
@@ -49,6 +49,23 @@ def text(kind: str, data: dict[str, Any], at: datetime, lang: str, user: str = "
     if kind == "trust_broken":
         return (f"[우리 사이] {day}, 더는 예전처럼 믿을 수가 없게 됐다." if ko else
                 f"[between us] On {day}, I stopped trusting them the way I did.")
+    if kind == "tie":  # (what the two of them are, as she came to see it: app/mate/gss/ties.py)
+        from app.mate.gss.ties import AS
+
+        label, was = str(data.get("label") or ""), str(data.get("from") or "")
+        if label not in AS:
+            return ""
+        why = " ".join(str(data.get("why") or "").split())[:120]
+        w = f" — “{why}”" if why else ""
+        prev = AS[was] if was in AS and was not in ("stranger", "crush") else None
+        if ko:
+            if label == "crush":
+                return f"[우리 사이] {day}, 그 사람을 혼자 좋아하게 되었다{w}."
+            before = (f"{prev[0]}{'이었던' if final_sound(prev[0]) in ('batchim', 'rieul') else '였던'} 우리는 " if prev else "우리는 ")
+            return f"[우리 사이] {day}, {before}{josa(AS[label][0], '이')} 되었다{w}."
+        if label == "crush":
+            return f"[between us] On {day}, I found I had feelings for them, just me{w}."
+        return f"[between us] On {day}, " + (f"from {prev[1]}, " if prev else "") + f"we became {AS[label][1]}{w}."
     return ""
 
 

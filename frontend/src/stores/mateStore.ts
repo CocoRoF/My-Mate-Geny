@@ -65,6 +65,8 @@ interface MateState {
   relationRev: Record<string, number>;
   /** per mate: her friends among the user's mates changed (the status window's 인맥 tab refetches) */
   socialRev: Record<string, number>;
+  /** what she sees them as (app/mate/gss/ties.py) moved: its views refetch */
+  tiesRev: Record<string, number>;
   /** per mate: the game with her moved (the 놀이 window refetches) */
   gameRev: Record<string, number>;
   /** per mate: bumped when her own conversation-style changes changed (chips and the style tab's history refetch) */
@@ -199,6 +201,7 @@ export const useMateStore = create<MateState>((set, get) => ({
   graphRev: {},
   relationRev: {},
   socialRev: {},
+  tiesRev: {},
   gameRev: {},
   styleRev: {},
   bumpStyle: (mateId) => set((s) => ({ styleRev: { ...s.styleRev, [mateId]: (s.styleRev[mateId] ?? 0) + 1 } })),
@@ -318,8 +321,8 @@ export const useMateStore = create<MateState>((set, get) => ({
       set((s) => ({ graphRev: { ...s.graphRev, [mateId]: (s.graphRev[mateId] ?? 0) + 1 } }));
       if (reason !== "memory") return; // (nothing else about the mate changed: no full reload)
     }
-    if ((reason === "social" || reason === "game") && mateId) {
-      const k = reason === "social" ? "socialRev" : "gameRev";
+    if ((reason === "social" || reason === "game" || reason === "ties") && mateId) {
+      const k = reason === "social" ? "socialRev" : reason === "ties" ? "tiesRev" : "gameRev";
       set((s) => ({ [k]: { ...s[k], [mateId]: (s[k][mateId] ?? 0) + 1 } }) as Partial<MateState>);
       return; // (nothing else about the mate changed: no full reload)
     }

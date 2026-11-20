@@ -73,6 +73,7 @@ export default {
   layerFeeling: "Feeling",
   layerGrudge: "Still with her",
   layerBond: "Between you",
+  layerTie: "What you are",
   layerPromise: "Promise",
   layerEpisode: "Episode",
   layerTold: "Told",
