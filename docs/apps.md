@@ -158,11 +158,11 @@ tests, the iOS app's compile, the compose files. Kept small (`.github/scripts/ci
 - A newer push cancels the run before it; every job has a time limit.
 
 The heavy suites on Windows and macOS runners run only when wanted (`ci_gate.py heavy`):
-nightly when what they check changed since they last ran on main, on a PR only with their label (re-run after adding it),
-and by hand (Actions → Run workflow):
+on a schedule when what they check changed since they last ran on main, on a PR only with their label (re-run after
+adding it), and by hand (Actions → Run workflow):
 
-| workflow | what | nightly when changed | PR label |
+| workflow | what | scheduled, when changed | PR label |
 |---|---|---|---|
-| `voice-local.yml` | local voice engines installed and speaking on Windows ×4, macOS ×3 (`docs/local-voice.md`) | `backend/app/voicehost/runtimes/`, `…/worker/`, `backend/tools/voice_smoke.py` — 18:47 UTC | `ci:voice` |
-| `windows-update.yml` | the in-app update on Windows with the real installers | the updater, `main.js`, `quit.js`, `local-runtime.js`, `package*.json`, its e2e tests — 19:17 UTC | `ci:windows` |
+| `voice-local.yml` | local voice engines installed and speaking on Windows ×4, macOS ×3 (`docs/local-voice.md`) | nightly 18:47 UTC: `backend/app/voicehost/runtimes/`, `…/worker/`, `backend/tools/voice_smoke.py` | `ci:voice` |
+| `windows-update.yml` | the in-app update on Windows with the real installers (~40 min) | weekly, Sundays 19:17 UTC: the updater, `main.js`, `quit.js`, `local-runtime.js`, `package*.json`, its e2e tests (they change most days) | `ci:windows` |
 | `local-desktop.yml` | the native local runtime on every OS | — (a push to `codex/native-local`, by hand) | — |
