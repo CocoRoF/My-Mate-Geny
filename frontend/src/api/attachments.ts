@@ -37,6 +37,14 @@ export function uploadAttachment(
   return { promise, abort: () => xhr.abort() };
 }
 
+/** + → 대화 전달 (docs/chat-forward.md): another chat's conversation into this chat's composer — a pending attachment that
+ *  goes into the next message in full, for this chat's agent to read. */
+export const forwardChat = (sessionId: string, from: string) =>
+  apiFetch<Attachment>(`/api/sessions/${sessionId}/forward`, {
+    method: "POST",
+    body: JSON.stringify({ session_id: from }),
+  });
+
 export const deleteAttachment = (id: string) =>
   apiFetch(`/api/attachments/${id}`, { method: "DELETE" });
 

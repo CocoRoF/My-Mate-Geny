@@ -61,7 +61,7 @@ from app.services.turn_resume import (BACKOFF, MAX_ATTEMPTS, WINDOW_S, TurnJourn
                                       orphan_turns, wait_reachable)
 from app.services.history_aggregates import SessionAggregates
 from app.services.history_page import HistoryPager
-from app.services.context_handoff import build_blocks, catchup_preamble, handoff_preamble, ENGINE_LABEL
+from app.services.context_handoff import build_blocks, catchup_preamble, forward_document, handoff_preamble, ENGINE_LABEL
 from app.services.engines import EngineManager
 from app.services import changes as change_tracker
 from app.services import hidden_messages
@@ -734,6 +734,22 @@ class SessionService:
         if resume_id:
             return resume_id, catchup_preamble(provider, blocks), "catchup", len(msgs)
         return None, handoff_preamble(provider, blocks), "handoff", len(msgs)
+
+    def forward(self, sid: str, other: str) -> dict[str, Any]:
+        """+ → 대화 전달 (docs/chat-forward.md): chat ``other``'s conversation into ``sid``'s composer — its transcript as
+        the user sees it (what they deleted from their view stays out), a pending attachment sent with their next message
+        and read by this chat's agent in full. ``KeyError``: no such chat; ``ValueError``: the same chat."""
+        self.get(sid)
+        src = self.get(other)
+        if other == sid:
+            raise ValueError("a chat can't forward itself")
+        if self._attachments is None:
+            raise ValueError("attachments are not available")
+        msgs = [self._as_call_note(m) for m in self.messages(other)
+                if not hidden_messages.is_hidden(m.get("meta")) and not (m.get("meta") or {}).get("speech_pending")]
+        doc = forward_document(src, build_blocks(msgs, self.events(other, view=True)), at=now_iso(),
+                               working=self.is_running(other))
+        return self._attachments.save_forward(sid, f"{(src.get('title') or 'chat').strip()[:80]}.md", doc)
 
     # ---- live subscription (WebSocket fan-out) ----
 

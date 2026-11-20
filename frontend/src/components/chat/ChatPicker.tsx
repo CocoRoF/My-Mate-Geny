@@ -1,5 +1,5 @@
 /**
- * + → 다른 세션의 대화: which chat to keep beside this one (components/chat/LinkedChat.tsx) — the most recently active first,
+ * + → 대화 전달: which chat's conversation to forward to this one (docs/chat-forward.md) — the most recently active first,
  * found by its name or folder.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -60,7 +60,7 @@ export default function ChatPicker({ current, onPick, onClose }: { current: stri
             >
               <span className={`h-2 w-2 shrink-0 rounded-full ${s.running ? "bg-accent animate-pulse-dot" : "bg-border-strong"}`} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium text-content">{s.title || t("chat.linkedUntitled")}</span>
+                <span className="block truncate text-[13px] font-medium text-content">{s.title || t("chat.forwardUntitled")}</span>
                 <span className="block truncate text-[11px] text-content-faint">{base(s.workspace_path || "")}</span>
               </span>
               <span className="shrink-0 text-[11px] text-content-faint">{s.updated_at ? relTime(s.updated_at) : ""}</span>

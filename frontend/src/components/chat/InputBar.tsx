@@ -12,9 +12,9 @@ import ChatControls from "./ChatControls";
 import ComposerMenu from "./ComposerMenu";
 import UsageFooter from "./UsageFooter";
 import { DoneBell, DoneChip } from "./DoneNotify";
-import LinkedChat from "./LinkedChat";
 import ChatPicker from "./ChatPicker";
-import { useLinkedChats } from "../../stores/linkedChatStore";
+import { forwardChat } from "../../api/attachments";
+import { useComposerStore } from "../../stores/composerStore";
 import ContextMeter from "./ContextMeter";
 import { useWorkbench } from "../../stores/workbenchStore";
 import { usePhone } from "../../lib/device";
@@ -59,8 +59,7 @@ export default function InputBar({
   );
   const c = useComposer({ sid, store: useChatStore, onSend, onSteer, onStop, actions: ACTIONS, runAction, slash: true, mentions: true });
   const screen = useLocalScreenControls(sid, session.title);
-  // another chat beside this one (+ → 다른 세션의 대화): picked, it stays above the message box until its ✕
-  const linked = useLinkedChats((s) => s.links[sid]);
+  // + → 대화 전달: another chat's conversation goes with the next message, for this chat's agent (docs/chat-forward.md)
   const [picking, setPicking] = useState(false);
   const { items, uploading, failed, hasContent, notice, setNotice, isStreaming, touch, trigger } = c;
 
@@ -97,7 +96,6 @@ export default function InputBar({
           </div>
         )}
 
-        {linked && <LinkedChat key={linked} sid={sid} other={linked} />}
         <DoneChip sid={sid} />
         <QueuedList queue={c.queue} onRemove={c.unqueue} />
 
@@ -149,8 +147,13 @@ export default function InputBar({
                   current={sid}
                   onClose={() => setPicking(false)}
                   onPick={(other) => {
-                    useLinkedChats.getState().link(sid, other);
                     setPicking(false);
+                    forwardChat(sid, other)
+                      .then((att) => {
+                        useComposerStore.getState().restore(sid, [att]);
+                        c.taRef.current?.focus();
+                      })
+                      .catch((e: Error) => setNotice(t("chat.forwardFailed", { error: e.message })));
                   }}
                 />
               )}

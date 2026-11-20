@@ -1,7 +1,8 @@
 import { visibleAttachments } from "../../lib/attachmentVisibility";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Attachment } from "../../types";
 import { downloadUrl } from "../../api/attachments";
+import { apiResponse } from "../../api/client";
 import Icon from "../ui/Icon";
 import Lightbox from "./Lightbox";
 import ImageEditor from "./ImageEditor";
@@ -22,6 +23,51 @@ function Unavailable({ name, big }: { name: string; big?: boolean }) {
       <span className="line-clamp-2 break-all">{name}</span>
       <span className="text-content-faint/70 light:text-content-faint">{t("files.imageUnavailable")}</span>
     </span>
+  );
+}
+
+/** Another chat's conversation sent with the message (+ → 대화 전달, docs/chat-forward.md): its chat's name; opened, the
+ *  transcript the agent got, read in place. */
+function ForwardCard({ att }: { att: Attachment }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!open || text !== null) return;
+    let alive = true;
+    apiResponse(att.url)
+      .then((r) => r.text())
+      .then((s) => alive && setText(s))
+      .catch((e: Error) => alive && setError(e.message));
+    return () => {
+      alive = false;
+    };
+  }, [open, text, att.url]);
+  return (
+    <div className="w-[min(420px,80vw)] overflow-hidden rounded-xl border border-border bg-surface-2/80" data-testid="forwarded-chat">
+      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2.5 p-2 pr-2.5 text-left" aria-expanded={open}>
+        <span className="grid place-items-center w-9 h-9 shrink-0 rounded-lg bg-success/12 text-success">
+          <Icon name="chats" size={17} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-medium text-content">{att.name.replace(/\.md$/, "")}</span>
+          <span className="block text-[11px] text-content-faint">{t("chat.forwardSent")}</span>
+        </span>
+        <span className="shrink-0 text-[11px] text-accent">{open ? t("chat.forwardHide") : t("chat.forwardShow")}</span>
+      </button>
+      {open && (
+        <div className="max-h-[50vh] overflow-y-auto border-t border-border/70 px-3 py-2.5 text-[12px] leading-relaxed text-content-dim">
+          {error ? (
+            <span className="text-danger">{error}</span>
+          ) : text === null ? (
+            <span className="text-content-faint">{t("common.loading")}</span>
+          ) : (
+            <pre className="whitespace-pre-wrap break-words font-sans">{text}</pre>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -102,6 +148,7 @@ export default function MessageAttachments({
         ))}
 
       {files.map((f) => {
+        if (f.origin === "forward") return <ForwardCard key={f.id} att={f} />;
         const { icon, tone } = fileVisual(f.name, f.mime);
         const inline = opensInline(f.mime);
         return (

@@ -13,6 +13,10 @@ sessions, also copied to the remote host). How it reaches the model:
   :func:`inline_note` instead: each file's id (to forward it to a chat), what
   it is, and its readable text inline (filled in by
   ``_inline_files.prepare_inline`` before the envelope is built).
+* **A conversation forwarded from another chat** (+ → 대화 전달, origin
+  ``forward``: docs/chat-forward.md) is a transcript file too, but it goes into
+  the message itself (``<forwarded_chat>``), whatever the engine: it is what the
+  user wants this agent to know, not a file to open if needed.
 """
 
 from __future__ import annotations
@@ -40,6 +44,8 @@ class Attachment:
     label: str = ""
     # a picture of their screen the app sent along (a share, a trigger's look), not a file the user gave
     screen: bool = False
+    # another chat's conversation the user forwarded (its transcript, read from ``path`` into the message)
+    forwarded: bool = False
 
     @property
     def is_image(self) -> bool:
@@ -63,8 +69,36 @@ def human_size(n: int) -> str:
     return f"{n} B"
 
 
+FORWARD_CHARS = 80_000  # a forwarded chat's transcript in the message (the file is written within this)
+
+
+def forwarded_text(a: Attachment) -> str:
+    try:
+        with open(a.path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read(FORWARD_CHARS + 1)
+    except OSError:
+        return "(the forwarded conversation's file is missing on the server)"
+    return text if len(text) <= FORWARD_CHARS else text[:FORWARD_CHARS].rstrip() + "\n…[truncated]"
+
+
+def forward_note(fwd: list[Attachment]) -> str:
+    """Conversations the user forwarded from their other chats, in full, so this agent knows them."""
+    if not fwd:
+        return ""
+    parts = []
+    for a in fwd:
+        parts.append(
+            f'<forwarded_chat id="{a.id}" name="{_file_attr(a.name)}">\n'
+            "The user forwarded this conversation from another of their chats so that you know what was said and done "
+            "there (oldest first; the other agent's tool use is summarised as 'Actions'). Take it in as context for this "
+            "chat; act on it as the user's message says.\n\n"
+            f"{forwarded_text(a)}\n</forwarded_chat>")
+    return "\n\n".join(parts)
+
+
 def attachment_note(atts: list[Attachment], *, inline_images: bool) -> str:
     """Plain-text manifest appended to the user's message."""
+    atts = [a for a in atts if not a.forwarded]
     if not atts:
         return ""
     lines = ["<attachments>", "The user attached these files to this message:"]
@@ -104,7 +138,7 @@ def inline_note(atts: list[Attachment], *, inline_images: bool) -> str:
     files with, what each one is, and the readable contents. Pictures of their
     screen are told apart (``screen``): the user didn't give those."""
     shots = [a for a in atts if a.screen]
-    atts = [a for a in atts if not a.screen]
+    atts = [a for a in atts if not a.screen and not a.forwarded]
     screen = _screen_note(shots, inline_images=inline_images) if shots else ""
     if not atts:
         return screen
@@ -135,8 +169,13 @@ def inline_note(atts: list[Attachment], *, inline_images: bool) -> str:
 def compose_text(text: str, atts: list[Attachment], *, inline_images: bool, inline_files: bool = False) -> str:
     note = (inline_note(atts, inline_images=inline_images) if inline_files
             else attachment_note(atts, inline_images=inline_images))
-    body = text.strip() or ("(No message text — see the attached files.)" if any(not a.screen for a in atts) else "")
-    return "\n\n".join(x for x in (body, note) if x)
+    fwd = [a for a in atts if a.forwarded]
+    files = [a for a in atts if not a.screen and not a.forwarded]
+    body = text.strip() or (
+        "(No message text — the user forwarded the conversation below: take it in, and tell them briefly what you "
+        "understood from it and how it bears on this chat.)" if fwd and not files
+        else "(No message text — see the attached files.)" if files or fwd else "")
+    return "\n\n".join(x for x in (body, forward_note(fwd), note) if x)
 
 
 def claude_image_block(a: Attachment) -> dict:

@@ -85,7 +85,9 @@ function FileChip({ it }: { it: PendingFile }) {
   const remove = useComposerStore((s) => s.remove);
   const retry = useComposerStore((s) => s.retry);
   const t = useT();
-  const { icon, tone } = fileVisual(it.name, it.mime);
+  // another chat's conversation going with the message (+ → 대화 전달): its chat's name, not a file's
+  const forward = it.attachment?.origin === "forward";
+  const { icon, tone } = forward ? { icon: "chats" as const, tone: "bg-success/12 text-success" } : fileVisual(it.name, it.mime);
   return (
     <div className="group relative shrink-0" title={it.error ? `${it.name} — ${it.error}` : it.name}>
       <div
@@ -97,7 +99,7 @@ function FileChip({ it }: { it: PendingFile }) {
           <Icon name={icon} size={17} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[12.5px] font-medium text-content">{it.name}</div>
+          <div className="truncate text-[12.5px] font-medium text-content">{forward ? it.name.replace(/\.md$/, "") : it.name}</div>
           {it.status === "error" ? (
             <button onClick={() => retry(it.localId)} className="flex items-center gap-1 text-[11px] text-danger truncate max-w-full">
               <Icon name="alert-circle" size={11} /> <span className="truncate">{it.error}</span>
@@ -106,7 +108,9 @@ function FileChip({ it }: { it: PendingFile }) {
             <div className="text-[11px] text-content-faint">
               {it.status === "uploading"
                 ? t("files.uploadingPct", { pct: Math.round(it.progress * 100) })
-                : [extOf(it.name), formatBytes(it.size)].filter(Boolean).join(" · ")}
+                : forward
+                  ? t("chat.forwardLabel")
+                  : [extOf(it.name), formatBytes(it.size)].filter(Boolean).join(" · ")}
             </div>
           )}
         </div>
