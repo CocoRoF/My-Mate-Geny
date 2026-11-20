@@ -1,15 +1,25 @@
-# Tests and builds on every push to main and every PR — each part only when something it checks changed (the changes
-# job), so a UI change doesn't wait on the backend's tests, nor a backend change on the UI's build.
+# Tests and builds on pushes to main and on PRs — each part only when something it checks changed (the changes job), so
+# a UI change doesn't wait on the backend's tests, nor a backend change on the UI's build; docs alone run nothing.
+#
+# Kept small (2026-11-20, the owner: Actions use was far too high; .github/scripts/ci_gate.py decides):
+#   - a pull request runs Linux jobs only: the Windows bridges and the iOS compile only with the label ci:windows /
+#     ci:ios (added later: re-run the PR's ci) — otherwise they run on the push to main, when what they check changed;
+#   - a PR's merge is not tested twice: on its push to main, the jobs its PR passed on the very same tree are skipped
+#     (the tested job leaves that tree on the PR's head as the commit status "ci: tested tree");
+#   - a newer push cancels the run before it; every job has a time limit.
 name: ci
 
 on:
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
   pull_request:
+    paths-ignore: ["docs/**", "**/*.md"]
 
 permissions:
   contents: read
-  pull-requests: read # (the changes job reads a PR's files)
+  pull-requests: read # (the changes job reads a PR's files and labels, and which PR a push merged)
+  statuses: read # (… and what that PR passed)
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -21,25 +31,34 @@ env:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # (each job's go: what changed, the PR's labels, what the merged PR already passed — ci_gate.py ci)
     outputs:
-      backend: ${{ steps.f.outputs.backend }}
-      avatar: ${{ steps.f.outputs.avatar }}
-      frontend: ${{ steps.f.outputs.frontend }}
-      desktop: ${{ steps.f.outputs.desktop }}
-      mobile: ${{ steps.f.outputs.mobile }}
-      ios: ${{ steps.f.outputs.ios }}
-      compose: ${{ steps.f.outputs.compose }}
+      backend: ${{ steps.go.outputs.backend }}
+      bridges-windows: ${{ steps.go.outputs.bridges-windows }}
+      avatar-processing: ${{ steps.go.outputs.avatar-processing }}
+      frontend: ${{ steps.go.outputs.frontend }}
+      desktop: ${{ steps.go.outputs.desktop }}
+      mobile: ${{ steps.go.outputs.mobile }}
+      ios: ${{ steps.go.outputs.ios }}
+      compose: ${{ steps.go.outputs.compose }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: f
         with:
+          # (the Windows and macOS jobs follow their own files only — not this workflow: a change here runs them by label)
           filters: |
             ci: &ci
               - .github/workflows/ci.yml
+              - .github/scripts/ci_gate.py
             backend:
               - *ci
               - backend/**
+            bridges:
+              - backend/app/**/*bridge*.py
+              - backend/app/workspaces/remote_jobs.py
+              - backend/tests/test_stdio_bridges.py
             avatar:
               - *ci
               - backend/app/avatar/**
@@ -55,7 +74,6 @@ jobs:
               - *ci
               - mobile/**
             ios:
-              - *ci
               - mobile/ios/**
               - mobile/package.json
               - mobile/package-lock.json
@@ -67,6 +85,11 @@ jobs:
               - Dockerfile*
               - backend/Dockerfile*
               - frontend/Dockerfile*
+      - id: go
+        run: python3 .github/scripts/ci_gate.py ci
+        env:
+          FILTERS: ${{ toJSON(steps.f.outputs) }}
+          GH_TOKEN: ${{ github.token }}
 
   # In three parts side by side (tests/conftest.py --shard, balanced by tests/durations.json), each on all its cores
   backend:
@@ -74,6 +97,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -95,11 +119,13 @@ jobs:
       - run: python -m pytest -q -p no:cacheprovider -n auto --shard "${{ matrix.part }}"
 
   # The app's stdio MCP servers on Windows, started as the app starts them (backend/tests/test_stdio_bridges.py): a pipe there
-  # is the system's code page, not UTF-8. Stdlib + pytest only, no app import.
+  # is the system's code page, not UTF-8. Stdlib + pytest only, no app import. When a bridge or its test changed: on a PR
+  # with the label ci:windows, else on the push to main.
   bridges-windows:
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.bridges-windows == 'true'
     runs-on: windows-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: backend
@@ -114,8 +140,9 @@ jobs:
   # The avatar pipeline runs in a venv of its own (app/avatar/deps.py), so the job above skips it: cut-outs are checked here.
   avatar-processing:
     needs: changes
-    if: needs.changes.outputs.avatar == 'true'
+    if: needs.changes.outputs.avatar-processing == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -142,6 +169,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -165,6 +193,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: desktop
@@ -184,6 +213,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.mobile == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: mobile
@@ -197,12 +227,13 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm test
 
-  # The iOS app compiles (the Swift side: GenyServer.swift with Capacitor), for the simulator, unsigned
+  # The iOS app compiles (the Swift side: GenyServer.swift with Capacitor), for the simulator, unsigned. When the iOS project
+  # changed: on a PR with the label ci:ios, else on the push to main.
   ios:
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: mobile
@@ -234,7 +265,27 @@ jobs:
     needs: changes
     if: needs.changes.outputs.compose == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config -q
       - run: docker compose -f deploy/docker-compose.yml config -q
+
+  # A PR's tested tree (the merge GitHub made of it) and the jobs that passed on it, as a commit status on its head: its
+  # push to main skips them when it is that very tree (ci_gate.py). Nothing when a job failed.
+  tested:
+    needs: [changes, backend, bridges-windows, avatar-processing, frontend, desktop, mobile, ios, compose]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      - run: python3 .github/scripts/ci_gate.py mark
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}

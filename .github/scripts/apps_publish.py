@@ -3,7 +3,7 @@
 
     apps_publish.py begin <line> <channel> <platforms…>          this run's version and its (draft) release → GITHUB_OUTPUT
     apps_publish.py publish <platform> <version> <tag|-> [--latest] [--wait-verify] <file>…
-    apps_publish.py promote <version> <tag> <platforms…>          every platform of this run onto apps-latest, together
+    apps_publish.py promote <version> <tag> [<platforms…>]        every platform of this run onto apps-latest, together
     apps_publish.py mac-legacy <version>                          the macOS feed both architectures share (apps ≤ 1.1.0)
     apps_publish.py finalize <tag> <channel>                      an empty draft goes; old releases are pruned
 
@@ -25,9 +25,10 @@ both architectures of one version are up: until then those apps keep the last co
 
 promote: since 2026-11-19 a release run publishes each platform into its versioned release only, and — once every
 platform it built is there — puts them all onto apps-latest at once: every installer first, then every feed, then the
-older files go. The apps are always the same version on the Download page (it shows the version every platform has
-while the files are going up: backend/app/services/downloads.py). A platform that failed holds them all at the last
-version until it is run again.
+older files go. The platforms of one release reach the Download page together, never one of them ahead (it shows the
+version every platform has while the files are going up: backend/app/services/downloads.py). A platform that failed
+holds them all at the last version until it is run again — or until a later release goes up: what that one didn't
+build again (nothing it is made of changed) goes up with it from the release it was built in (held_back).
 """
 from __future__ import annotations
 
@@ -288,31 +289,65 @@ def cmd_mac_legacy(version: str) -> None:
 # ---- promote
 
 
+def held_back(now: list[dict], skip: list[str]) -> dict[str, tuple[str, str]]:
+    """platform → (version, tag) of a build newer than apps-latest's, whole in its versioned release, that never went up:
+    its run failed elsewhere (the latest job held them all), and nothing it is made of has changed since, so it isn't
+    built again (apps_plan.py). iOS reaches the Download page through TestFlight (ios.json), not here."""
+    rx = re.compile(r"^apps-v(\d+\.\d+\.\d+)$")
+    r = gh("api", "--paginate", f"repos/{repo()}/releases?per_page=100", "--jq",
+           ".[] | select(.draft | not) | {tag: .tag_name, files: [.assets[].name]}")
+    rels = sorted((x for line in r.stdout.splitlines() if line.strip() and rx.match((x := json.loads(line))["tag"])),
+                  key=lambda x: vkey(rx.match(x["tag"]).group(1)), reverse=True)
+    out: dict[str, tuple[str, str]] = {}
+    for p, (pattern, feeds) in PLATFORMS.items():
+        if p == "ios" or p in skip:
+            continue
+        pat = re.compile(pattern)
+        hit = next((x for x in rels if any(pat.search(f) for f in x["files"])), None)
+        # (its feed goes up last: with the feed there, every installer it names is there too)
+        if not hit or not all(f in hit["files"] for f in feeds):
+            continue
+        v = rx.match(hit["tag"]).group(1)
+        there = published_version(p, now)
+        if not there or vkey(v) > vkey(there):
+            out[p] = (v, hit["tag"])
+    return out
+
+
 def cmd_promote(version: str, tag: str, platforms: list[str]) -> None:
-    have = assets(tag)
     if not release(LATEST):
         gh("release", "create", LATEST, "--title", "Apps (latest)", "--notes", "Each platform's newest build.", "--latest=false")
     now = assets(LATEST)
-    plan: dict[str, list[str]] = {}
-    for p in platforms:
+    source = {p: (version, tag) for p in platforms}  # platform → the build (version, release) that goes up
+    for p, (v, t) in held_back(now, platforms).items():
+        print(f"  {p} {v} ({t}): built by an earlier run that was held back — it goes up with these")
+        source[p] = (v, t)
+    files: dict[str, list[dict]] = {}
+    plan: dict[str, tuple[str, str, list[str]]] = {}
+    for p, (v, t) in source.items():
         rx, feeds = PLATFORMS[p]
         pat = re.compile(rx)
-        names = [a["name"] for a in have if pat.search(a["name"]) or a["name"] in feeds]
+        if t not in files:
+            files[t] = assets(t)
+        names = [a["name"] for a in files[t] if pat.search(a["name"]) or a["name"] in feeds]
         if not any(pat.search(n) for n in names):
-            raise SystemExit(f"{tag} has no {p} build: nothing goes onto {LATEST}")
+            raise SystemExit(f"{t} has no {p} build: nothing goes onto {LATEST}")
         there = published_version(p, now)
-        if there and vkey(there) > vkey(version):
-            print(f"  {LATEST} has {p} {there}, newer than {version}: left as it is")
+        if there and vkey(there) > vkey(v):
+            print(f"  {LATEST} has {p} {there}, newer than {v}: left as it is")
             continue
-        plan[p] = names
+        plan[p] = (v, t, names)
     if not plan:
+        print("nothing goes onto the Download page")
         return
     out = Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "promote"
     out.mkdir(parents=True, exist_ok=True)
-    wanted = [n for names in plan.values() for n in names]
-    gh("release", "download", tag, "-D", str(out), "--clobber", *[x for n in wanted for x in ("-p", n)])
+    for t in sorted({t for _, t, _ in plan.values()}):
+        names = [n for _, pt, ns in plan.values() if pt == t for n in ns]
+        gh("release", "download", t, "-D", str(out), "--clobber", *[x for n in names for x in ("-p", n)])
+    wanted = [n for _, _, names in plan.values() for n in names]
     feeds_of = {n for p in plan for n in PLATFORMS[p][1]}
-    print(f"{', '.join(plan)} {version} → {LATEST}, together")
+    print(", ".join(f"{p} {v}" for p, (v, _, _) in plan.items()) + f" → {LATEST}, together")
     # 1. every installer, 2. every feed (a feed never names a file not there yet), 3. the older files go
     with ThreadPoolExecutor(3) as pool:
         list(pool.map(lambda n: upload(LATEST, [out / n]), [n for n in wanted if n not in feeds_of]))
@@ -324,9 +359,11 @@ def cmd_promote(version: str, tag: str, platforms: list[str]) -> None:
         if mine and n not in keep and not legacy_mac_needs(n):
             gh("release", "delete-asset", LATEST, n, "--yes", check=False)
             print(f"  {LATEST} − {n}")
-    latest_notes(version, tag)
-    if any(p.startswith("macos-") for p in plan):
-        cmd_mac_legacy(version)
+    newest_v, newest_t, _ = max(plan.values(), key=lambda x: vkey(x[0]))
+    latest_notes(newest_v, newest_t)
+    macs = [plan[p][0] for p in ("macos-arm64", "macos-x64") if p in plan]
+    if macs:
+        cmd_mac_legacy(max(macs, key=vkey))
 
 
 # ---- finalize
@@ -374,7 +411,7 @@ if __name__ == "__main__":
     pr = sub.add_parser("promote")
     pr.add_argument("version")
     pr.add_argument("tag")
-    pr.add_argument("platforms", nargs="+", choices=list(PLATFORMS))
+    pr.add_argument("platforms", nargs="*", choices=list(PLATFORMS))
     m = sub.add_parser("mac-legacy")
     m.add_argument("version")
     f = sub.add_parser("finalize")
