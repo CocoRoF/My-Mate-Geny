@@ -9,6 +9,7 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useChatSocket } from "../../hooks/useChatSocket";
 import MessageList from "./MessageList";
 import InputBar from "./InputBar";
+import SystemBar from "../layout/SystemBar";
 import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
 import NewSessionPanel from "./NewSessionPanel";
 import UsageModal from "../usage/UsageModal";
@@ -287,6 +288,7 @@ export default function ChatView() {
             <>
               <MessageList />
               <InputBar key={active.id} onSend={send} onSteer={steer} onStop={stop} session={active} />
+              <SystemBar safeBottom />
             </>
           }
         />

@@ -31,6 +31,7 @@ import settings from "./settings.ts";
 import social from "./social.ts";
 import stage from "./stage.ts";
 import studio from "./studio.ts";
+import sysbar from "./sysbar.ts";
 import ties from "./ties.ts";
 import tasks from "./tasks.ts";
 import topbar from "./topbar.ts";
@@ -39,5 +40,5 @@ import usage from "./usage.ts";
 import voiceStudio from "./voiceStudio.ts";
 import workspace from "./workspace.ts";
 
-const ko: Locale = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, games, guide, gss, higgsfield, imageStudio, life, localVoice, mate, mateSettings, memgraph, nav, net, profile, providers, session, settings, social, stage, studio, tasks, ties, topbar, turn, usage, voiceStudio, workspace };
+const ko: Locale = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, games, guide, gss, higgsfield, imageStudio, life, localVoice, mate, mateSettings, memgraph, nav, net, profile, providers, session, settings, social, stage, studio, tasks, sysbar, ties, topbar, turn, usage, voiceStudio, workspace };
 export default ko;
