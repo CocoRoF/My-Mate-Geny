@@ -153,8 +153,9 @@ SLUR_HURT, SLUR_HURT_MORE = 0.1, 0.05
 # such): it throws her first (flustered), and each time again within the window it lands more as anger — what builds up, never a
 # script: what she makes of it is hers
 ODD_THROWN, ODD_ANGRY, ODD_MORE, ODD_MOST, ODD_WINDOW = 0.3, 0.12, 0.2, 0.7, timedelta(hours=1)
-#: …and whatever good mood she was in is gone (2026-11-21: "I'll wait outside your house while you sleep" left her "excited")
-ODD_DROP = 0.45
+#: …and whatever good mood she was in is gone (2026-11-21: "I'll wait outside your house while you sleep" left her "excited"),
+#: her everyday sunniness too while it is fresh (as much as 0.7 of anger mutes it)
+ODD_DROP, ODD_SHAKEN = 0.45, 0.7
 APOLOGY_AFTER_HOSTILE = 0.15
 # her temper in the moment (``heat``, 0 – 1: how worked up she is, beside how angry): anger at what they did winds her up — and
 # once she can't get any angrier, each new provocation still does — and it cools fast when they stop (HEAT_HALF_LIFE_H). From
@@ -485,11 +486,13 @@ def levels(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any, *, of
         out[e] = {"v": round(v, 3), "why": why}
     # (really angry, the cheerfulness that is just how she is goes under: nobody is sunny and furious at once — what made her
     # glad just now still counts)
+    # …nor right after something creepy or out of line, while it is fresh (``ODD_SHAKEN``)
     angry = out["angry"]["v"]
-    if angry >= ANGRY_MUTES:
+    mute = max(angry if angry >= ANGRY_MUTES else 0.0, ODD_SHAKEN if _lately(doc.get("odd"), now, ODD_WINDOW) else 0.0)
+    if mute:
         for e in ("happy", "excited"):
             if (out[e]["why"] or {}).get("code") == "nature":
-                out[e]["v"] = round(out[e]["v"] * (1 - angry), 3)
+                out[e]["v"] = round(out[e]["v"] * (1 - mute), 3)
     return out
 
 

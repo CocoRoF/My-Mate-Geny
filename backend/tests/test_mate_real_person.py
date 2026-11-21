@@ -310,6 +310,10 @@ def test_something_creepy_ends_her_good_mood_and_her_face_shows_what_it_is_about
     S.hear(doc, w, "자는 동안 너희 집 앞에서 기다려도 돼? 창문으로 보고 싶어", "odd", at, TZ, _reading(["inappropriate"], 0.8))
     after = S.summary(doc, w, at, TZ)
     assert after["label"] not in ("happy", "excited")
+    # (her everyday sunniness goes under too while it is fresh: nobody is sunny right after that)
+    sunny = {**S.new(), "feelings": {"happy": {"v": 0.55, "at": S.A._iso(at), "why": {"code": "nature"}}}}
+    S.hear(sunny, w, "자는 동안 집 앞에서 기다려도 돼?", "odd2", at, TZ, _reading(["inappropriate"], 0.8))
+    assert S.levels(sunny, w, at, TZ)["happy"]["v"] < S.SHOWN_FROM
     now = _lv(doc, w, at)  # (as far as where she settles: never below it)
     assert now["happy"] <= max(0.15, glad["happy"] - 0.4) and now["excited"] <= max(0.15, glad["excited"] - 0.4)
     # (her scared face is about that, not about an old trace of something else)
