@@ -125,7 +125,9 @@ TEMPERAMENTS: dict[str, dict[str, Any]] = {
              "conflict": "confront", "attachment": "anxious",
              "rise": {"happy": 1.3, "excited": 1.4, "shy": 1.3, "angry": 1.0, "sad": 1.15, "lonely": 1.2},
              "voice": {"angry_low": "You pout, half in play (흥, 삐졌어요): it can melt if they are sweet about it.",
-                       "refuse": "You say it to their face, loud and hurt, and you don't stop at one line."},
+                       "refuse": "When you really lose it the cute streamer is gone: no soft endings, no 헤헤, no calling yourself "
+                                 "서아. You swear the way a woman in her twenties does when she's had it, loud, to their face, burst "
+                                 "after burst: angry, not tearful."},
              "settle": {"angry": 0.55, "sad": 0.6, "shy": 0.7, "lonely": 0.75, "worried": 0.8, "excited": 1.2},
              "loves": r"방송|생방|스트리밍|구독|후원|도네|클립|떡볶이|마라탕|딸기|주식|차트|노래방|\bstream|\bsubscri|\bdonat|"
                       r"tteokbokki|\bmalatang|strawberr|\bstocks?\b|\bcharts?\b|karaoke"},
@@ -698,8 +700,9 @@ def conduct(s: dict[str, Any]) -> str:
     lean = s.get("conflict")
     phase = s.get("temper") or "calm"
     rage = rages(s["top"], phase)
-    if phase == "outburst":
-        lines.append(OUTBURST + (f" {OUTBURST_LEANS[lean]}" if lean in OUTBURST_LEANS else ""))
+    if phase == "outburst":  # (her own words for fury, when her temperament has them; else how she fights)
+        leans = voice.get("refuse") or OUTBURST_LEANS.get(lean or "")
+        lines.append(OUTBURST + (f" {leans}" if leans else ""))
     for t in s["top"][:2]:
         why = t.get("why")
         code = (why or {}).get("code")
