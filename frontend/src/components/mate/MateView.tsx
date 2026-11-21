@@ -12,6 +12,7 @@
  * Her guide (guide/MateGuide) opens over it the first time the Mate view opens (once per account on this device), after
  * a mate is created in the studio, and from Mate settings' header (the phone's ⋯).
  */
+import SystemBar from "../layout/SystemBar";
 import PageLoading from "../ui/Loading";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { listDrafts, type DraftSummary } from "../../api/avatar";
@@ -588,6 +589,7 @@ export default function MateView() {
         {/* phones: read-aloud lives in the header, the composer row is + · text · mic · send */}
         <MateComposer mate={mate} conv={conv} showVoiceToggle={!compact && !touch} />
       </div>
+      <SystemBar />
     </div>
   );
 

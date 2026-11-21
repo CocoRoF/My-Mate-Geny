@@ -45,6 +45,7 @@ import { useProviderStore } from "../../stores/providerStore";
 import { openSettings, useUIStore, type SettingsTab } from "../../stores/uiStore";
 import { APP_VERSION, BUILD_COMMIT, BUILD_TIME } from "../../version";
 import { requestAdminTab } from "../admin/adminTab";
+import { useSystemBar } from "../../lib/systemBar";
 import UpdateCard, { useUpdateState } from "../downloads/UpdateCard";
 import MateTab from "./MateTab";
 import { Location, TimeZone, YourBirthday, YourIcon, YourName } from "./PersonalFields";
@@ -593,6 +594,7 @@ function AppearanceSection() {
   const mode = useTheme((s) => s.mode);
   const theme = useTheme((s) => s.theme);
   const deviceOnly = useTheme((s) => s.deviceOnly);
+  const systemBar = useSystemBar((s) => s.on);
   const [state, setState] = useState<ThemeSaved | "saving" | null>(null);
   const pick = async (m: ThemeMode) => {
     setState("saving");
@@ -655,6 +657,10 @@ function AppearanceSection() {
       {state === "local" && <Status tone="error" testId="settings-theme-msg">{t("settings.themeLocal")}</Status>}
       <div className="rounded-xl border border-border bg-surface-2/50 px-3.5 py-3">
         <Toggle on={deviceOnly} onChange={(v) => void toggleDevice(v)} label={t("settings.themeDeviceOnly")} hint={t("settings.themeDeviceOnlyHint")} testId="settings-theme-device" />
+      </div>
+      {/* the usage bar under the conversations (components/layout/SystemBar.tsx): this device only */}
+      <div className="rounded-xl border border-border bg-surface-2/50 px-3.5 py-3">
+        <Toggle on={systemBar} onChange={(v) => useSystemBar.getState().setOn(v)} label={t("sysbar.setting")} hint={t("sysbar.settingHint")} testId="settings-system-bar" />
       </div>
     </Card>
   );

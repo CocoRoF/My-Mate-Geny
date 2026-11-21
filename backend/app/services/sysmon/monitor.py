@@ -13,6 +13,8 @@ block), everything else is plain bookkeeping:
    (source ``monitor``) with hysteresis.
 4. The full snapshot is JSON-encoded once and handed to every live
    subscriber (``/ws/admin/system``). With nobody watching, nothing is sent.
+5. The usage bar under the conversations (``/ws/system/bar``) gets a few numbers of it
+   (:func:`bar_view`: CPU, memory, GPUs, network), encoded once per tick while a bar is open.
 """
 
 from __future__ import annotations
@@ -102,6 +104,7 @@ class SystemMonitor:
         self.started = clock()
         self._task: asyncio.Task | None = None
         self._subs: set[asyncio.Queue] = set()
+        self._bar_subs: set[asyncio.Queue] = set()
         self._titles: dict[str, tuple[float, str, str]] = {}
         self._cg_events: dict[str, int] | None = None
         self._last_prune = 0.0
@@ -377,6 +380,7 @@ class SystemMonitor:
             "ring": len(self.ring),
             "ring_capacity": self.ring._d.maxlen,  # noqa: SLF001
             "subscribers": len(self._subs),
+            "bar_subscribers": len(self._bar_subs),
             "rows_1m": self._rows_cache.get(RES_1M, 0),
             "rows_15m": self._rows_cache.get(RES_15M, 0),
             "gpu_source": self.gpu.source,
@@ -721,19 +725,35 @@ class SystemMonitor:
     def subscribers(self) -> int:
         return len(self._subs)
 
+    def subscribe_bar(self) -> asyncio.Queue:
+        """The usage bar under a conversation: :func:`bar_view` every tick."""
+        q: asyncio.Queue = asyncio.Queue(maxsize=2)
+        self._bar_subs.add(q)
+        return q
+
+    def unsubscribe_bar(self, q: asyncio.Queue) -> None:
+        self._bar_subs.discard(q)
+
+    def bar(self) -> dict[str, Any] | None:
+        """The latest numbers for a usage bar just opened (None while warming up)."""
+        with self._mu:
+            return bar_view(self.latest)
+
     def _publish(self, snap: dict[str, Any]) -> None:
-        if not self._subs:
+        if not self._subs and not self._bar_subs:
             return
         c0 = time.thread_time()
-        msgs = [json.dumps({"type": "sample", "data": _public(snap)}, separators=(",", ":"), default=str)]
-        for ev in snap.get("new_events") or []:
-            msgs.append(json.dumps({"type": "event", "data": ev}, default=str))
-        for q in list(self._subs):
-            for msg in msgs:
-                if q.full():  # a slow client: drop its oldest, keep it current
-                    with contextlib.suppress(asyncio.QueueEmpty):
-                        q.get_nowait()
-                q.put_nowait(msg)
+        if self._subs:
+            msgs = [json.dumps({"type": "sample", "data": _public(snap)}, separators=(",", ":"), default=str)]
+            for ev in snap.get("new_events") or []:
+                msgs.append(json.dumps({"type": "event", "data": ev}, default=str))
+            for q in list(self._subs):
+                for msg in msgs:
+                    _offer(q, msg)
+        if self._bar_subs:
+            msg = json.dumps({"type": "bar", "data": bar_view(snap)}, separators=(",", ":"), default=str)
+            for q in list(self._bar_subs):
+                _offer(q, msg)
         self.cost["push_cpu_s"] += time.thread_time() - c0
 
     def hello(self) -> dict[str, Any]:
@@ -819,6 +839,43 @@ def _child_label(v: ProcView) -> str:
 
 def _round(v: float) -> float:
     return round(v, 2) if isinstance(v, float) else v
+
+
+def _offer(q: asyncio.Queue, msg: str) -> None:
+    """Into a live view's queue; a slow client loses its oldest message, never falls behind."""
+    if q.full():
+        with contextlib.suppress(asyncio.QueueEmpty):
+            q.get_nowait()
+    q.put_nowait(msg)
+
+
+def bar_view(snap: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What the usage bar under the conversations shows (docs/monitoring.md "Usage bar"): the machine Geny runs on —
+    CPU %, memory used of total (bytes; used = total − available, what programs hold), each GPU's load, memory,
+    temperature and power, the network rates (bytes/s), and Geny's own share (its process tree's memory, CPU % of one
+    core). Small on purpose: it goes to every open bar every tick."""
+    if not snap:
+        return None
+    m = snap.get("m") or {}
+
+    def num(v: Any, nd: int = 1) -> float | None:
+        return None if v is None else round(float(v), nd)
+
+    return {
+        "ts": snap.get("ts"),
+        "interval": snap.get("interval"),
+        "host": ((snap.get("host") or {}).get("hostname")) or "",
+        "cpu": num(m.get("cpu")),
+        "cores": (snap.get("cpu") or {}).get("count"),
+        "mem": [m.get("mem_used"), m.get("mem_total")],
+        "swap": [m.get("swap_used"), m.get("swap_total")] if m.get("swap_total") else None,
+        "gpus": [{"name": g.get("name") or "", "util": num(g.get("util"), 0), "mem": [g.get("mem_used"), g.get("mem_total")],
+                  "temp": num(g.get("temp"), 0), "power": num(g.get("power"), 0)} for g in snap.get("gpus") or []],
+        "net": [num(m.get("net_rx"), 0), num(m.get("net_tx"), 0)],
+        "geny": {"rss": m.get("tree_rss"), "cpu": num((m.get("be_cpu") or 0) + (m.get("eng_cpu") or 0))}
+        if m.get("tree_rss") is not None else None,
+        "alerts": len(snap.get("alerts") or []),
+    }
 
 
 def _public(snap: dict[str, Any] | None) -> dict[str, Any] | None:

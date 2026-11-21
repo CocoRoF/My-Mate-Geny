@@ -13,6 +13,7 @@ import ComposerMenu from "./ComposerMenu";
 import UsageFooter from "./UsageFooter";
 import { DoneBell, DoneChip } from "./DoneNotify";
 import ChatPicker from "./ChatPicker";
+import { useSystemBar } from "../../lib/systemBar";
 import { forwardChat } from "../../api/attachments";
 import { useComposerStore } from "../../stores/composerStore";
 import ContextMeter from "./ContextMeter";
@@ -61,6 +62,8 @@ export default function InputBar({
   const screen = useLocalScreenControls(sid, session.title);
   // + → 대화 전달: another chat's conversation goes with the next message, for this chat's agent (docs/chat-forward.md)
   const [picking, setPicking] = useState(false);
+  // (the usage bar under it takes the bottom edge and the phone's safe area: SystemBar)
+  const barOn = useSystemBar((s) => s.on);
   const { items, uploading, failed, hasContent, notice, setNotice, isStreaming, touch, trigger } = c;
 
   // "Mention in chat" from the explorer appends `@path ` here.
@@ -88,7 +91,7 @@ export default function InputBar({
   }, [isStreaming, onSend]);
 
   return (
-    <div className="px-3 sm:px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-5">
+    <div className={`px-3 sm:px-5 ${barOn ? "pb-2 sm:pb-3" : "pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-5"}`}>
       <div className="mx-auto max-w-3xl">
         {!phone && (
           <div className="pb-2">

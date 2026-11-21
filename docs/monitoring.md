@@ -170,6 +170,29 @@ for status and always paired with an icon and a label.
 
 Set `MONITOR_ENABLED=false` to turn it all off (the endpoints answer 503).
 
+## Usage bar (under the conversations)
+
+A thin bar under the mate conversation (Mate view and the desktop's mate chat window) and under each chat's message box
+shows how busy the machine Geny runs on is, every tick:
+
+- what it shows: CPU (with the last minute as a line), memory used of total, each GPU's load (the first one, or two
+  when there is room), video memory and temperature, the network rates, and Geny's own memory;
+- the width decides: narrow widths show CPU, memory and GPU only, and the tooltip always has everything;
+- a click opens Settings → 관리자 → 시스템, the whole picture.
+
+It is on by default and holds for **this device only** (localStorage `hrh_system_bar`, `lib/systemBar.ts`). Its ✕ hides
+it, and Settings → 테마 → 시스템 사용량 바 turns it on again.
+
+- **Feed:** `WS /ws/system/bar`, behind the normal login.
+  - It sends `{"type": "bar", "data": …}` at once (the latest) and then every tick. The data is `SystemMonitor.bar_view`:
+    `host, cpu, cores, mem [used, total], swap, gpus [{name, util, mem [used, total], temp, power}], net [rx, tx],
+    geny {rss, cpu}, alerts`, about 0.4 KB.
+  - It sends `{"type": "off"}` when the monitor is off (`MONITOR_ENABLED=false`).
+  - The sampler encodes it once per tick for every open bar, and only while one is open.
+- **Page:** every bar shares one socket. It closes while the page is hidden and with the last bar, and reopens on
+  return.
+- **Memory:** "used" is total − available, what programs hold (not the cache).
+
 ## Server RAM versus Geny usage
 
 The default RAM headline is host physical occupancy (`MemTotal - MemFree`), including cache. The chart stacks

@@ -1,4 +1,5 @@
 import { useReplySpeech } from "../../../mate/useReplySpeech";
+import SystemBar from "../../layout/SystemBar";
 import { toast } from "../../../lib/toast";
 /**
  * Full-page Mate surfaces for the desktop app's windows (docs/mate.md §6–7), no console chrome:
@@ -622,6 +623,7 @@ function ChatWindow() {
         <div className="shrink-0 px-2.5 pb-2.5">
           <MateComposer mate={mate} conv={conv} compact autoFocus />
         </div>
+        <SystemBar />
         {relOpen && (
           <div className="absolute inset-0 z-20 bg-surface animate-fade-in" data-testid="mate-chat-relation-panel">
             <Suspense fallback={null}>

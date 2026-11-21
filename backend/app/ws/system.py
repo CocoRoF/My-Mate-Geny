@@ -1,4 +1,4 @@
-"""Live system metrics for the Admin -> System page.
+"""Live system metrics for the Admin -> System page, and the usage bar under the conversations.
 
 Protocol::
 
@@ -60,6 +60,52 @@ async def system_feed(websocket: WebSocket) -> None:
         pass
     finally:
         monitor.unsubscribe(queue)
+        pump_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await pump_task
+
+
+@router.websocket("/ws/system/bar")
+async def bar_feed(websocket: WebSocket) -> None:
+    """The usage bar under the mate and chat conversations (docs/monitoring.md "Usage bar")::
+
+        server -> {"type": "bar", "data": <bar_view>}   # at once (the latest), then every tick (2 s)
+        server -> {"type": "off"}                       # the system monitor is off on this server
+        client -> {"type": "ping"}  /  server -> {"type": "pong"}
+    """
+    if await admit(websocket) is None:
+        return
+    monitor = getattr(websocket.app.state, "system_monitor", None)
+    await websocket.accept()
+    if monitor is None:
+        await websocket.send_text('{"type":"off"}')
+        await websocket.close(code=1000)
+        return
+    queue = monitor.subscribe_bar()
+    send_lock = asyncio.Lock()
+
+    async def send_text(text: str) -> None:
+        async with send_lock:
+            await websocket.send_text(text)
+
+    async def pump() -> None:
+        while True:
+            await send_text(await queue.get())
+
+    pump_task = asyncio.create_task(pump())
+    try:
+        first = monitor.bar()
+        if first is not None:
+            await send_text(json.dumps({"type": "bar", "data": first}, separators=(",", ":"), default=str))
+        while True:
+            raw = await websocket.receive_text()
+            with contextlib.suppress(json.JSONDecodeError, AttributeError):
+                if json.loads(raw).get("type") == "ping":
+                    await send_text('{"type":"pong"}')
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        monitor.unsubscribe_bar(queue)
         pump_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await pump_task

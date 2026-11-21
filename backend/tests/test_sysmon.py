@@ -3,6 +3,7 @@ downsampling / pruning, alert hysteresis, restart detection, API shapes."""
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import time
@@ -555,3 +556,67 @@ def test_memory_missing_available_and_inconsistent_kernel_fixture_stays_bounded(
     assert s['available']==5*GB and s['occupied']==6*GB and s['non_cache']==2*GB
     s=memory_summary({'MemTotal':8*GB,'MemFree':99*GB,'MemAvailable':100*GB,'Cached':99*GB})
     assert s['free']==s['available']==s['total'] and s['occupied']==s['cache']==s['non_cache']==0
+
+
+def test_the_usage_bar_gets_a_few_numbers_once_per_tick_only_while_open(db):
+    """The bar under the conversations (docs/monitoring.md "Usage bar"): CPU, memory, GPUs, network, Geny's share —
+    encoded once per tick for every open bar, nothing while none is."""
+    import asyncio
+
+    from app.services.sysmon.monitor import bar_view
+
+    clock = [1_800_000_000.0]
+    mon = _monitor(db, clock)
+    mon._on_start()
+    assert mon.bar() is None  # (warming up)
+    snap = _ticks(mon, clock, 2)
+    b = bar_view(snap)
+    assert b["cpu"] == 10.0 and b["cores"] == 2 and b["mem"] == [4 * GB, 16 * GB] and b["swap"] == [0, 2 * GB]
+    assert b["gpus"] == [] and b["net"] == [10.0, 20.0] and b["host"] and b["alerts"] == 0
+    assert b["geny"]["rss"] is not None and b["geny"]["cpu"] == 4.0  # (backend 1 % + the engine's 3 %)
+    snap["gpus"] = [{"index": 0, "name": "RTX 5070", "util": 37.0, "mem_used": 3 * GB, "mem_total": 12 * GB,
+                     "temp": 51.0, "power": 80.4}]
+    assert bar_view(snap)["gpus"] == [{"name": "RTX 5070", "util": 37.0, "mem": [3 * GB, 12 * GB], "temp": 51.0,
+                                       "power": 80.0}]
+    assert len(json.dumps(bar_view(snap))) < 600  # (small: it goes to every open bar every 2 s)
+
+    async def run():
+        q = mon.subscribe_bar()
+        mon._publish(_ticks(mon, clock, 1))
+        mon._publish(_ticks(mon, clock, 1))
+        mon._publish(_ticks(mon, clock, 1))
+        assert q.qsize() == 2  # (a slow bar keeps the newest, never falls behind)
+        msg = json.loads(q.get_nowait())
+        assert msg["type"] == "bar" and msg["data"]["cpu"] == 10.0
+        mon.unsubscribe_bar(q)
+        before = mon.cost["push_cpu_s"]
+        mon._publish(_ticks(mon, clock, 1))
+        assert mon.cost["push_cpu_s"] == before  # (nobody watching: nothing encoded)
+
+    asyncio.run(run())
+
+
+def test_the_usage_bar_socket():
+    from app.main import app
+
+    with TestClient(app) as client:
+        _login(client)
+        mon = app.state.system_monitor
+        deadline = time.time() + 10
+        while mon.latest is None and time.time() < deadline:
+            time.sleep(0.2)
+        with client.websocket_connect("/ws/system/bar") as ws:
+            first = ws.receive_json()  # (at once: the latest)
+            assert first["type"] == "bar" and {"cpu", "mem", "gpus", "net", "host"} <= set(first["data"])
+            assert mon.sampler_stats()["bar_subscribers"] == 1
+            ws.send_json({"type": "ping"})
+        deadline = time.time() + 5
+        while mon.sampler_stats()["bar_subscribers"] and time.time() < deadline:
+            time.sleep(0.05)
+        assert mon.sampler_stats()["bar_subscribers"] == 0
+        app.state.system_monitor = None  # (the monitor off on this server)
+        try:
+            with client.websocket_connect("/ws/system/bar") as ws:
+                assert ws.receive_json() == {"type": "off"}
+        finally:
+            app.state.system_monitor = mon
