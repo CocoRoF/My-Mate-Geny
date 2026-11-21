@@ -258,7 +258,7 @@ function LocalNet() {
   // (while a code is up or a phone is waiting: a look every 2 s, in case the push doesn't come)
   useEffect(() => {
     if (!offer && !pending.length) return;
-    const id = window.setInterval(load, 2000);
+    const id = window.setInterval(() => !document.hidden && load(), 2000);
     return () => window.clearInterval(id);
   }, [offer, pending.length, load]);
   // (the code was used: the phone's request is what's shown now)

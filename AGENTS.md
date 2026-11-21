@@ -19,8 +19,9 @@ or one that checks code you didn't touch, only costs time.
   - the tests named after a changed module.
 
   It prints `tests` (everything) only when the base itself changed: `conftest.py`, `pyproject.toml`, `app/db.py`,
-  `app/config.py`, `app/main.py`. It prints nothing when the backend didn't change. `--why` shows why each test was
-  picked.
+  `app/config.py`, `app/main.py`. Then run the tests about what you changed there (e.g. a new test of it, and the
+  suites of the tables it touches), and let CI run everything. It prints nothing when the backend didn't change.
+  `--why` shows why each test was picked.
 - **Frontend:**
 
   ```

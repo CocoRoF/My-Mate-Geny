@@ -478,7 +478,7 @@ export default function MemoryNotebook({ mate, onSettings }: { mate: Mate; onSet
     const busy = (status?.jobs.pending ?? 0) + (status?.jobs.running ?? 0);
     const sorting = status?.organize?.state === "asked" || status?.organize?.state === "running";
     if (!status || (!busy && !sorting)) return;
-    const timer = setInterval(reload, 5000);
+    const timer = setInterval(() => !document.hidden && reload(), 5000);
     return () => clearInterval(timer);
   }, [status]);
   const normalized = search.toLocaleLowerCase();

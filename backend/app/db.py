@@ -231,6 +231,8 @@ CREATE TABLE IF NOT EXISTS bg_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_bg_tasks_page ON bg_tasks(session_id, COALESCE(started_at, unixepoch(updated_at), 0) DESC, task_id DESC);
 CREATE INDEX IF NOT EXISTS idx_bg_tasks_status ON bg_tasks(session_id, status);
+-- every chat's tasks, newest first (/api/tasks): no scan and sort of the whole table
+CREATE INDEX IF NOT EXISTS idx_bg_tasks_started ON bg_tasks(started_at);
 
 -- Mates (avatar secretaries). Persona/avatar/llm/voice are JSON documents
 -- (docs/mate.md); the conversation is a sessions row with kind = 'mate'.
@@ -341,7 +343,6 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_
 CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id, message_id);
 CREATE INDEX IF NOT EXISTS idx_error_logs_ts ON error_logs(ts);
 CREATE INDEX IF NOT EXISTS idx_error_logs_filter ON error_logs(level, source);
-CREATE INDEX IF NOT EXISTS idx_events_session   ON events(session_id, seq);
 -- Paged history (services/history_page.py): replay tails by id, turn slices by
 -- time, "the latest X" lookups by type, and the (rare) failed tool results.
 -- The error index matches json.dumps' text, so it never parses JSON.
@@ -368,6 +369,11 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
+        # With WAL, NORMAL never corrupts the file — a power cut can lose the last commits, not the database — and it
+        # spares an fsync per commit (FULL synced every streamed event: hundreds a second while a turn runs).
+        self._conn.execute("PRAGMA synchronous = NORMAL")
+        self._conn.execute("PRAGMA cache_size = -65536")  # 64 MB of pages (the default 2 MB, for a database of ~1 GB)
+        self._conn.execute("PRAGMA temp_store = MEMORY")
 
     def bootstrap(self) -> None:
         if self._conn is None:
@@ -386,6 +392,8 @@ class Database:
         """Additive, idempotent column migrations for pre-existing databases."""
         assert self._conn is not None
         with self._lock:
+            # (events by (session, seq): no query reads them so — every streamed event paid for it, 38 MB of it)
+            self._conn.execute("DROP INDEX IF EXISTS idx_events_session")
             cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(sessions)")}
             if "effort" not in cols:
                 self._conn.execute(

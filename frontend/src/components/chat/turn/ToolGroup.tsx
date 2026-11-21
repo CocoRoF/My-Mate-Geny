@@ -12,7 +12,13 @@ import { FullToolNote, useFullTools } from "./useFullTool";
 import { fmtMs, summarize, toolMeta } from "./toolMeta";
 import { useT, type MsgKey, type TFunction } from "../../../i18n";
 
-const useActive = () => useSessionStore((s) => s.sessions.find((x) => x.id === s.activeId));
+// (what a tool row needs of its chat, as plain values: a session object changes on every list update)
+const useActive = () => {
+  const id = useSessionStore((s) => s.activeId);
+  const workspace_path = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeId)?.workspace_path);
+  return id ? { id, workspace_path } : undefined;
+};
+const sessionOf = (id: string) => useSessionStore.getState().sessions.find((x) => x.id === id);
 
 /** A call cut off by Stop: the CLI reports it as a rejected (error) result. */
 export const wasStopped = (t: ToolActivity) =>
@@ -154,7 +160,8 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
               role="link"
               onClick={(e) => {
                 e.stopPropagation();
-                openPath(session, filePath);
+                const s = sessionOf(session.id);
+                if (s) openPath(s, filePath);
               }}
               className="underline decoration-dotted decoration-content-faint/60 underline-offset-[3px] hover:text-accent hover:decoration-accent"
               title={t("turn.openPath", { path: filePath })}

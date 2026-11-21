@@ -48,7 +48,7 @@ export default function StudyPanel({ mate }: { mate: Mate }) {
   const running = items?.some((s) => s.state === "running" || s.state === "queued");
   useEffect(() => {
     if (!running) return;
-    const timer = setInterval(() => listStudies(mate.id).then(setItems).catch(() => {}), 4000);
+    const timer = setInterval(() => !document.hidden && listStudies(mate.id).then(setItems).catch(() => {}), 4000);
     return () => clearInterval(timer);
   }, [running, mate.id]);
   const submit = async () => {
@@ -150,7 +150,7 @@ function StudyCard({ mateId, study, open, onToggle, onChanged }: { mateId: strin
     let dead = false;
     const load = () => getStudy(mateId, study.id).then((x) => !dead && setEvents(x.events ?? [])).catch(() => {});
     void load();
-    const timer = live ? setInterval(load, 3000) : undefined;
+    const timer = live ? setInterval(() => !document.hidden && load(), 3000) : undefined;
     return () => {
       dead = true;
       if (timer) clearInterval(timer);
