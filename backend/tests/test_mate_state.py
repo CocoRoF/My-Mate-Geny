@@ -264,6 +264,8 @@ def test_they_make_one_state():
 
 def test_every_blend_is_of_real_emotions():
     for code in S.BLENDS:
+        if code == "fury":  # (not two of them: anger leading, state.rages)
+            continue
         a, b = code.split("_")
         assert a in S.EMOTIONS and b in S.EMOTIONS and code == "_".join(sorted((a, b)))
 

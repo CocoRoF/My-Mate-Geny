@@ -58,6 +58,9 @@ class DeviceEvents:
                 prompt+=('They just came to their computer. Say hello if you feel like it, as you are right now and in your own way; if you would rather not, '
                          'or you already greeted them lately, reply with exactly [SILENT]. Never claim to see their screen unless a picture of it is attached, '
                          'and keep this out of your memory.')
+                try:own=self.screen.mates.own_line(mid)  # (how things stand between them: no cheerful hello owed to someone she is angry with)
+                except (KeyError,AttributeError):own=''
+                if own:prompt+='\n'+own
                 try:
                     self.screen.sessions.start_turn(sid,prompt,[],client_msg_id=f'device-event~{device}',meta={'internal':True,'kind':'device_greeting','device':device,'events':kinds})
                 except Exception:continue

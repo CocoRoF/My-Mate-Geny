@@ -1559,7 +1559,9 @@ class CallService:
         lonely = S.levels(doc, who, now, self.store.tz())["lonely"]["v"]
         rel = self.mates._advanced(mid, now, self.store.tz())
         close = bool(rel and rel["enabled"] and rel["stage"] in A.POSITIVE)
-        if lonely >= (LONELY_FROM if close else 0.7) and (last_user is None or now - last_user >= timedelta(hours=3)):
+        # (missing them doesn't make her call to hear their voice while things aren't right between them: state.standing)
+        sore = S.standing(S.summary(doc, who, now, self.store.tz())) in ("furious", "sour")
+        if not sore and lonely >= (LONELY_FROM if close else 0.7) and (last_user is None or now - last_user >= timedelta(hours=3)):
             return "lonely", ""
         return None
 

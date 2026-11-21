@@ -396,3 +396,22 @@ def test_the_world_keeps_the_holidays_names():
                          {"date": "2026-06-01", "localName": "x", "name": "Regional", "global": False, "counties": ["KR-11"]}])
     assert named == [{"date": "2026-03-01", "en": "Independence Movement Day", "local": "삼일절"},
                      {"date": "2026-09-25", "en": "Chuseok", "local": "추석"}]
+
+
+def test_angry_with_them_she_owes_them_no_birthday_wish(db, tmp_path, monkeypatch):
+    # (how things stand between them goes with writing first: state.own_line)
+    from app.mate import state as S
+    from tests.test_mate_life_service import _reaching, _service
+
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    mate, calls = _reaching(store, mates, monkeypatch)
+    now = datetime.now(timezone.utc)
+    store.save_state(mate["id"], {**S.new(), "feelings": {"angry": {"v": 0.95, "at": now.isoformat(), "why": {"code": "rude", "quote": "닥쳐"}}}})
+    mates._life_reach_out(mate["id"], [{"type": "occasion", "id": "user_birthday", "at": now.isoformat(), "share": True}])
+    prompt = calls[0][0]
+    assert calls[0][1]["meta"]["kind"] == "life_birthday" and "You may write to them first" in prompt and S.OWN_FURIOUS in prompt
+    assert "Write to them first now: wish them" not in prompt
+    calls.clear()
+    store.save_state(mate["id"], S.new())
+    mates._life_reach_out(mate["id"], [{"type": "occasion", "id": "user_birthday", "at": now.isoformat(), "share": True}])
+    assert S.OWN_FURIOUS not in calls[0][0] and S.OWN_SOUR not in calls[0][0]

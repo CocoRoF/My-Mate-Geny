@@ -106,7 +106,7 @@ Beside how angry she is, how worked up she is right now (`heat`, 0–1; `state.t
 | Phase | When | How it comes out (`CONDUCT`) |
 |---|---|---|
 | `edge` | heat 0.5+, angry with them 0.45+ | at the end of her patience: tense, clipped, telling them to stop — one more and she'll blow (`EDGE`) |
-| `outburst` | heat past her fuse (0.9; × 0.9 for one who says it to their face, × 1.08 for one who goes cold; shorter the more easily anger rises in her), anger 0.7+ | everything that built up bursts out in her next reply: a raised voice, swearing, every grievance at once, on and on — or she storms off, done talking (`OUTBURST`, with her way of fighting); it replaces the furious line |
+| `outburst` | heat past her fuse (0.9; × 0.9 for one who says it to their face, × 1.08 for one who goes cold; shorter the more easily anger rises in her), anger 0.7+ | she is beside herself with rage and it bursts out in her next reply: shouting, swearing in her own fresh words, short hot volleys at what they just did — an explosion, not an explanation, no going back over the whole story — or she storms off, done talking (`OUTBURST`, with her way of fighting); it replaces the furious line |
 | `aftermath` | once she has let it out (her reply; or 15 minutes on), for 45 minutes | still shaking with it — raw, cold or close to tears; she takes nothing back unless she wants to (`AFTERMATH_LINE`); heat drops to 0.35, and pushed again she can blow up again |
 
 Kept up, three harsh insults in a row: angry, then furious at the edge, then the outburst. An apology takes the edge off at once
@@ -114,6 +114,11 @@ Kept up, three harsh insults in a row: angry, then furious at the edge, then the
 is in her summary (`temper`, `heat`; it raises her `arousal`), in what she is told, beside her anger on the ♥ status window
 ("화남 · 몹시 · 폭발 직전", "화남 (폭발)"; no badge of its own), in her voice (`voice.TEMPER_HOW`: furious and loud; tense and clipped), and her outburst is in her state's log
 (`outburst`). Room to react, never a script: how it comes out is hers.
+
+**Anger leads** (`state.rages`): at the edge or bursting, or angry with them 0.7+ and plainly angrier than sad (by 0.15), anger
+comes first whatever else is as strong. All together she is "furious, beside yourself" (blend `fury`, 격분; not "hurt"), sadness is
+one clause under it (`STING`: it stings, but what comes out is anger, not tears), and nothing bright is told. Hurt can lead again
+in the aftermath, or when sadness is as strong.
 
 ## 2. What stays with her
 
@@ -292,8 +297,17 @@ in `costs`).
 - **Not answering.** Whenever she would rather not answer — offered outright when she is furious (`REFUSE`) — a reply of
   `[SILENT]` becomes a line of narration ("(한채린은 대답하지 않는다)"), kept as her turn and never read aloud.
 - **Speaking first** ([trigger/](../backend/app/mate/trigger/)):
-  - A quiet moment is told only as what it is ("It has gone quiet for a bit"), never what to say. Whether she speaks is hers
-    (`SPEAK_UP`), else `[SILENT]`.
+  - A quiet moment is told only as what it is ("It has gone quiet for a bit"), never what to say, whatever policy picked it (a
+    stored preset's "share something fun" too: `fixed.moment`). Whether she speaks is hers (`SPEAK_UP`), else `[SILENT]`.
+  - **How things stand between them goes with every turn she would start on her own** (`state.own_line`, `MateStore.own_line`):
+    a quiet moment, their coming back to the computer, news of her day, their birthday, news of her friends. Furious with them
+    (or worked up, or just after an outburst): nothing makes her write — no hello, no check-in, no caring line; if anything
+    comes out it is the anger, or nothing (`OWN_FURIOUS`). Angry, hurt by them, or what they did still stings: none of the
+    everyday warmth — no cheerful hello, no "have you eaten", nothing tacked on to soften it; cold, short, about what they did
+    and the apology she's owed, or nothing (`OWN_SOUR`). A little put out, it shows (`OWN_PUT_OUT`); easing, a little careful
+    (`OWN_EASING`). What it is about goes with it (what is still with her, and their apologies so far). Nothing stops her: she
+    is told how things stand and decides (2026-11-21: angry since the day before, a mate sent the scheduled lunchtime check-in
+    anyway, only its words cross).
   - A shared screen is only a glance at what they have in front of them, never the topic.
   - The screen moment comes after the first quiet moment and at most every quarter hour; whatever the policy, it says only "they
     are at their computer", with the picture as background.

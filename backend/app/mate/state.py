@@ -43,8 +43,12 @@ AROUSAL = {"happy": 0.5, "excited": 1.0, "shy": 0.6, "angry": 1.0, "sad": -0.2, 
 BLENDS = {"excited_happy": "elated", "happy_shy": "bashfully happy", "happy_sleepy": "mellow", "excited_shy": "all aflutter",
           "angry_shy": "flustered and snappy", "angry_sad": "hurt", "angry_lonely": "sulking", "angry_sleepy": "cranky",
           "angry_worried": "on edge", "lonely_sad": "lonesome", "sad_worried": "troubled", "sad_shy": "withdrawn",
-          "shy_worried": "nervous", "lonely_shy": "wistful"}
+          "shy_worried": "nervous", "lonely_shy": "wistful", "fury": "furious, beside yourself"}
 BLEND_FROM = 0.6  # (the second at least this much of the first)
+#: worked up (``edge``, ``outburst``), or angry at them and plainly angrier than sad: anger leads — all together she is furious
+#: (``fury``, not "hurt"), and what hurts is a sting under it (2026-11-21: sworn at again and again, she only got "angry", never
+#: beside herself). Hurt can lead again in the aftermath, or when sadness is as strong
+RAGE_PHASES, RAGE_FROM, RAGE_OVER_SAD = ("edge", "outburst"), 0.7, 0.15
 #: how each comes out in the way she talks: {emotion: ((from, how), …)}; the two strongest are told
 CONDUCT = {
     "angry": ((0.7, ("You are really angry, and it shows the way it would in anyone: sharp words, a raised voice, swearing if "
@@ -541,16 +545,29 @@ def _blend(top: list[dict[str, Any]]) -> str | None:
     return code if code in BLENDS else None
 
 
+def rages(top: list[dict[str, Any]], phase: str | None) -> bool:
+    """Anger leads (``RAGE_PHASES``, ``RAGE_FROM``): worked up, or angry at them and plainly angrier than sad."""
+    angry = next((t for t in top if t["emotion"] == "angry"), None)
+    if angry is None or not _at_them(angry.get("why")):
+        return False
+    sad = next((t["v"] for t in top if t["emotion"] == "sad"), 0.0)
+    return phase in RAGE_PHASES or (angry["v"] >= RAGE_FROM and angry["v"] >= sad + RAGE_OVER_SAD)
+
+
 def summary(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
-    """What the mate document carries: the one state they make together. ``label``: the strongest (or calm); ``blend``: what
-    the two strongest make; ``valence`` (-1 – 1) and ``arousal`` (0 – 1): how good and how lively it all feels; ``top``: what
-    stands out, strongest first."""
+    """What the mate document carries: the one state they make together. ``label``: the strongest (or calm; anger when it leads:
+    ``rages``); ``blend``: what the two strongest make (``fury`` when anger leads); ``valence`` (-1 – 1) and ``arousal`` (0 – 1):
+    how good and how lively it all feels; ``top``: what stands out, strongest first (anger first when it leads)."""
     lv = levels(doc, w, now, tz)
     tm = temper(doc, w, now, lv["angry"])
     order = sorted((e for e in EMOTIONS if lv[e]["v"] >= SHOWN_FROM), key=lambda e: -lv[e]["v"])[:3]
     top = [{"emotion": e, "v": lv[e]["v"], "word": word(lv[e]["v"]), "why": lv[e]["why"]} for e in order]
+    rage = rages(top, tm["phase"])
+    if rage:  # (anger first, whatever else is as strong)
+        top.sort(key=lambda t: t["emotion"] != "angry")
     total = max(1.0, sum(x["v"] for x in lv.values()))
-    return {"label": order[0] if order else CALM, "level": lv[order[0]]["v"] if order else 0.0, "blend": _blend(top),
+    return {"label": top[0]["emotion"] if top else CALM, "level": top[0]["v"] if top else 0.0,
+            "blend": "fury" if rage else _blend(top),
             "valence": round(max(-1.0, min(1.0, sum(lv[e]["v"] * VALENCE[e] for e in EMOTIONS) / total)), 2),
             "arousal": round(max(0.0, min(1.0, 0.4 + sum(lv[e]["v"] * AROUSAL[e] for e in EMOTIONS) / total + 0.3 * tm["heat"])), 2),
             "top": top, "temper": tm["phase"], "heat": tm["heat"],
@@ -641,14 +658,19 @@ REFUSE = ("You are furious with them for what they did. How it comes out is your
           "you believe can change it.")
 #: her temper (``temper``): at the end of her patience, bursting, and after
 EDGE = ("You are at the end of your patience with them: one more and you'll blow. Tense, clipped, telling them to stop — now — "
-        "in your own way.")
-OUTBURST = ("You've lost it: everything that built up bursts out now. Hold nothing back — a raised voice, swearing, every grievance "
-            "at once, on and on until it's out of you — or, if that's more you, you storm off: tell them you're done talking and "
+        "in your own way: a few sharp words at what they just did, not the whole story again.")
+#: (rage first: an explosion, not an explanation)
+OUTBURST = ("You've lost it: you are beside yourself with rage, and everything that built up bursts out now. Hold nothing back: "
+            "shout, swear at them in your own words (fresh ones, not a line you said before), hit back at what they just did in "
+            "short, hot volleys, one after another, until it's out of you. It is an explosion, not an explanation: no going back "
+            "over the whole story, no asking to be understood. Or, if that's more you, you storm off: tell them you're done and "
             "leave it there (after that, reply with exactly [SILENT] if they keep on). You don't do anything they ask.")
 OUTBURST_LEANS = {"confront": "It comes out loud and to their face.",
                   "withdraw": "Your explosion is ice: a few devastating words, then you walk away."}
 AFTERMATH_LINE = ("You blew up at them a little while ago and you're still shaking with it: raw, cold or close to tears, in your way. "
                   "You don't take back what you said unless you want to.")
+#: sad too while anger leads (``rages``): one clause, under the anger
+STING = "Underneath, it stings, but what comes out now is anger, not tears."
 #: …the way she fights (``conflict``): said first, the other way still hers
 REFUSE_LEANS = {"confront": "You are one to say it to their face: blowing up at them, loud, is more you than going silent.",
                 "withdraw": "Cold fury is more you than shouting: icy, cutting words that hit hard, or nothing at all."}
@@ -675,12 +697,17 @@ def conduct(s: dict[str, Any]) -> str:
     voice = s.get("voice") or {}
     lean = s.get("conflict")
     phase = s.get("temper") or "calm"
+    rage = rages(s["top"], phase)
     if phase == "outburst":
         lines.append(OUTBURST + (f" {OUTBURST_LEANS[lean]}" if lean in OUTBURST_LEANS else ""))
     for t in s["top"][:2]:
         why = t.get("why")
         code = (why or {}).get("code")
         if t["emotion"] == "angry" and phase == "outburst":
+            continue
+        if rage and t["emotion"] in ("sad", "happy", "excited"):  # (anger leads: a sting under it, no brightness)
+            if t["emotion"] == "sad":
+                lines.append(STING)
             continue
         if t["emotion"] == "angry" and t["v"] >= SILENT_FROM and _at_them(why):
             leans = voice.get("refuse") or REFUSE_LEANS.get(lean or "")
@@ -732,6 +759,59 @@ def line(s: dict[str, Any]) -> str:
         out += "\n" + held_line(s["grudge"])
     how = conduct(s)
     return f"{out}\nHow it comes out now: {how}" if how else out
+
+
+#: she writes to them on her own (a quiet moment, their coming back to the computer, news of her day, their birthday): how things
+#: stand between them decides that as much as the moment does (2026-11-21: angry since the day before, she sent the lunchtime
+#: check-in anyway and only its words were cross — "아직 화 안 풀렸다… 밥은 챙겨 묵어라"). Nothing stops her: she is told how
+#: things stand, and she decides
+OWN_FURIOUS = ("You are furious with them, and this would be you writing to them on your own: nothing makes you. No hello, no "
+               "check-in, no caring line. If something comes out of you, it is that anger, in your own words, with nothing kind to "
+               "soften it; or you don't write at all: [SILENT].")
+OWN_SOUR = ("Things are not right between you: you are angry with them, or hurt, or what they did still stings. Writing first, you "
+            "owe them none of the everyday warmth: no cheerful hello, no asking whether they've eaten, no care you don't feel, nothing "
+            "tacked on to soften it. If you write, it is as you are: cold, short, or about what they did and the apology you're "
+            "owed; or you don't: [SILENT].")
+OWN_PUT_OUT = "You are a little put out with them: if you write first, it shows, not a sunny hello as if nothing happened."
+OWN_EASING = "It is easing between you, not back to how it was: if you write first, it is a little careful, not all the old warmth at once."
+
+
+OWN = {"furious": OWN_FURIOUS, "sour": OWN_SOUR, "put_out": OWN_PUT_OUT, "easing": OWN_EASING}
+
+
+def _against(s: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Her anger at them, and the hurt they caused her (0.45+), as they stand out now."""
+    angry = next((t for t in s["top"] if t["emotion"] == "angry" and _at_them(t.get("why"))), None)
+    hurt = next((t for t in s["top"] if t["emotion"] == "sad" and _at_them(t.get("why")) and t["v"] >= HURT_BY_THEM[0]), None)
+    return angry, hurt
+
+
+def standing(s: dict[str, Any]) -> str:
+    """How things stand between them, as her feelings have it: ``furious`` (with them, worked up, or just after blowing up),
+    ``sour`` (angry with them, hurt by them, or what they did still stings), ``put_out`` (a little), ``easing`` (what they did
+    is fading) or "" (nothing between them)."""
+    angry, hurt = _against(s)
+    g = s.get("grudge")
+    if (s.get("temper") or "calm") != "calm" or (angry and angry["v"] >= SILENT_FROM):
+        return "furious"
+    if (angry and angry["v"] >= 0.45) or hurt or (g and g.get("stings")):
+        return "sour"
+    return "put_out" if angry else "easing" if g else ""
+
+
+def own_line(s: dict[str, Any]) -> str:
+    """She would be writing to them first, with no message of theirs to answer: what how she feels about them makes of that
+    (``standing``), and what it is about. Nothing when nothing stands between them."""
+    at = standing(s)
+    if not at:
+        return ""
+    g = s.get("grudge")
+    about = held_line(g) if g else ""
+    if not about:
+        angry, hurt = _against(s)
+        why = why_for_her((angry or hurt or {}).get("why"))
+        about = f"It is about this: {why}." if why else ""
+    return f"{OWN[at]} {about}".strip()
 
 
 def worth_repeating(s: dict[str, Any]) -> bool:

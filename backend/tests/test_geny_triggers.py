@@ -238,3 +238,27 @@ async def test_user_input_preempts_autonomous_turn_instead_of_steering_into_it(d
     with pytest.raises(asyncio.CancelledError):await task
     assert screen.triggers.consecutive.get(sid,0)==0
     svc._tasks.pop(sid,None);svc._turn_meta.pop(sid,None)
+
+
+async def test_a_quiet_moment_is_only_a_moment_and_how_things_stand_between_them_goes_with_it(db,tmp_path,monkeypatch):
+    # (2026-11-21: angry since the day before, she sent the scheduled check-in anyway, only its words cross)
+    from datetime import datetime,timezone
+    from app.mate import state as S
+    from app.mate.trigger.fixed import FIXED_CONTENT
+    from app.mate.trigger.runtime import SPEAK_UP
+    screen,svc,atts,store,m,sid,q,clock,started=runtime(db,tmp_path,monkeypatch)
+    store.update(m['id'],{'prefs':{'proactive':{'scope':'all'}}})  # (no fixed client: a stored preset's policy picks the moment)
+    monkeypatch.setattr(random,'random',lambda:0)
+    now=S.A._iso(datetime.now(timezone.utc))
+    store.save_state(m['id'],{**S.new(),'feelings':{'angry':{'v':0.95,'at':now,'why':{'code':'rude','quote':'닥쳐'}}}})
+    assert await screen.triggers.consider(sid)=={'status':'idle_wait'}
+    clock[0]+=61
+    assert (await screen.triggers.consider(sid))['category']=='first_idle'
+    prompt=started[0][0][1]
+    assert prompt.startswith(FIXED_CONTENT['first_idle']) and SPEAK_UP in prompt and S.OWN_FURIOUS in prompt
+    assert 'brighten' not in prompt and 'Recommend' not in prompt
+    # (nothing between them: the moment and only that)
+    store.save_state(m['id'],S.new())
+    screen.triggers.activity_now(sid);clock[0]+=61
+    await screen.triggers.consider(sid)
+    assert started[-1][0][1]==FIXED_CONTENT['first_idle']+'\n'+SPEAK_UP

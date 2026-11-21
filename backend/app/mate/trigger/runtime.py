@@ -8,7 +8,6 @@ from .defaults import default_manifest
 from .frame import _same_screen_threshold, _screen_active_window
 from .schemas import TriggerPresetManifest
 from .policy import GenyPolicy, _weighted_pick
-from .schemas import render_prompt
 from .fixed import FixedPolicy, moment
 
 # a moment with no message from them: whether she says anything, and what, is hers
@@ -158,13 +157,14 @@ class GenyTriggers:
             if prompt_obj is None:return {'status':'no_category'}
             content=prompt_obj.content.get(p.locale) or prompt_obj.content.get('en') or next(iter(prompt_obj.content.values()),'')
             if not content.strip():return {'status':'no_category'}
-            prompt=moment(cat.id) if isinstance(p,FixedPolicy) else render_prompt(cat,content)
+            prompt=moment(cat.id)
         else:
             # Original scan_all advances activity even when a category or an unchanged screen is skipped.
             self.activity[sid]=self.clock()
             chosen=p._pick_category_and_prompt(sid,self.screen.sessions.is_running)
             if not chosen:return {'status':'no_category'}
             prompt,cat=chosen
+            prompt=moment(cat.id)  # (a moment, never an errand: "brighten the chat" is no way to write to someone you're angry with)
         if cat.requires_screen_active:
             # (whatever the policy, a screen moment says only what the moment is: never to describe or comment on the picture)
             prompt=moment('screen_observation')
@@ -193,6 +193,8 @@ class GenyTriggers:
             if self.screen.sessions.is_running(sid) or self.screen.sessions.running_task_count(sid)>0:return {'status':'busy'}
             if config.get('guidance'):prompt+='\n'+config['guidance']
             prompt+='\n'+SPEAK_UP+('\n'+SCREEN_NOTE if row else '')
+            own=self.screen.mates.own_line(self.screen.sessions.get(sid)['mate_id'])  # (how things stand between them)
+            if own:prompt+='\n'+own
             self.screen.sessions.start_turn(sid,prompt,[row['id']] if row else [],client_msg_id=f'thinking~{device}',
                 meta={'internal':True,'kind':'screen_observation' if cat.requires_screen_active else 'thinking_trigger','category':cat.id,'trigger_kind':cat.kind})
             delivered=True

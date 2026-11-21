@@ -1895,6 +1895,11 @@ class MateStore:
                 "country": country if re.fullmatch(r"[A-Z]{2}", country) else "",
                 "source": "manual" if v.get("source") == "manual" else "ip", "at": datetime.now(timezone.utc).isoformat()}
 
+    def own_line(self, mate_id: str) -> str:
+        """How things stand between her and them, for a turn she would start on her own (state.own_line): nothing when nothing
+        stands between them."""
+        return S.own_line(S.summary(self.state_doc(mate_id), self.state_who(mate_id), datetime.now(timezone.utc), self.tz()))
+
     def tz(self) -> Any:
         """The user's timezone (Global settings → Defaults; the console fills it from the browser), else the
         server's local zone."""

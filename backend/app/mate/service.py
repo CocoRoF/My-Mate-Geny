@@ -1067,7 +1067,8 @@ class MateService:
     def _life_reach_out(self, mate_id: str, events: list[dict[str, Any]]) -> None:
         """Something worth telling happened just now, and she may write first (the reach-out setting is on): she decides whether to,
         and says so in her own words or stays quiet. Otherwise it waits for their next message, as everything does. Their birthday
-        is news all morning: she wishes them a happy birthday first (and tells them what she gave them)."""
+        is news all morning: she may wish them a happy birthday first (and tell them what she gave them). How things stand between
+        them goes with it (state.own_line): angry with them, she owes them no birthday wish."""
         now = datetime.now(timezone.utc)
 
         def birthday(e: dict[str, Any]) -> bool:
@@ -1087,8 +1088,8 @@ class MateService:
         if any(birthday(e) for e in fresh):
             kind = "life_birthday"
             prompt = ("[Today is their birthday, and you remembered: your <context> says so" + (", and what you gave them" if gave else "")
-                      + ". Write to them first now: wish them a happy birthday in your own voice, a line or two, as you would by message"
-                      + (", and tell them about your gift" if gave else "") + ". If you really would not, reply with EXACTLY [SILENT].]")
+                      + ". You may write to them first now: a happy birthday in your own voice, a line or two, as you would by message"
+                      + (", and about your gift" if gave else "") + ". If you would not, as things are between you, reply with EXACTLY [SILENT].]")
         elif gave:
             kind = "life_gave"
             prompt = ("[You just gave them something: your <context> says what, and why. Tell them about it now, in your own voice, a line "
@@ -1097,8 +1098,9 @@ class MateService:
             kind = "life_event"
             prompt = ("[Something just happened in your day: your <context> says what. If it is the kind of thing you would tell them, write them a line "
                       "or two about it now, in your own voice, as you would by message. If not, or if you have nothing to say, reply with EXACTLY [SILENT].]")
+        own = self.store.own_line(mate_id)
         try:
-            self._svc.start_turn(sid, prompt, meta={"internal": True, "kind": kind})
+            self._svc.start_turn(sid, prompt + (f"\n{own}" if own else ""), meta={"internal": True, "kind": kind})
         except (TurnBusyError, KeyError, RuntimeError):
             pass
 
@@ -1164,8 +1166,9 @@ class MateService:
             return False
         if self.calls is not None and self.calls.in_call(mate_id):
             return False
+        own = self.store.own_line(mate_id)  # (how things stand between them goes with telling them anything)
         try:
-            self._svc.start_turn(sid, prompt, meta={"internal": True, "kind": kind})
+            self._svc.start_turn(sid, prompt + (f"\n{own}" if own else ""), meta={"internal": True, "kind": kind})
             return True
         except (TurnBusyError, KeyError, RuntimeError):
             return False

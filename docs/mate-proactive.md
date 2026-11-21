@@ -18,7 +18,10 @@ what she is doing and how things are between them, never just to fill the silenc
 talk about, to be helpful, or to greet. While they share, the picture comes along only so she knows what they are up to
 (`runtime.SCREEN_NOTE`, and her prompt's "Seeing the screen"): she doesn't describe it or make it the topic. Pictures of the
 screen are told apart from what the user attached (`Attachment.screen` → a `<screen>` block, never "The user attached
-these files"). The device greeting is the same: hello if she feels like it, as she is right now, else `[SILENT]`. Sharing OFF revokes frames; reach-out OFF also cancels queued
+these files"). The device greeting is the same: hello if she feels like it, as she is right now, else `[SILENT]`. A policy that
+is not the fixed one (an older client, a stored preset) still only picks the moment: she is told what it is (`fixed.moment`),
+never its "share something fun". Every turn she starts on her own carries how things stand between them (`state.own_line`):
+angry with them, she owes them no hello, check-in or care (docs/geny-state-system.md → "Speaking first"). Sharing OFF revokes frames; reach-out OFF also cancels queued
 lifecycle events and stops an autonomous turn from that device, without stopping a normal user turn.
 
 Native `device-runtime` is a hidden app-lifetime renderer, created on manual and hidden/login autostart. A stable

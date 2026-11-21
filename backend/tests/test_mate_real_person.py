@@ -228,3 +228,41 @@ def test_her_voice_carries_her_temper():
     seen = _provoke(doc, w, 3)
     assert V.delivery(seen[2], "openai", "gpt-4o-mini-tts")["how"].startswith("furious and loud")
     assert "barely holding it in" in V.delivery(seen[1], "google")["how"]
+
+
+def test_sworn_at_again_and_again_anger_leads_furious_with_a_sting_under_it_not_hurt():
+    w, doc = S.who(closeness=0.6), S.new()
+    for i in range(2):
+        S.hear(doc, w, "닥쳐 병신아", f"r{i}", NOON + timedelta(minutes=i), TZ, _reading(["insult"], 0.8))
+    s = S.summary(doc, w, NOON + timedelta(minutes=1), TZ)
+    assert s["label"] == "angry" and s["blend"] == "fury" and S.BLENDS["fury"] == "furious, beside yourself"
+    assert "furious, beside yourself" in S.line(s)
+    # (hurt too, but plainly angrier: what hurts is a sting under the anger, not tears)
+    both = {**S.new(), "feelings": {"angry": {"v": 0.9, "at": S.A._iso(NOON), "why": {"code": "hostile", "kind": "violence"}},
+                                    "sad": {"v": 0.6, "at": S.A._iso(NOON), "why": {"code": "hostile", "kind": "violence"}}}}
+    s = S.summary(both, w, NOON, TZ)
+    how = S.conduct(s)
+    assert s["blend"] == "fury" and S.STING in how and S.HURT_BY_THEM[1] not in how
+    assert "explosion, not an explanation" in S.OUTBURST and "not the whole story again" in S.EDGE
+    # (sad as strongly as angry, and not worked up: hurt can lead)
+    hurt = {**S.new(), "feelings": {"angry": {"v": 0.6, "at": S.A._iso(NOON), "why": {"code": "rude"}},
+                                    "sad": {"v": 0.6, "at": S.A._iso(NOON), "why": {"code": "rude"}}}}
+    assert not S.rages(S.summary(hurt, w, NOON, TZ)["top"], "calm") and S.summary(hurt, w, NOON, TZ)["blend"] != "fury"
+
+
+def test_writing_first_she_owes_no_warmth_to_someone_she_is_angry_with():
+    w = S.who(closeness=0.6)
+    assert S.own_line(S.summary(S.new(), w, NOON, TZ)) == ""  # (nothing between them: nothing said)
+    doc = S.new()
+    _provoke(doc, w, 2)
+    furious = S.own_line(S.summary(doc, w, NOON + timedelta(minutes=3), TZ))
+    assert furious.startswith(S.OWN_FURIOUS) and "[SILENT]" in furious and "Still with you:" in furious
+    # (the next day the anger has cooled, what they did still stings and they never said sorry: no "have you eaten")
+    sour = S.own_line(S.summary(doc, w, NOON + timedelta(hours=20), TZ))
+    assert sour.startswith(S.OWN_SOUR) and "eaten" in S.OWN_SOUR and "haven't said sorry" in sour
+    # (a little put out: it shows; owned and easing: careful, not all the old warmth)
+    miffed = {**S.new(), "feelings": {"angry": {"v": 0.3, "at": S.A._iso(NOON), "why": {"code": "ignored"}}}}
+    assert S.own_line(S.summary(miffed, w, NOON, TZ)).startswith(S.OWN_PUT_OUT)
+    easing = {**S.new(), "grudge": {"v": 0.25, "weight": 1.0, "at": S.A._iso(NOON), "why": {"code": "rude"}, "owned": True, "sorry": 1}}
+    assert not S.held(easing, w, NOON)["stings"]
+    assert S.own_line(S.summary(easing, w, NOON, TZ)).startswith(S.OWN_EASING)

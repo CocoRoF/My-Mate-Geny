@@ -52,6 +52,7 @@ const ko: Messages<"mate"> = {
   blend_sad_shy: "위축됨",
   blend_shy_worried: "조마조마함",
   blend_lonely_shy: "그리움",
+  blend_fury: "격분",
   stateWhy_warm: "다정하게 말해 줘서",
   stateWhy_love: "마음을 표현해 줘서",
   stateWhy_rude: "거친 말을 들어서",

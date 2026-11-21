@@ -624,6 +624,11 @@ async def test_she_calls_only_by_day_not_while_they_chat_and_only_a_phone_that_l
         assert await calls.consider(mate["id"]) == "chatting"
         db.execute("UPDATE messages SET created_at=? WHERE session_id=? AND role='user'",
                    ((datetime.now(timezone.utc) - timedelta(hours=4)).isoformat(), sid))
+        # (missing them, but what they did still stings: no call to hear their voice)
+        store.save_state(mate["id"], {**doc, "grudge": {"v": 0.8, "weight": 0.8, "at": datetime.now(timezone.utc).isoformat(),
+                                                       "why": {"code": "rude"}, "owned": False, "sorry": 0}})
+        assert await calls.consider(mate["id"]) == "nothing"
+        store.save_state(mate["id"], doc)
         assert await calls.consider(mate["id"]) == "ringing"
         call = calls.active()
         assert call.direction == "incoming" and call.reason == "lonely" and call.device == "phone-1"

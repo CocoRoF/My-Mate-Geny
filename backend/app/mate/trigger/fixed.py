@@ -14,8 +14,9 @@ FIXED_CONTENT={
 
 def moment(key):
     """The message of a moment with no message from them: what the moment is, nothing about what to say (the time is in her
-    <context>)."""
-    return FIXED_CONTENT.get(key) or FIXED_CONTENT['time']
+    <context>). Whatever the policy picked it (a stored preset's "share something fun" too), only the moment: what she does with it
+    is hers, by how she feels."""
+    return FIXED_CONTENT.get(key) or FIXED_CONTENT['time' if str(key).startswith('time') else 'continued_idle']
 
 class FixedPolicy(GenyPolicy):
     def _pick_category_and_prompt(self,sid,is_executing_fn):

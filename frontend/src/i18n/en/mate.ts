@@ -52,6 +52,7 @@ export default {
   blend_sad_shy: "withdrawn",
   blend_shy_worried: "nervous",
   blend_lonely_shy: "wistful",
+  blend_fury: "furious",
   stateWhy_warm: "you were kind",
   stateWhy_love: "you said you care",
   stateWhy_rude: "you were rude",
