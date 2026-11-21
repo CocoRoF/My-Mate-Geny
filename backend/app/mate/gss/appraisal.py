@@ -40,6 +40,8 @@ lost, cursing her ("닥쳐", "꺼져", "병신아", "미친년아", "너 진짜 
 banter both ways). Used for emphasis or about something else, they are nothing against her: "시발 개웃겨 ㅋㅋ", "존나 맛있다", \
 "너 존나 귀엽다" (affection, emphasised), "미친 대박", "아 씨발 버스 놓쳤네" (venting), "그 새끼 진짜 짜증나" (about someone \
 else). Read the swear word with its sentence: whom it is aimed at, and what the sentence does.
+- "threat": they say they will hurt her or someone or something of hers, or make her afraid of what they will do. Telling her \
+to get lost or shut up, cursing her, wishing her gone ("꺼져", "닥쳐", "죽어버려" said in a rage) is an insult, not a threat.
 - Between people who are close, playful teasing is "teasing", not an insult, unless it is plainly meant to hurt. Sarcasm that \
 puts her down is an "insult" with "sarcastic": true; praise that is really mockery is no compliment.
 - "apology": they really say sorry for something. "owns_it": the apology names what they did, says they were wrong, or that \

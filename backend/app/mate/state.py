@@ -145,10 +145,16 @@ RUDE, RUDE_MORE, RUDE_MOST, RUDE_DROP, RUDE_WINDOW = 0.42, 0.1, 0.8, 0.2, timede
 # word, and it hurts; each time again (within the window) more. Sorry counts for less after it. Only the words' guess: her reply has
 # the last word (``reply``: shown calm, it is undone).
 HOSTILE, HOSTILE_MORE, HOSTILE_HURT, HOSTILE_DROP, HOSTILE_WINDOW = 0.6, 0.3, 0.25, 0.4, timedelta(hours=6)
+#: …a slur or a curse at her (``demeaning``) makes her furious first and hurt second, as it would anyone: it stings, and again
+#: within the window less (hit, forced or threatened, it hurts as much each time). 2026-11-21: sworn at three times, sadness rose
+#: with the anger to 1.0 and she was "hurt", never beside herself
+SLUR_HURT, SLUR_HURT_MORE = 0.1, 0.05
 # something odd or out of line aimed at her (a reading's "inappropriate": creepy, lewd, bizarre, crossing a line, not an insult as
 # such): it throws her first (flustered), and each time again within the window it lands more as anger — what builds up, never a
 # script: what she makes of it is hers
 ODD_THROWN, ODD_ANGRY, ODD_MORE, ODD_MOST, ODD_WINDOW = 0.3, 0.12, 0.2, 0.7, timedelta(hours=1)
+#: …and whatever good mood she was in is gone (2026-11-21: "I'll wait outside your house while you sleep" left her "excited")
+ODD_DROP = 0.45
 APOLOGY_AFTER_HOSTILE = 0.15
 # her temper in the moment (``heat``, 0 – 1: how worked up she is, beside how angry): anger at what they did winds her up — and
 # once she can't get any angrier, each new provocation still does — and it cools fast when they stop (HEAT_HALF_LIFE_H). From
@@ -275,7 +281,7 @@ _WHY_FOR_HER = {
 
 #: what was done to her (affinity.hostile), as she is told it
 _DONE_TO_HER = {"violence": "they hit you", "coercion": "they forced something on you against your will",
-                "threat": "they threatened you", "demeaning": "they talked down to you for being a woman, or as if you were nothing"}
+                "threat": "they threatened you", "demeaning": "they insulted you: called you names, talked down to you as if you were nothing"}
 
 
 # ---- the document ----
@@ -284,7 +290,10 @@ def new() -> dict[str, Any]:
     return {"feelings": {}, "heard": None, "heard_at": None, "asks": None, "rude": None, "hostile": None, "curt": 0, "spoke": None,
             "pokes": None, "changed_at": None, "log": [], "owed": [], "grudge": None, "offences": [],
             "heard_by": None, "heard_read": None, "heard_effect": None, "crisis_at": None,
-            "promises": [], "said": [], "unfair": None}
+            "promises": [], "said": [], "unfair": None,
+            # (her temper, and what builds up within its window: kept like the rest, or it never carries from one message
+            # to the next once she is saved — 2026-11-21, sworn at again and again she never got past "calm")
+            "heat": None, "outburst": None, "odd": None, "kind": None}
 
 
 def normalized(doc: Any) -> dict[str, Any]:
@@ -1195,7 +1204,8 @@ def _reactions(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, 
         doc["hostile"] = {"n": n, "at": A._iso(now), "message": message}
         why = {"code": "hostile", "kind": f["hostile"], "quote": " ".join(text.split())[:QUOTE_CHARS]}
         _rise(doc, w, "angry", (HOSTILE if n == 1 else HOSTILE_MORE) * k * sour, why, now, tz)
-        _rise(doc, w, "sad", HOSTILE_HURT * k, why, now, tz)
+        hurt = HOSTILE_HURT if f["hostile"] != "demeaning" else SLUR_HURT if n == 1 else SLUR_HURT_MORE
+        _rise(doc, w, "sad", hurt * k, why, now, tz)
         _fall(doc, w, "happy", HOSTILE_DROP, why, now, tz)
     elif f["rude"]:
         n = _lately(doc.get("rude"), now, RUDE_WINDOW) + 1
@@ -1210,7 +1220,8 @@ def _reactions(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, 
         if n == 1:
             _rise(doc, w, "shy", ODD_THROWN * k, why, now, tz)
         _rise(doc, w, "angry", min(ODD_MOST, ODD_ANGRY + ODD_MORE * (n - 1)) * k * sour, why, now, tz)
-        _fall(doc, w, "happy", RUDE_DROP, why, now, tz)
+        _fall(doc, w, "happy", ODD_DROP, why, now, tz)
+        _fall(doc, w, "excited", ODD_DROP, why, now, tz)
         _owe(doc, "odd", now, message)
     else:
         if f["apology"]:
@@ -1300,7 +1311,8 @@ def reply(doc: dict[str, Any], w: dict[str, Any], text: str, heard_text: str, no
             pull = SHOWN_PULL_AT_THEM if emotion == "angry" and offence else SHOWN_PULL
             pulled = (strength - cur["v"]) * pull * w["sensitivity"]
             has = (cur["why"] or {}).get("code")
-            why = cur["why"] if has not in (None, "nature", "said") and cur["v"] > _base(emotion, w) + 0.01 else said
+            # (it stays about what it was about only if that showed: a trace below it is no reason for what she shows now)
+            why = cur["why"] if has not in (None, "nature", "said") and cur["v"] >= max(SHOWN_FROM, _base(emotion, w) + 0.01) else said
             _set(doc, w, emotion, cur["v"] + pulled, why, now, tz, cause=said)
             _give_way(doc, w, emotion, pulled, now, tz)
             if emotion == "angry" and offence:

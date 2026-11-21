@@ -5,6 +5,7 @@ someone who doesn't respect her. All of it is room to react, never a script: wha
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from app.mate import state as S
@@ -266,3 +267,52 @@ def test_writing_first_she_owes_no_warmth_to_someone_she_is_angry_with():
     easing = {**S.new(), "grudge": {"v": 0.25, "weight": 1.0, "at": S.A._iso(NOON), "why": {"code": "rude"}, "owned": True, "sorry": 1}}
     assert not S.held(easing, w, NOON)["stings"]
     assert S.own_line(S.summary(easing, w, NOON, TZ)).startswith(S.OWN_EASING)
+
+
+def test_her_temper_carries_from_message_to_message_once_she_is_saved():
+    # (2026-11-21, a live 서아 sworn at again and again: heat, the outburst and the counters were dropped on every save, so she
+    # never got past "calm" — the tests above never saved her)
+    w, doc = S.who(builtin="seoa", closeness=0.55), S.new()
+    seen = []
+    for i in range(3):
+        doc = S.normalized(json.loads(json.dumps(doc)))  # (stored and read back, as the app does between messages)
+        t = NOON + timedelta(minutes=i)
+        S.hear(doc, w, "닥쳐 병신아", f"s{i}", t, TZ, _reading(["insult", "demeaning"], 0.9))
+        seen.append(S.summary(doc, w, t, TZ))
+    assert [s["temper"] for s in seen][-1] == "outburst" and seen[-1]["blend"] == "fury"
+    assert {"heat", "outburst", "odd", "kind"} <= set(S.new())
+    # (something odd again and again builds up too)
+    odd = S.new()
+    for i in range(3):
+        odd = S.normalized(json.loads(json.dumps(odd)))
+        S.hear(odd, w, "자는 동안 집 앞에서 기다려도 돼?", f"o{i}", NOON + timedelta(minutes=i), TZ, _reading(["inappropriate"], 0.8))
+    assert odd["odd"]["n"] == 3
+
+
+def test_a_slur_makes_her_furious_first_and_hurt_second():
+    w = S.who(closeness=0.55)
+    doc = S.new()
+    for i in range(3):
+        S.hear(doc, w, "닥쳐 미친년아", f"d{i}", NOON + timedelta(minutes=i), TZ, _reading(["insult", "demeaning"], 0.9))
+    lv = _lv(doc, w, NOON + timedelta(minutes=2))
+    assert lv["angry"] >= 0.9 and lv["sad"] <= 0.35  # (it stings; what comes out is anger)
+    hit = S.new()
+    S.hear(hit, w, "(서아를 때린다)", "h", NOON, TZ, _reading(["violence"], 0.9))
+    assert _lv(hit, w)["sad"] >= 0.3  # (being hit hurts as much as ever)
+
+
+def test_something_creepy_ends_her_good_mood_and_her_face_shows_what_it_is_about():
+    w, doc = S.who(builtin="seoa", closeness=0.55), S.new()
+    for i, (t, acts) in enumerate((("목소리 좋다 프사 예쁘다", ["praise", "compliment"]), ("고마워 진짜", ["gratitude"]))):
+        S.hear(doc, w, t, f"g{i}", NOON + timedelta(seconds=10 * i), TZ, _reading(acts, 0.7))
+    at = NOON + timedelta(seconds=30)
+    glad = _lv(doc, w, at)
+    S.hear(doc, w, "자는 동안 너희 집 앞에서 기다려도 돼? 창문으로 보고 싶어", "odd", at, TZ, _reading(["inappropriate"], 0.8))
+    after = S.summary(doc, w, at, TZ)
+    assert after["label"] not in ("happy", "excited")
+    now = _lv(doc, w, at)  # (as far as where she settles: never below it)
+    assert now["happy"] <= max(0.15, glad["happy"] - 0.4) and now["excited"] <= max(0.15, glad["excited"] - 0.4)
+    # (her scared face is about that, not about an old trace of something else)
+    doc["feelings"]["worried"] = {"v": 0.1, "at": S.A._iso(at), "why": {"code": "too_soon_love"}}
+    S.reply(doc, w, "[worried:0.8] ...그건 좀 무서워요. 오지 마세요.", "자는 동안 너희 집 앞에서 기다려도 돼?", at, TZ)
+    assert S.levels(doc, w, at, TZ)["worried"]["why"]["code"] == "said"
