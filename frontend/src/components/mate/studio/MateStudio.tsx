@@ -393,7 +393,7 @@ export default function MateStudio() {
   const live = !!project && (LIVE.has(project.status) || project.agent_running || !!project.processing);
   useEffect(() => {
     if (!pid) return;
-    const timer = setInterval(() => void loadRef.current(), live ? 2500 : 10000);
+    const timer = setInterval(() => !document.hidden && void loadRef.current(), live ? 2500 : 10000);
     return () => clearInterval(timer);
   }, [pid, live]);
 

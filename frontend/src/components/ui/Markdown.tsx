@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import { visit } from "unist-util-visit";
 import remarkGfm from "remark-gfm";
@@ -10,6 +11,7 @@ import { openPath } from "../../stores/workbenchStore";
 import CodeBlock from "./CodeBlock";
 import { rehypeCodeHighlight, textOf } from "./codeHighlight";
 import { useT } from "../../i18n";
+import { stableChunks } from "../../lib/markdownChunks";
 
 /** Bare absolute paths in prose (`/home/x/y`, `~/proj`) become links. */
 function remarkBarePaths() {
@@ -37,6 +39,9 @@ function remarkBarePaths() {
 }
 
 const EXTERNAL = /^(https?:|mailto:|tel:|data:|blob:|#)/i;
+const CHAT_PLUGINS = [remarkGfm, remarkBarePaths];
+const DOC_PLUGINS = [remarkGfm];
+const REHYPE = [rehypeCodeHighlight];
 const keepFileUrls = (url: string) => (url.startsWith("file:") ? url : defaultUrlTransform(url));
 
 /**
@@ -46,33 +51,40 @@ const keepFileUrls = (url: string) => (url.startsWith("file:") ? url : defaultUr
  * in the workbench (file tab / explorer). `baseDir` = rendering a file: its
  * relative links and images resolve against its own folder.
  */
-export default function Markdown({ children, baseDir, doc = false }: { children: string; baseDir?: string; doc?: boolean }) {
+function MarkdownView({ children, baseDir, doc = false }: { children: string; baseDir?: string; doc?: boolean }) {
   const t = useT();
-  const session = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeId));
+  // (only the chat's id: a session object changes on every list update — each one re-parsed every reply on screen)
+  const sid = useSessionStore((s) => s.activeId);
+  const session = () => (sid ? useSessionStore.getState().sessions.find((x) => x.id === sid) : undefined);
 
   // Images the agent references by workspace path render through the
   // session's (confined) file preview endpoint; a markdown file's own images
   // through the explorer's reader, relative to the file.
   const imgSrc = (src?: string) => {
-    if (!src || !session || /^(https?:|data:|blob:|\/api\/)/.test(src)) return src;
+    if (!src || !sid || /^(https?:|data:|blob:|\/api\/)/.test(src)) return src;
     const p = src.replace(/^file:\/\//, "");
     if (baseDir) {
-      const b = unqualify(session, baseDir); // (a file on another host: its own host)
+      const s = session();
+      if (!s) return src;
+      const b = unqualify(s, baseDir); // (a file on another host: its own host)
       return fsRawUrl(resolvePath(decodeURI(p), b.path), b.conn);
     }
-    return fileUrl(session.id, p);
+    return fileUrl(sid, p);
   };
-  const open = (raw: string) => session && openPath(session, raw, { base: baseDir });
+  const open = (raw: string) => {
+    const s = session();
+    if (s) openPath(s, raw, { base: baseDir });
+  };
 
   return (
     <div className={`md ${doc ? "md-doc" : "text-sm"} leading-relaxed`}>
       <ReactMarkdown
-        remarkPlugins={baseDir ? [remarkGfm] : [remarkGfm, remarkBarePaths]}
-        rehypePlugins={[rehypeCodeHighlight]}
+        remarkPlugins={baseDir ? DOC_PLUGINS : CHAT_PLUGINS}
+        rehypePlugins={REHYPE}
         urlTransform={keepFileUrls}
         components={{
           a: ({ node, href, ...props }) => {
-            if (!href || EXTERNAL.test(href) || !session) return <a target="_blank" rel="noreferrer" href={href} {...props} />;
+            if (!href || EXTERNAL.test(href) || !sid) return <a target="_blank" rel="noreferrer" href={href} {...props} />;
             return (
               <a
                 {...props}
@@ -89,7 +101,7 @@ export default function Markdown({ children, baseDir, doc = false }: { children:
           code: ({ node, className, children, ...props }) => {
             const inline = (node as any)?.properties?.dataInline;
             const text = typeof children === "string" ? children : textOf(children);
-            if (inline && session && looksLikePath(text)) {
+            if (inline && sid && looksLikePath(text)) {
               return (
                 <code
                   {...props}
@@ -129,6 +141,25 @@ export default function Markdown({ children, baseDir, doc = false }: { children:
       >
         {children}
       </ReactMarkdown>
+    </div>
+  );
+}
+
+/** Rendered again only when its text (or where it lives) changes: a finished reply is parsed once. */
+const Markdown = memo(MarkdownView);
+export default Markdown;
+
+/**
+ * A reply still streaming: its finished chunks are rendered once and kept, only the last one re-parses as tokens arrive
+ * (lib/markdownChunks.ts). Once the turn ends it is rendered whole (`Markdown`).
+ */
+export function LiveMarkdown({ text }: { text: string }) {
+  const chunks = stableChunks(text);
+  return (
+    <div className="space-y-2">
+      {chunks.map((c, i) => (
+        <Markdown key={i}>{c}</Markdown>
+      ))}
     </div>
   );
 }

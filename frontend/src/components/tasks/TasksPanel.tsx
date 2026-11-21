@@ -50,7 +50,7 @@ function Output({ sid, task }: { sid: string; task: TaskInfo }) {
         })
         .catch(() => alive && setText(""));
     load();
-    const t = running ? setInterval(load, 2000) : undefined;
+    const t = running ? setInterval(() => !document.hidden && load(), 2000) : undefined;
     return () => {
       alive = false;
       if (t) clearInterval(t);
@@ -163,7 +163,7 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
     if (scope === "chat") loadSession(sid, true).catch(() => {});
     else {
       loadAll().catch(() => {});
-      const t = setInterval(() => loadAll().catch(() => {}), 5000);
+      const t = setInterval(() => !document.hidden && loadAll().catch(() => {}), 5000);
       return () => clearInterval(t);
     }
   }, [scope, sid, loadSession, loadAll]);

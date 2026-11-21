@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import type { Attachment } from "../types";
 
 /**
@@ -47,6 +47,39 @@ function put(drafts: Record<string, Draft>, sid: string, patch: Partial<Draft>):
 
 const sameIds = (a: Attachment[], b: Attachment[]) => a.length === b.length && a.every((x, i) => x.id === b[i].id);
 
+/** localStorage, written at most every 300 ms (and at once when the page is hidden or left): every keystroke wrote
+ *  every chat's draft, and every other window of this browser read them all back */
+export const WRITE_DELAY_MS = 300;
+let pending: [string, string] | null = null;
+let timer: ReturnType<typeof setTimeout> | undefined;
+export function flushDrafts() {
+  clearTimeout(timer);
+  if (!pending) return;
+  const [k, v] = pending;
+  pending = null;
+  try {
+    localStorage.setItem(k, v);
+  } catch {
+    /* full / private mode: this page only */
+  }
+}
+const lazyStorage: StateStorage = {
+  getItem: (k) => (pending && pending[0] === k ? pending[1] : localStorage.getItem(k)),
+  setItem: (k, v) => {
+    pending = [k, v];
+    clearTimeout(timer);
+    timer = setTimeout(flushDrafts, WRITE_DELAY_MS);
+  },
+  removeItem: (k) => {
+    if (pending?.[0] === k) pending = null;
+    localStorage.removeItem(k);
+  },
+};
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushDrafts);
+  document.addEventListener("visibilitychange", () => document.hidden && flushDrafts());
+}
+
 export const useDraftStore = create<DraftState>()(
   persist(
     (set) => ({
@@ -79,7 +112,7 @@ export const useDraftStore = create<DraftState>()(
     {
       name: KEY,
       version: 1,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => lazyStorage),
       partialize: (s) => ({ drafts: s.drafts, pinned: s.pinned }),
     },
   ),

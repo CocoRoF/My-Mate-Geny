@@ -155,13 +155,31 @@ def bootstrap(db) -> None:
             db.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(source_id UNINDEXED, terms)"
             )
-            db.execute(
-                "CREATE TRIGGER IF NOT EXISTS memory_source_deleted AFTER DELETE ON memory_sources BEGIN DELETE FROM memory_fts WHERE source_id=old.id; END"
-            )
+            _fts_by_rowid(db)
         except sqlite3.OperationalError:
             # Embedded SQLite builds without FTS5 use the exact same scoped
             # candidate corpus with lexical scoring; recorded in stats.
             pass
+
+
+# A source's row in memory_fts has the source's own rowid: found by it, never by a scan (source_id is UNINDEXED — every
+# message written and every one of a deleted chat scanned the whole index before, 6 ms each and growing).
+_FTS_TRIGGER = ("CREATE TRIGGER memory_source_deleted AFTER DELETE ON memory_sources "
+                "BEGIN DELETE FROM memory_fts WHERE rowid=old.rowid; END")
+
+
+def _fts_by_rowid(db) -> None:
+    row = db.query_one("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='memory_source_deleted'")
+    if row and "rowid=old.rowid" in (row["sql"] or ""):
+        return
+    with db.transaction():
+        db.execute("DROP TRIGGER IF EXISTS memory_source_deleted")
+        kept = db.query("SELECT s.rowid AS rid, f.source_id, f.terms FROM memory_fts f "
+                        "JOIN memory_sources s ON s.id=f.source_id")
+        db.execute("DELETE FROM memory_fts")
+        for r in kept:
+            db.execute("INSERT INTO memory_fts(rowid,source_id,terms) VALUES(?,?,?)", (r["rid"], r["source_id"], r["terms"]))
+        db.execute(_FTS_TRIGGER)
 
 
 def digest(text: str) -> str:
@@ -252,11 +270,12 @@ def _record_message(db, mid: str, *, enqueue: bool = True) -> set[str]:
         (source_id, revision),
     )
     try:
-        db.execute("DELETE FROM memory_fts WHERE source_id=?", (source_id,))
+        rid = db.query_one("SELECT rowid AS rid FROM memory_sources WHERE id=?", (source_id,))["rid"]
+        db.execute("DELETE FROM memory_fts WHERE rowid=?", (rid,))
         if eligible:
             db.execute(
-                "INSERT INTO memory_fts(source_id,terms) VALUES(?,?)",
-                (source_id, terms(text[:100000])),
+                "INSERT INTO memory_fts(rowid,source_id,terms) VALUES(?,?,?)",
+                (rid, source_id, terms(text[:100000])),
             )
     except sqlite3.OperationalError:
         pass

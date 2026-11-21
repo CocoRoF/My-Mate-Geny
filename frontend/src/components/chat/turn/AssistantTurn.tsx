@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { FlowItem, ToolActivity, Turn } from "../../../stores/chatStore";
 import Icon from "../../ui/Icon";
-import Markdown from "../../ui/Markdown";
+import Markdown, { LiveMarkdown } from "../../ui/Markdown";
 import MessageAttachments from "../../attachments/MessageAttachments";
 import ThinkingBlock from "./ThinkingBlock";
 import TodoCard, { todosOf } from "./TodoCard";
@@ -172,6 +172,8 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
   const segments = useMemo(() => segment(turn), [turn]);
   const live = !turn.complete;
   const empty = segments.length === 0;
+  // (the text still growing: re-parsed chunk by chunk, not whole — LiveMarkdown)
+  const growing = live ? segments.map((s) => s.kind).lastIndexOf("text") : -1;
 
   return (
     <div className="flex gap-3 animate-fade-in">
@@ -187,7 +189,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
         {segments.map((s, i) => {
           switch (s.kind) {
             case "text":
-              return <Markdown key={i}>{s.text}</Markdown>;
+              return i === growing ? <LiveMarkdown key={i} text={s.text} /> : <Markdown key={i}>{s.text}</Markdown>;
             case "thinking":
               return (
                 <ThinkingBlock key={i} text={s.item.text} startedAt={s.item.startedAt} endedAt={s.item.endedAt} timingKnown={s.item.timingKnown} scope={s.item.scope} live={live} />
