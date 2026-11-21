@@ -1041,7 +1041,9 @@ def _apology(doc: dict[str, Any], w: dict[str, Any], owned: bool, now: datetime,
 def _fall(doc: dict[str, Any], w: dict[str, Any], emotion: str, amount: float, why: dict[str, Any], now: datetime, tz: Any) -> None:
     """Less of it: what it is about stays (an apology eases her anger at what they did; it isn't anger at the apology)."""
     cur = levels(doc, w, now, tz, off=False)[emotion]
-    keep = cur["why"] if cur["v"] > _base(emotion, w) + 0.01 and (cur["why"] or {}).get("code") not in (None, "nature") else why
+    code = (cur["why"] or {}).get("code")
+    # (what is left of her everyday mood is still just how she is: "glad · they insulted her" read as if it made her glad)
+    keep = cur["why"] if code == "nature" or (code is not None and cur["v"] > _base(emotion, w) + 0.01) else why
     _set(doc, w, emotion, max(_base(emotion, w), cur["v"] - amount), keep, now, tz, cause=why)
 
 
